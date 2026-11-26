@@ -5,8 +5,8 @@ nail `docs/release.md`를 줄인 것. 웹(Netlify) + Android APK(0022) + PC 묶�
 ## 무엇이 어디로 나가나
 | 대상 | 트리거 | 워크플로 | 결과 |
 |---|---|---|---|
-| 웹(운영) | `main` push | `deploy-web.yml` | fmt·clippy(두 갈래)·test·운영판 wasm(`--no-default-features`)·조립·연기 시험(개발판으로) → `publish` 잡(Environment `web-production`)이 Cloudflare Worker `web-game-knellroot` = https://knellroot.beardworks.io/play/ (0246) — 올린 뒤 `build.txt`가 그 커밋인지 본 다음 옛 https://knellroot.netlify.app 를 기록 넘김 페이지로 |
-| 웹(개발판) | `release/**` push(`docs/**`·`*.md`만 바뀐 push는 건너뜀 — main도 같다, 0264) | `deploy-web.yml` | 개발 기능 켠 빌드 → 별칭 `dev`(https://dev--knellroot.netlify.app, noindex). 올린 뒤 별칭의 `build.txt`를 확인(아니면 실패) |
+| 웹(운영) | `main` push | `deploy-web.yml` | `compile`(fmt·clippy 두 갈래·test·운영판 wasm `--no-default-features`·조립) → `smoke`(운영 빌드를 띄워 본다 `boot.js` + `pwa.js` — 긴 시나리오는 PR 검사에서, 0271) → `build`(문지기) → `publish` 잡(Environment `web-production`)이 Cloudflare Worker `web-game-knellroot` = https://knellroot.beardworks.io/play/ (0246) — 올린 뒤 `build.txt`가 그 커밋인지 본 다음 옛 https://knellroot.netlify.app 를 기록 넘김 페이지로 |
+| 웹(개발판) | `release/**` push(`docs/**`·`*.md`만 바뀐 push는 건너뜀 — main도 같다, 0264) | `deploy-web.yml` | 개발 기능 켠 빌드 → 헤드리스 넷(shot·touch·save·pwa — 잡마다 러너 하나씩 나란히, 0271) → 별칭 `dev`(https://dev--knellroot.netlify.app, noindex). 올린 뒤 별칭의 `build.txt`를 확인(아니면 실패) |
 | 웹(PR) | PR | 같은 워크플로 | `pr-<번호>--knellroot.netlify.app` |
 | Release + APK | `main` push에 `Cargo.toml` 버전이 새 값 **그리고** `docs/releases/v<버전>.md`가 있음 | `release.yml` → `build-android.yml` | 태그 `v<버전>`, GitHub Release(본문 = 그 md), `knellroot.apk`(운영판) 첨부 |
 | APK(개발판) | `release/**` push(`src/`·`assets/`·`android/`·`third_party/`·`Cargo.*`) | `build-android.yml` | 패키지 `io.github.aimenjoe.dev.knellroot`("Knellroot dev" — 마지막 조각은 꼭 `knellroot`: cargo-quad-apk가 라이브러리 이름으로 쓴다, 0070) → 미리 보기 Release `dev`의 `knellroot-dev.apk`를 갈아 끼움 |

@@ -38,7 +38,14 @@ pub static DEF: StageDef = StageDef {
     obj_gate: |s| s.obj_bell_site,
     obj_core: |s| s.obj_core,
     boss_wakes: |s| s.bellkeeper_wakes,
-    chest_loot: &[Loot::Charm(Charm::Cloth), Loot::Charm(Charm::Jar)],
+    // 상자 차례 = 지도에서 위 → 아래: 광장 동쪽 끝 · 물 받는 주민의 곁방 · 골목 서쪽 파수꾼의 곁방(파수꾼의 창, 0272 2단계) ·
+    // 거주지 동쪽 빈집 뒷방(빈집의 쌍단검, 0274 ③).
+    chest_loot: &[
+        Loot::Charm(Charm::Cloth),
+        Loot::Charm(Charm::Jar),
+        Loot::Weapon(crate::weapons::Id::Spear),
+        Loot::Weapon(crate::weapons::Id::Daggers),
+    ],
     boss_charm: Some(Charm::BellShard),
     stones: &[|s| s.stone_v1, |s| s.stone_v2, |s| s.stone_v3],
     find_prefix: "village",
@@ -54,6 +61,7 @@ pub static DEF: StageDef = StageDef {
     env: &crate::backdrop::UNDERGROUND,
     shortcut: false,
     prologue: false,
+    field: None,
 };
 
 const MAP: &str = "
@@ -96,26 +104,26 @@ const MAP: &str = "
         #.......o...................#        
         #...............#########...#        
         #.O.............#########...######## 
-        #...a.....h.S.........R.....#....C.# 
-        #...............a...........#......# 
-        #...###########.............#......# 
-        #..N###########.................S..# 
-        #.................###.......#....2.# 
-        #.....a.......h...###.......#......# 
-        #K........r.......###.r.....#......# 
-        #..............T..###.......######## 
+ ########...a.....h.S.........R.....#....C.# 
+ #......#...............a...........#......# 
+ #......#...###########.............#......# 
+ #.C....#..N###########.................S..# 
+ #........................###.......#....2.# 
+ #......#.....a.......h...###.......#......# 
+ #......#K........r.......###.r.....#......# 
+ ########..............T..###.......######## 
       ######...########################      
       #...............................#      
       #.be......a...................b.#      
       #...............e...............#      
       #.....u.....................1...#      
-      #...................u...S......M#      
-      #.O.........N...................#      
-      #...............................#      
-      #...R...........P...............#      
-      #...............................#      
-      #...............U...............#      
-      #.........a.....................#      
+      #...................u...S......M#######
+      #.O.........N...................#.....#
+      #...............................#.....#
+      #...R...........P.....................#
+      #...............................#...C.#
+      #...............U...............#.....#
+      #.........a.....................#######
       #################################      
 ";
 
@@ -160,25 +168,25 @@ const HEIGHTS: &str = "
 00000000c999999999999999999999999999c00000000
 00000000c999999999999999ccccccccc999c00000000
 00000000c999999999999999ccccccccc999cccccccc0
-00000000c999999999999999999999999999c999999c0
-00000000c999999999999999999999999999c999999c0
-00000000c999ccccccccccc9999999999999c999999c0
-00000000c999ccccccccccc99999999999999999999c0
-00000000c99999999999999999ccc9999999c999999c0
-00000000c99999999999999999ccc9999999c999999c0
-00000000c999///99999999999ccc9999999c999999c0
-00000000c999///99999999999ccc9999999cccccccc0
+0cccccccc999999999999999999999999999c999999c0
+0c999999c999999999999999999999999999c999999c0
+0c999999c999ccccccccccc9999999999999c999999c0
+0c999999c999ccccccccccc99999999999999999999c0
+0c999999999999999999999999ccc9999999c999999c0
+0c999999c99999999999999999ccc9999999c999999c0
+0c999999c999///99999999999ccc9999999c999999c0
+0cccccccc999///99999999999ccc9999999cccccccc0
 000000cccccc///cccccccccccccccccccccccc000000
 000000ccccccccccccccccccccccccccccccccc000000
 000000ccccccccccccccccccccccccccccccccc000000
 000000ccccccccccccccccccccccccccccccccc000000
 000000ccccccccccccccccccccccccccccccccc000000
-000000ccccccccccccccccccccccccccccccccc000000
-000000ccccccccccccccccccccccccccccccccc000000
-000000ccccccccccccccccccccccccccccccccc000000
-000000ccccccccccccccccccccccccccccccccc000000
-000000ccccccccccccccccccccccccccccccccc000000
-000000ccccccccccccccccccccccccccccccccc000000
-000000ccccccccccccccccccccccccccccccccc000000
+000000ccccccccccccccccccccccccccccccccccccccc
+000000ccccccccccccccccccccccccccccccccccccccc
+000000ccccccccccccccccccccccccccccccccccccccc
+000000ccccccccccccccccccccccccccccccccccccccc
+000000ccccccccccccccccccccccccccccccccccccccc
+000000ccccccccccccccccccccccccccccccccccccccc
+000000ccccccccccccccccccccccccccccccccccccccc
 000000ccccccccccccccccccccccccccccccccc000000
 ";

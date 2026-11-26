@@ -8,6 +8,7 @@
 //!
 //! 함정(nail에서 겪음): macroquad 0.4.16의 `touches()`만 물리 픽셀이고 `screen_width()`는 논리 픽셀이다 → DPI로 나눈다.
 //! `TouchPhase::Started`는 같은 프레임의 Moved에 덮이므로 "처음 보는 id"를 눌림으로 본다.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -38,6 +39,8 @@ pub enum Kind {
     Fist,
     /// 잔뿌리 활(0231): 휜 활대 + 당긴 시위 + 화살.
     Bow,
+    /// 파수꾼의 창(0272 2단계): 가로로 누운 긴 자루 + 잎 꼴 촉 + 촉 밑의 천 조각.
+    Spear,
     Lock,
     /// 땅 돌리기(0023): 누르기 전 캐릭터의 오른쪽(왼쪽) 면이 새 정면.
     TurnLeft,
@@ -67,6 +70,62 @@ pub enum Kind {
     Swallow,
     Bash,
     Roots,
+    /// 그림만(0270 C3): 무기 판의 새 스킬.
+    Stitch,
+    Ram,
+    Toll,
+    Swat,
+    Ripple,
+    Snow,
+    Flare,
+    Snare,
+    /// 그림만(0270 C3): 큰 기술 둘.
+    GreatBell,
+    Blizzard,
+    /// 그림만(0272): 쇠뇌 판의 스킬 둘 · 활 판의 큰 기술.
+    Fuse,
+    Mine,
+    Rain,
+    /// 그림만(0272 2단계): 창 판의 스킬 셋 · 큰 기술.
+    Skewer,
+    Pole,
+    Pin,
+    Gale,
+    /// 그림만(0274): 한손검 판의 전투 기술 셋.
+    Pommel,
+    Shove,
+    Rally,
+    /// 그림만(0274 ②b): 종류의 RB — 던지는 손도끼 · 신성한 빛 · 창 던지기 · 돌(마법탄은 `Cast`의 별).
+    HandAxe,
+    Smite,
+    Javelin,
+    Pebble,
+    /// 쌍단검(0274 ③): 공격 그림(엇갈린 짧은 날 둘) · 빠지며 베기 · 그림자 습격 · 투척 단검 셋.
+    Daggers,
+    Slip,
+    Ambush,
+    Knives,
+    /// 그림만(0276): 던지는 방패(하데스의 방패 — 한손 무기 + 방패의 RB) · 쇠 덫(빈 손의 쇠뇌 — 수류탄 자리).
+    ShieldToss,
+    IronSnare,
+    /// 대검(0274 ④): 공격 그림(세워 든 넓은 날) · 땅 가르기 · 불씨 휩쓸기 · 칼바람 · 땅 내려찍기(RB).
+    Greatsword,
+    Sunder,
+    Sear,
+    Tempest,
+    Quake2,
+    /// 낫(0274 ⑤): 공격 그림(휜 날) · 걸어 당기기 · 생기 거두기 · 깨어나는 숲 · 가시 씨앗(RB).
+    Sickle,
+    Reap,
+    Harvest,
+    Grove,
+    ThornSeed,
+    /// 완드(0274 ⑥): 공격 그림(잿빛 돌을 단 짧은 막대) · 저주 새기기 · 시드는 그늘 · 치른 값 · 저주탄(RB).
+    Wand,
+    Hex,
+    Blight,
+    Price,
+    CurseBolt,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -96,6 +155,8 @@ pub struct View {
     pub active: [f32; 2],
     /// 큰 기술 버튼의 그림(끼운 하나, 0158 G2).
     pub ult: Kind,
+    /// 교체 공격의 창이 열려 있다(0277 — `World::swap_strikes`, HUD의 부무기 칸 금빛 테와 같은 때): 바꾸기 버튼이 금빛으로 켜진다.
+    pub swap_strike: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -229,11 +290,11 @@ struct Rider {
 }
 
 impl Rider {
-    /// 손가락이 `pos`로 왔을 때 이번 프레임 시점에 보탤 끈 거리 — 탭 범위(`TAP_SLOP`) 안의 떨림은 버린다(연타하는 엄지가 화면을
-    /// 흔들지 않게), 넘은 뒤로는 지난 자리에서 끈 만큼.
-    fn drag(&mut self, pos: Vec2) -> Vec2 {
+    /// 손가락이 `pos`로 왔을 때 이번 프레임 시점에 보탤 끈 거리 — 탭 범위(`TAP_SLOP`, dp — `dp`는 화면 단위로 바꾸는 배) 안의
+    /// 떨림은 버린다(연타하는 엄지가 화면을 흔들지 않게), 넘은 뒤로는 지난 자리에서 끈 만큼.
+    fn drag(&mut self, pos: Vec2, dp: f32) -> Vec2 {
         let was = self.moved;
-        self.moved |= (pos - self.from).length() > dp(TAP_SLOP);
+        self.moved |= (pos - self.from).length() > TAP_SLOP * dp;
         let d = if was { pos - self.prev } else { Vec2::ZERO };
         self.prev = pos;
         d
@@ -441,7 +502,7 @@ fn layout_at(w: f32, h: f32, ctx: Ctx, k: f32) -> Vec<Button> {
     let atk = vec2(w - u * 0.238, h - u * 0.21);
     let at = |deg: f32, dist: f32| {
         let a = deg.to_radians();
-        atk + vec2(a.cos(), -a.sin()) * (u * dist)
+        atk + vec2(a.cos_d(), -a.sin_d()) * (u * dist)
     };
     let mut b = vec![
         Button {
@@ -574,67 +635,55 @@ pub fn stick_radius(w: f32, h: f32) -> f32 {
     w.min(h) * 0.14
 }
 
+/// 엔진의 손가락 하나(id · 단계 · 자리) — `Touch::read_fingers`가 받는다(시험은 손으로 짓는다).
+pub use macroquad::input::Touch as Finger;
+
+/// 터치를 읽을 때의 화면 값(0278 R23 — 엔진 밖에서 받아 시험이 손으로 준다): 논리 px 크기, dp 하나가 화면 단위 몇인가(0252 —
+/// 탭 범위 · 꼬집기 한 칸), 엄지 묶음의 배(설정 "터치 버튼 크기"), 안전 영역 `[왼쪽, 위, 오른쪽, 아래]`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Surface {
+    pub w: f32,
+    pub h: f32,
+    pub dp: f32,
+    pub size: f32,
+    pub safe: [f32; 4],
+}
+
+impl Surface {
+    /// 지금 화면(엔진 · 설정에서).
+    pub fn now() -> Surface {
+        Surface {
+            w: screen_width(),
+            h: screen_height(),
+            dp: crate::screen::dp(),
+            size: size(),
+            safe: crate::screen::safe_insets(),
+        }
+    }
+}
+
 impl Touch {
-    /// `menu`면 스틱·버튼 없이 탭만(메뉴 화면).
+    /// `menu`면 스틱·버튼 없이 탭만(메뉴 화면). 엔진에서 손가락 · 화면을 읽어 `read_fingers`에 넘긴다.
     pub fn read(&mut self, menu: bool) -> Read {
-        let mut a = Read::default();
         let dpi = screen_dpi_scale().max(0.01);
-        let touches: Vec<macroquad::input::Touch> = touches()
+        let touches: Vec<Finger> = touches()
             .into_iter()
             .map(|mut t| {
                 t.position /= dpi;
                 t
             })
             .collect();
-        a.active = !touches.is_empty();
+        self.read_fingers(&touches, Surface::now(), menu)
+    }
+
+    /// 이번 프레임의 손가락(논리 px)과 화면 값으로 — 엔진을 부르지 않는다(시험).
+    pub fn read_fingers(&mut self, touches: &[Finger], at: Surface, menu: bool) -> Read {
+        let mut a = Read {
+            active: !touches.is_empty(),
+            ..Read::default()
+        };
         if menu {
-            self.stick = None;
-            self.aimer = None;
-            self.attack_finger = None;
-            self.cast_finger = None;
-            self.dodge_finger = None;
-            self.parry_finger = None;
-            self.lookers.clear();
-            self.riders.clear();
-            self.pinch = 0.0;
-            self.stale.append(&mut self.known);
-            for t in &touches {
-                let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
-                if self.stale.contains(&t.id) {
-                    continue;
-                }
-                match self.taps.iter_mut().find(|x| x.0 == t.id) {
-                    Some(x) => {
-                        let was = x.2;
-                        x.2 |= (t.position - x.1).length() > dp(TAP_SLOP);
-                        // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
-                        if x.2 {
-                            let from = if was { x.3 } else { x.1 };
-                            a.drag += from.y - t.position.y;
-                            a.drag_x += from.x - t.position.x;
-                            a.drag_at = Some(x.1);
-                        }
-                        x.3 = t.position;
-                        if ended {
-                            if !x.2 {
-                                a.tap = Some(t.position);
-                            }
-                            let id = t.id;
-                            self.taps.retain(|x| x.0 != id);
-                        }
-                    }
-                    None if !ended => self.taps.push((t.id, t.position, false, t.position)),
-                    None => a.tap = Some(t.position),
-                }
-            }
-            self.taps.retain(|x| touches.iter().any(|t| t.id == x.0));
-            // 뗀 손가락은 묵은 목록에서 뺀다(같은 id가 다시 쓰여도 새 탭은 받게).
-            self.stale.retain(|id| {
-                touches.iter().any(|t| {
-                    t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
-                })
-            });
-            return a;
+            return self.read_menu(touches, at, a);
         }
         self.taps.clear();
         self.stale.clear();
@@ -649,9 +698,9 @@ impl Touch {
             self.pinch = 0.0;
             return a;
         }
-        let (w, h) = (screen_width(), screen_height());
-        let buttons = layout(w, h, self.ctx);
-        for t in &touches {
+        let (w, h) = (at.w, at.h);
+        let buttons = safe_layout(w, h, self.ctx, at.size, at.safe);
+        for t in touches {
             let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
             if !self.known.contains(&t.id) {
                 if !ended {
@@ -748,66 +797,7 @@ impl Touch {
         };
         // 끌어 조준(0217): 쥐고 있는 동안은 끈 쪽(끌기 전에는 가까운 적), 떼면 그 일 — 원거리를 모으던 중이면 누름 없이(월드가 뗀
         // 것을 보고 모은 탄을 낸다).
-        let mut aim_look = Vec2::ZERO;
-        if let Some(m) = self.aimer {
-            let r = stick_radius(w, h);
-            let d = m.pos - m.center;
-            let out = m.out || d.length() > r * AIM_OUT;
-            let still = alive(Some(m.id)).is_some();
-            let charging = m.kind == self.ctx.shot() && self.ctx.charging;
-            if self.ctx.looks(m.kind) {
-                // 숄더뷰(0229): 끈 만큼 시점(`look` — 화면 오른쪽 반 끌기와 같은 셈), 겨누는 쪽은 크로스헤어.
-                aim_look = m.pos - m.prev;
-                if still {
-                    a.aim_hold = m.kind == self.ctx.shot();
-                    self.aimer = Some(Aimer {
-                        out,
-                        prev: m.pos,
-                        ..m
-                    });
-                } else {
-                    self.aimer = None;
-                    // 모으던 탄은 누름 없이 — 월드가 뗀 것을 보고 낸다. 쪽은 월드가 크로스헤어로(`aim_sight`·`aim_ahead`).
-                    if !charging {
-                        press(&mut a, m.kind);
-                    }
-                }
-            } else if still {
-                let mut m = Aimer { out, ..m };
-                if out && d.length() > r * AIM_CANCEL {
-                    m.last = aim_dir(d);
-                    a.aim = m.last;
-                    a.aim_drag = true;
-                } else if !out {
-                    a.auto_aim = true;
-                }
-                a.aim_hold = m.kind == self.ctx.shot();
-                self.aimer = Some(m);
-            } else {
-                self.aimer = None;
-                match aim_end(out, d, r) {
-                    AimEnd::Tap => {
-                        if !charging {
-                            press(&mut a, m.kind);
-                        }
-                        a.auto_aim = true;
-                    }
-                    AimEnd::Fire(dir) => {
-                        if !charging {
-                            press(&mut a, m.kind);
-                        }
-                        a.aim = dir;
-                        a.aim_drag = true;
-                    }
-                    // 모으던 탄은 거둘 수 없다 — 마지막으로 겨눈 쪽으로 나간다.
-                    AimEnd::Cancel if charging => {
-                        a.aim = m.last;
-                        a.aim_drag = m.last != Vec2::ZERO;
-                    }
-                    AimEnd::Cancel => {}
-                }
-            }
-        }
+        let aim_look = self.read_aimer(touches, w, h, &mut a);
         self.attack_finger = alive(self.attack_finger);
         self.cast_finger = alive(self.cast_finger);
         self.dodge_finger = alive(self.dodge_finger);
@@ -838,7 +828,7 @@ impl Touch {
                     .map(|t| t.position)
             })
             .collect();
-        let (look, zoom) = look_from(&self.lookers, &now, &mut self.pinch);
+        let (look, zoom) = look_from(&self.lookers, &now, &mut self.pinch, at.dp);
         // 버튼을 누른 채 끈 손가락(0236): 숄더뷰를 떠나면(락온·쿼터뷰) 더 돌리지 않는다.
         let mut ride = Vec2::ZERO;
         self.riders.retain_mut(|r| {
@@ -846,7 +836,7 @@ impl Touch {
                 t.id == r.id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
             }) {
                 Some(t) => {
-                    ride += r.drag(t.position);
+                    ride += r.drag(t.position, at.dp);
                     true
                 }
                 None => false,
@@ -870,6 +860,129 @@ impl Touch {
         a
     }
 
+    /// 메뉴 화면(0199): 스틱 · 버튼 없이 탭과 끌기만 — 싸움 중에 닿아 있던 손가락은 떼도 탭이 아니다(`stale`).
+    fn read_menu(&mut self, touches: &[Finger], at: Surface, mut a: Read) -> Read {
+        self.stick = None;
+        self.aimer = None;
+        self.attack_finger = None;
+        self.cast_finger = None;
+        self.dodge_finger = None;
+        self.parry_finger = None;
+        self.lookers.clear();
+        self.riders.clear();
+        self.pinch = 0.0;
+        self.stale.append(&mut self.known);
+        for t in touches {
+            let ended = matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled);
+            if self.stale.contains(&t.id) {
+                continue;
+            }
+            match self.taps.iter_mut().find(|x| x.0 == t.id) {
+                Some(x) => {
+                    let was = x.2;
+                    x.2 |= (t.position - x.1).length() > TAP_SLOP * at.dp;
+                    // 끌기는 탭 범위를 넘은 뒤부터 — 넘는 순간엔 처음 자리부터 센다(손가락과 목록이 같이 간다).
+                    if x.2 {
+                        let from = if was { x.3 } else { x.1 };
+                        a.drag += from.y - t.position.y;
+                        a.drag_x += from.x - t.position.x;
+                        a.drag_at = Some(x.1);
+                    }
+                    x.3 = t.position;
+                    if ended {
+                        if !x.2 {
+                            a.tap = Some(t.position);
+                        }
+                        let id = t.id;
+                        self.taps.retain(|x| x.0 != id);
+                    }
+                }
+                None if !ended => self.taps.push((t.id, t.position, false, t.position)),
+                None => a.tap = Some(t.position),
+            }
+        }
+        self.taps.retain(|x| touches.iter().any(|t| t.id == x.0));
+        // 뗀 손가락은 묵은 목록에서 뺀다(같은 id가 다시 쓰여도 새 탭은 받게).
+        self.stale.retain(|id| {
+            touches.iter().any(|t| {
+                t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+            })
+        });
+        a
+    }
+
+    /// 끌어 조준하는 손가락(0217): 쥐고 있는 동안은 끈 쪽(끌기 전에는 가까운 적), 떼면 그 일 — 원거리를 모으던 중이면 누름 없이.
+    /// 숄더뷰의 한 대상 버튼(0229)이면 끈 만큼을 시점으로 돌려준다.
+    fn read_aimer(&mut self, touches: &[Finger], w: f32, h: f32, a: &mut Read) -> Vec2 {
+        let alive = |f: Option<u64>| {
+            f.filter(|id| {
+                touches.iter().any(|t| {
+                    t.id == *id && !matches!(t.phase, TouchPhase::Ended | TouchPhase::Cancelled)
+                })
+            })
+        };
+        let mut aim_look = Vec2::ZERO;
+        if let Some(m) = self.aimer {
+            let r = stick_radius(w, h);
+            let d = m.pos - m.center;
+            let out = m.out || d.length() > r * AIM_OUT;
+            let still = alive(Some(m.id)).is_some();
+            let charging = m.kind == self.ctx.shot() && self.ctx.charging;
+            if self.ctx.looks(m.kind) {
+                // 숄더뷰(0229): 끈 만큼 시점(`look` — 화면 오른쪽 반 끌기와 같은 셈), 겨누는 쪽은 크로스헤어.
+                aim_look = m.pos - m.prev;
+                if still {
+                    a.aim_hold = m.kind == self.ctx.shot();
+                    self.aimer = Some(Aimer {
+                        out,
+                        prev: m.pos,
+                        ..m
+                    });
+                } else {
+                    self.aimer = None;
+                    // 모으던 탄은 누름 없이 — 월드가 뗀 것을 보고 낸다. 쪽은 월드가 크로스헤어로(`aim_sight`·`aim_ahead`).
+                    if !charging {
+                        press(a, m.kind);
+                    }
+                }
+            } else if still {
+                let mut m = Aimer { out, ..m };
+                if out && d.length() > r * AIM_CANCEL {
+                    m.last = aim_dir(d);
+                    a.aim = m.last;
+                    a.aim_drag = true;
+                } else if !out {
+                    a.auto_aim = true;
+                }
+                a.aim_hold = m.kind == self.ctx.shot();
+                self.aimer = Some(m);
+            } else {
+                self.aimer = None;
+                match aim_end(out, d, r) {
+                    AimEnd::Tap => {
+                        if !charging {
+                            press(a, m.kind);
+                        }
+                        a.auto_aim = true;
+                    }
+                    AimEnd::Fire(dir) => {
+                        if !charging {
+                            press(a, m.kind);
+                        }
+                        a.aim = dir;
+                        a.aim_drag = true;
+                    }
+                    // 모으던 탄은 거둘 수 없다 — 마지막으로 겨눈 쪽으로 나간다.
+                    AimEnd::Cancel if charging => {
+                        a.aim = m.last;
+                        a.aim_drag = m.last != Vec2::ZERO;
+                    }
+                    AimEnd::Cancel => {}
+                }
+            }
+        }
+        aim_look
+    }
     /// 끌어 겨누는 중인 버튼(0217 — 끈 뒤, 취소 자리 밖) — 렌더가 땅 위 미리보기를 그린다.
     pub fn aiming(&self) -> Option<Kind> {
         let r = stick_radius(screen_width(), screen_height());
@@ -901,9 +1014,17 @@ impl Touch {
 
 fn press(a: &mut Read, k: Kind) {
     match k {
-        Kind::Attack | Kind::Hammer | Kind::Staff | Kind::Crossbow | Kind::Fist | Kind::Bow => {
-            a.attack = true
-        }
+        Kind::Attack
+        | Kind::Hammer
+        | Kind::Staff
+        | Kind::Crossbow
+        | Kind::Fist
+        | Kind::Bow
+        | Kind::Spear
+        | Kind::Daggers
+        | Kind::Greatsword
+        | Kind::Sickle
+        | Kind::Wand => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -929,7 +1050,48 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Seed
         | Kind::Swallow
         | Kind::Bash
-        | Kind::Roots => {}
+        | Kind::Roots
+        | Kind::Stitch
+        | Kind::Ram
+        | Kind::Toll
+        | Kind::Swat
+        | Kind::Ripple
+        | Kind::Snow
+        | Kind::Flare
+        | Kind::Snare
+        | Kind::GreatBell
+        | Kind::Blizzard
+        | Kind::Fuse
+        | Kind::Mine
+        | Kind::Rain
+        | Kind::Skewer
+        | Kind::Pole
+        | Kind::Pin
+        | Kind::Gale
+        | Kind::Pommel
+        | Kind::Shove
+        | Kind::Rally
+        | Kind::HandAxe
+        | Kind::Smite
+        | Kind::Javelin
+        | Kind::Pebble
+        | Kind::Slip
+        | Kind::Ambush
+        | Kind::Knives
+        | Kind::ShieldToss
+        | Kind::IronSnare
+        | Kind::Sunder
+        | Kind::Sear
+        | Kind::Tempest
+        | Kind::Quake2
+        | Kind::Reap
+        | Kind::Harvest
+        | Kind::Grove
+        | Kind::ThornSeed
+        | Kind::Hex
+        | Kind::Blight
+        | Kind::Price
+        | Kind::CurseBolt => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -938,7 +1100,12 @@ fn press(a: &mut Read, k: Kind) {
 /// 손가락이 중심에서 벗어난 만큼 → 스틱 값(x 오른쪽, y 위). 화면 y는 아래가 +라 뒤집는다. 데드존 뒤 0..1로 다시 편다.
 /// 시점 손가락의 지난 자리 `was`와 지금 자리 `now`(뗀 손가락은 `None`)로 (끈 거리, 거리 단계) — 순수(시험). 둘이 다 있으면 꼬집기만
 /// (돌리지 않는다 — 두 손가락을 벌리는데 화면이 같이 돌면 어지럽다), 하나면 끌기만. `pinch`에 벌어진 거리를 쌓고 `PINCH_STEP`마다 한 칸.
-pub fn look_from(was: &[(u64, Vec2)], now: &[Option<Vec2>], pinch: &mut f32) -> (Vec2, i32) {
+pub fn look_from(
+    was: &[(u64, Vec2)],
+    now: &[Option<Vec2>],
+    pinch: &mut f32,
+    dp: f32,
+) -> (Vec2, i32) {
     let both: Vec<(Vec2, Vec2)> = was
         .iter()
         .zip(now)
@@ -948,12 +1115,12 @@ pub fn look_from(was: &[(u64, Vec2)], now: &[Option<Vec2>], pinch: &mut f32) -> 
         [(w0, n0), (w1, n1)] => {
             *pinch += (*n0 - *n1).length() - (*w0 - *w1).length();
             let mut zoom = 0;
-            while *pinch >= dp(PINCH_STEP) {
-                *pinch -= dp(PINCH_STEP);
+            while *pinch >= PINCH_STEP * dp {
+                *pinch -= PINCH_STEP * dp;
                 zoom += 1;
             }
-            while *pinch <= -dp(PINCH_STEP) {
-                *pinch += dp(PINCH_STEP);
+            while *pinch <= -(PINCH_STEP * dp) {
+                *pinch += PINCH_STEP * dp;
                 zoom -= 1;
             }
             (Vec2::ZERO, zoom)
@@ -976,18 +1143,9 @@ pub fn stick_vector(d: Vec2, radius: f32) -> Vec2 {
 const INK: Color = Color::new(0.07, 0.05, 0.1, 1.0);
 const WARM: Color = Color::new(1.0, 0.8, 0.42, 1.0);
 
-/// 공격 버튼에 그릴 그림(0147 — 사장 "어차피 종류는 정해졌으니까"): 든 무기마다 하나. `_` 없는 match라 새 무기는 여기서 그림을 고르게 된다.
+/// 공격 버튼에 그릴 그림(0147 — 사장 "어차피 종류는 정해졌으니까"): 든 무기마다 하나, 무기 표의 줄(`Weapon::icon`).
 pub fn attack_icon(w: crate::weapons::Id) -> Kind {
-    use crate::weapons::Id;
-    match w {
-        Id::Sword => Kind::Attack,
-        Id::Hammer => Kind::Hammer,
-        Id::Staff => Kind::Staff,
-        // 쇠뇌의 평타는 사격(0223 — 수류탄은 특수, `cast_icon`).
-        Id::Crossbow => Kind::Crossbow,
-        Id::Fists => Kind::Fist,
-        Id::Bow => Kind::Bow,
-    }
+    w.def().icon
 }
 
 /// 터치 오버레이 그리기(화면 패스). `attack` = 공격 버튼의 그림(`attack_icon`). `locked`면 락온 버튼을 채운다. `turn` = 땅 돌리기 준비 0..1 — 차오르는 동안 옅고, 다 차면 밝다.
@@ -1008,6 +1166,29 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Swallow => Kind::Swallow,
         Id::Bash => Kind::Bash,
         Id::Roots => Kind::Roots,
+        Id::Stitch => Kind::Stitch,
+        Id::Ram => Kind::Ram,
+        Id::Toll => Kind::Toll,
+        Id::Swat => Kind::Swat,
+        Id::Ripple => Kind::Ripple,
+        Id::Snow => Kind::Snow,
+        Id::Flare => Kind::Flare,
+        Id::Snare => Kind::Snare,
+        Id::Fuse => Kind::Fuse,
+        Id::Mine => Kind::Mine,
+        Id::Skewer => Kind::Skewer,
+        Id::Pole => Kind::Pole,
+        Id::Pin => Kind::Pin,
+        Id::Pommel => Kind::Pommel,
+        Id::Shove => Kind::Shove,
+        Id::Rally => Kind::Rally,
+        Id::Slip => Kind::Slip,
+        Id::Sunder => Kind::Sunder,
+        Id::Sear => Kind::Sear,
+        Id::Reap => Kind::Reap,
+        Id::Harvest => Kind::Harvest,
+        Id::Hex => Kind::Hex,
+        Id::Blight => Kind::Blight,
     }
 }
 
@@ -1018,21 +1199,47 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Upend => Kind::Upend,
         Ult::Flurry => Kind::Flurry,
         Ult::Line => Kind::Line,
+        Ult::Bell => Kind::GreatBell,
+        Ult::Blizzard => Kind::Blizzard,
+        Ult::Rain => Kind::Rain,
+        Ult::Gale => Kind::Gale,
+        Ult::Ambush => Kind::Ambush,
+        Ult::Tempest => Kind::Tempest,
+        Ult::Grove => Kind::Grove,
+        Ult::Price => Kind::Price,
     }
 }
 
-/// 특수 버튼의 그림(0151 → 0213 → 0223 → 0231): 근접 무기 = 마법 탄의 별, 원거리 무기 = 던지는 것(쇠뇌 = 수류탄 · 활 = 뿌리 씨앗).
+/// 특수 버튼의 그림(0151 → 0213 → 0223 → 0231 → 0274 ②b): 근접 무기 = 종류의 RB(손도끼 · 신성한 빛 · 마법탄의 별 · 창 · 돌),
+/// 원거리 무기 = 던지는 것(쇠뇌 = 수류탄 · 활 = 뿌리 씨앗). 새 RB 꼴 = 그림 하나(`toss_icon`).
 pub fn cast_icon(w: crate::weapons::Id) -> Kind {
     let d = w.def();
     match (d.rb, d.grenade) {
         (crate::weapons::Rb::Shot { .. }, Some(g)) if g.root > 0.0 => Kind::Seed,
         (crate::weapons::Rb::Shot { .. }, _) => Kind::Bomb,
-        _ => Kind::Cast,
+        (crate::weapons::Rb::Toss, _) => toss_icon(w.bolts().0.look),
     }
 }
 
+/// 지금 특수 버튼(RB · 원거리 무기의 수류탄 자리)의 그림(0276): 방패가 RB를 맡으면 던지는 방패, 빈 손의 쇠뇌면 쇠 덫, 그 밖에는
+/// 든 무기의 것(`cast_icon`). 터치 버튼과 HUD의 칸이 같이 읽는다.
+pub fn rb_icon(w: &crate::world::World) -> Kind {
+    if w.shield_throws() {
+        Kind::ShieldToss
+    } else if w.bare() == Some(crate::weapons::Bare::Snare) {
+        Kind::IronSnare
+    } else {
+        cast_icon(w.player.weapon)
+    }
+}
+
+/// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b — `LookDef::icon`, 0278 R17).
+pub fn toss_icon(look: crate::weapons::Look) -> Kind {
+    look.def().icon
+}
+
 pub fn draw(o: &Overlay, v: &View) {
-    let (locked, turn, attack) = (v.locked, v.turn, v.attack);
+    let (turn, attack) = (v.turn, v.attack);
     let line = Color::new(1.0, 1.0, 1.0, 0.5);
     let back = Color::new(INK.r, INK.g, INK.b, 0.42);
     if let Some((origin, pos)) = o.stick {
@@ -1087,7 +1294,7 @@ pub fn draw(o: &Overlay, v: &View) {
         draw_arc_left_right(l.center, r.center, rr, soft);
     }
     for b in &o.buttons {
-        let on = b.kind == Kind::Lock && locked;
+        let on = lit(b.kind, v);
         let is_turn = matches!(b.kind, Kind::TurnLeft | Kind::TurnRight);
         draw_circle(b.center.x, b.center.y, b.radius, back);
         if on {
@@ -1135,10 +1342,10 @@ pub fn draw(o: &Overlay, v: &View) {
                 let a0 = (-90.0 + 360.0 * i as f32 / n as f32).to_radians();
                 let a1 = (-90.0 + 360.0 * (i + 1) as f32 / n as f32).to_radians();
                 draw_line(
-                    b.center.x + rr * a0.cos(),
-                    b.center.y + rr * a0.sin(),
-                    b.center.x + rr * a1.cos(),
-                    b.center.y + rr * a1.sin(),
+                    b.center.x + rr * a0.cos_d(),
+                    b.center.y + rr * a0.sin_d(),
+                    b.center.x + rr * a1.cos_d(),
+                    b.center.y + rr * a1.sin_d(),
                     3.0,
                     Color::new(WARM.r, WARM.g, WARM.b, 0.9),
                 );
@@ -1195,6 +1402,16 @@ pub fn draw(o: &Overlay, v: &View) {
     draw_aim(o.aim);
 }
 
+/// 버튼이 금빛으로 켜지나(채움 · 테 · 그림): 락온 중의 락온 버튼, 교체 공격의 창이 열린 동안의 바꾸기 버튼(0277 — 지금 바꾸면
+/// 들어오는 무기가 친다). 큰 기술 버튼은 늘 금빛이라 따로 본다.
+fn lit(kind: Kind, v: &View) -> bool {
+    match kind {
+        Kind::Lock => v.locked,
+        Kind::Swap => v.swap_strike,
+        _ => false,
+    }
+}
+
 /// 든 무기로 못 쓰는 스킬의 그림 밝기(대기 중보다 어둡게 — `hud`의 같은 값).
 const UNFIT_DIM: f32 = 0.18;
 
@@ -1247,10 +1464,10 @@ fn draw_arc_left_right(l: Vec2, r: Vec2, rr: f32, col: Color) {
             let a0 = (from + 180.0 * i as f32 / n as f32).to_radians();
             let a1 = (from + 180.0 * (i + 1) as f32 / n as f32).to_radians();
             draw_line(
-                c.x + rr * a0.cos(),
-                c.y - rr * a0.sin(),
-                c.x + rr * a1.cos(),
-                c.y - rr * a1.sin(),
+                c.x + rr * a0.cos_d(),
+                c.y - rr * a0.sin_d(),
+                c.x + rr * a1.cos_d(),
+                c.y - rr * a1.sin_d(),
                 2.0,
                 col,
             );
@@ -1261,601 +1478,9 @@ fn draw_arc_left_right(l: Vec2, r: Vec2, rr: f32, col: Color) {
 /// 픽토그램의 한 변(칸).
 pub const ICON_N: usize = 13;
 
-/// 터치 픽토그램(0146·0147 — 사장 "터치스크린의 아이콘도 좀 거시기 하네"): 13×13 도트 그림(`#` = 칠한 칸). 가는 선 그림은 도트 화면 위에서
-/// 다른 게임의 UI처럼 떠 보였다 — 첫 게임도 같은 판정을 도트 그림으로 풀었다(nail 0172 판정 11). 돌리기 둘은 한 그림을 좌우로 뒤집는다
-/// (`icon_cell`). 고치면 시험 `touch_icons_are_13_by_13_and_tell_each_other_apart`.
-pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
-    match k {
-        Kind::Hammer => [
-            "......##.....",
-            ".....####....",
-            "....######...",
-            "...########..",
-            "....########.",
-            ".....########",
-            "....#.######.",
-            "...###.####..",
-            "..###...##...",
-            ".###.........",
-            "###..........",
-            "##...........",
-            ".............",
-        ],
-        Kind::Staff => [
-            ".........###.",
-            "........#####",
-            "........#####",
-            "........#####",
-            ".......#.###.",
-            "......###....",
-            ".....###.....",
-            "....###......",
-            "...###.......",
-            "..###........",
-            ".###.........",
-            "###..........",
-            "##...........",
-        ],
-        Kind::Crossbow => [
-            "......#......",
-            "..#########..",
-            ".###..#..###.",
-            "##....#....##",
-            "#.#...#...#.#",
-            "...#..#..#...",
-            "....#.#.#....",
-            ".....###.....",
-            "......#......",
-            ".....###.....",
-            ".....###.....",
-            ".....###.....",
-            ".............",
-        ],
-        // 활(0231): 왼쪽에 휜 활대, 두 끝에서 가운데로 당긴 시위, 오른쪽으로 화살.
-        Kind::Bow => [
-            "...##........",
-            "..#..#.......",
-            ".#....#......",
-            ".#.....#.....",
-            "#.......#..#.",
-            "#........#.##",
-            "#############",
-            "#........#.##",
-            "#.......#..#.",
-            ".#.....#.....",
-            ".#....#......",
-            "..#..#.......",
-            "...##........",
-        ],
-        Kind::Fist => [
-            ".............",
-            "...##.##.##..",
-            "..###.##.###.",
-            "..##########.",
-            ".###########.",
-            "############.",
-            "####.......#.",
-            "####.#######.",
-            ".###########.",
-            ".###########.",
-            "..#########..",
-            "...#######...",
-            ".............",
-        ],
-        Kind::Attack => [
-            "..........###",
-            ".........####",
-            "........####.",
-            ".......####..",
-            "......####...",
-            ".##..####....",
-            ".###.###.....",
-            "..#####......",
-            "...####......",
-            "..######.....",
-            ".###..###....",
-            "###....##....",
-            "##...........",
-        ],
-        Kind::Dodge => [
-            ".............",
-            ".............",
-            "###...###....",
-            ".###...###...",
-            "..###...###..",
-            "...###...###.",
-            "....###...###",
-            "...###...###.",
-            "..###...###..",
-            ".###...###...",
-            "###...###....",
-            ".............",
-            ".............",
-        ],
-        Kind::Parry => [
-            ".............",
-            ".###########.",
-            ".###########.",
-            ".##.......##.",
-            ".##...#...##.",
-            ".##..###..##.",
-            ".##...#...##.",
-            ".##.......##.",
-            "..##.....##..",
-            "...##...##...",
-            "....##.##....",
-            ".....###.....",
-            "......#......",
-        ],
-        Kind::Cast => [
-            "......#......",
-            "......#......",
-            ".....###.....",
-            ".....###.....",
-            "....#####....",
-            "..#########..",
-            "#############",
-            "..#########..",
-            "....#####....",
-            ".....###.....",
-            ".....###.....",
-            "......#......",
-            "......#......",
-        ],
-        Kind::Jump => [
-            "......#......",
-            ".....###.....",
-            "....#####....",
-            "...#######...",
-            "..#########..",
-            ".....###.....",
-            ".....###.....",
-            ".....###.....",
-            ".....###.....",
-            ".............",
-            "..#########..",
-            "..#########..",
-            ".............",
-        ],
-        Kind::Pick => [
-            "......#......",
-            "......#......",
-            "......#......",
-            "...#..#..#...",
-            "....#.#.#....",
-            ".....###.....",
-            "......#......",
-            ".............",
-            ".#.........#.",
-            ".#.........#.",
-            ".#.........#.",
-            ".###########.",
-            ".............",
-        ],
-        Kind::Open => [
-            ".............",
-            "..#########..",
-            ".###########.",
-            ".###########.",
-            ".###########.",
-            ".............",
-            ".####...####.",
-            ".####...####.",
-            ".###########.",
-            ".###########.",
-            ".###########.",
-            ".###########.",
-            ".............",
-        ],
-        Kind::Pull => [
-            ".........##..",
-            "........####.",
-            "........####.",
-            ".......###...",
-            "......##.....",
-            ".....##......",
-            "....##.......",
-            "...##........",
-            "...##........",
-            ".#########...",
-            ".#########...",
-            "###########..",
-            ".............",
-        ],
-        Kind::Talk => [
-            ".............",
-            "..#########..",
-            ".###########.",
-            ".###########.",
-            ".##.##.##.##.",
-            ".###########.",
-            ".###########.",
-            "..#########..",
-            "....###......",
-            "...##........",
-            "..##.........",
-            ".............",
-            ".............",
-        ],
-        Kind::Read => [
-            "...#######...",
-            "..#########..",
-            "..##.....##..",
-            "..#.#####.#..",
-            "..##.....##..",
-            "..#.####..#..",
-            "..##.....##..",
-            "..#.#####.#..",
-            "..##.....##..",
-            "..#########..",
-            ".###########.",
-            ".###########.",
-            ".............",
-        ],
-        Kind::Rest => [
-            "......#......",
-            ".....##......",
-            ".....###.....",
-            "....####.#...",
-            "...#####.##..",
-            "...########..",
-            "..#########..",
-            "..####.####..",
-            "...###.###...",
-            "....#####....",
-            "##.........##",
-            ".###########.",
-            "##.........##",
-        ],
-        Kind::Lock => [
-            "......#......",
-            "......#......",
-            "...#######...",
-            "..#########..",
-            "..##.....##..",
-            "..##.....##..",
-            "####..#..####",
-            "..##.....##..",
-            "..##.....##..",
-            "..#########..",
-            "...#######...",
-            "......#......",
-            "......#......",
-        ],
-        Kind::Flask => [
-            "......#......",
-            ".....##......",
-            ".....###.....",
-            "....#####....",
-            "....#####....",
-            ".....###.....",
-            ".............",
-            ".###########.",
-            "..#########..",
-            "...#######...",
-            "....#####....",
-            "...#######...",
-            "..#########..",
-        ],
-        Kind::Pause => [
-            ".............",
-            ".............",
-            "...###.###...",
-            "...###.###...",
-            "...###.###...",
-            "...###.###...",
-            "...###.###...",
-            "...###.###...",
-            "...###.###...",
-            "...###.###...",
-            "...###.###...",
-            ".............",
-            ".............",
-        ],
-        // 스킬(0151). 휘돌이: 바람개비 날 넷.
-        Kind::Skill1 | Kind::Whirl => [
-            "......#......",
-            ".....##......",
-            "....###......",
-            "....###...#..",
-            ".....##.###..",
-            "..#..######..",
-            ".###########.",
-            "..######..#..",
-            "..###.##.....",
-            "..#...###....",
-            "......###....",
-            "......##.....",
-            "......#......",
-        ],
-        // 가로지르기: 선 하나를 꿰뚫고 지나가는 화살.
-        Kind::Skill2 | Kind::Cut => [
-            "...##........",
-            "...##........",
-            "...##....#...",
-            "...##....##..",
-            "...##....###.",
-            "############.",
-            "#############",
-            "############.",
-            "...##....###.",
-            "...##....##..",
-            "...##....#...",
-            "...##........",
-            "...##........",
-        ],
-        // 끌어모으기: 한 점으로 모이는 화살 넷.
-        Kind::Gather => [
-            "......#......",
-            "....#####....",
-            ".....###.....",
-            "......#......",
-            ".#.........#.",
-            ".##..###..##.",
-            "####.###.####",
-            ".##..###..##.",
-            ".#.........#.",
-            "......#......",
-            ".....###.....",
-            "....#####....",
-            "......#......",
-        ],
-        // 땅울림: 내리찍는 화살과 갈라지는 땅.
-        Kind::Quake => [
-            ".....###.....",
-            ".....###.....",
-            ".....###.....",
-            "..#########..",
-            "...#######...",
-            "....#####....",
-            ".....###.....",
-            "......#......",
-            "#############",
-            "#############",
-            "..#...#...#..",
-            ".#....#....#.",
-            "#.....#.....#",
-        ],
-        // 큰 기술 쟁반 뒤집기: 바깥으로 터지는 살과 가운데 판.
-        Kind::Ult | Kind::Upend => [
-            "#.....#.....#",
-            ".#....#....#.",
-            "..#...#...#..",
-            ".............",
-            "....#####....",
-            "....#####....",
-            "###.#####.###",
-            "....#####....",
-            "....#####....",
-            ".............",
-            "..#...#...#..",
-            ".#....#....#.",
-            "#.....#.....#",
-        ],
-        // 0158 G2. 버팀: 땅에 박은 기둥과 양옆에서 튕겨 나가는 타.
-        Kind::Brace => [
-            ".............",
-            "#....###....#",
-            ".#..#####..#.",
-            "....#####....",
-            "....#####....",
-            "##..#####..##",
-            "....#####....",
-            "....#####....",
-            ".#..#####..#.",
-            "#...#####...#",
-            "....#####....",
-            ".###########.",
-            ".###########.",
-        ],
-        // 되울림: 한 점에서 퍼지는 울림 두 겹.
-        Kind::Echo => [
-            "....#####....",
-            "..##.....##..",
-            ".#.........#.",
-            ".#...###...#.",
-            "#...#...#...#",
-            "#..#.....#..#",
-            "#..#..#..#..#",
-            "#..#.....#..#",
-            "#...#...#...#",
-            ".#...###...#.",
-            ".#.........#.",
-            "..##.....##..",
-            "....#####....",
-        ],
-        // 던지기: 도는 날과 되돌아오는 화살.
-        Kind::Throw => [
-            ".............",
-            "..####.......",
-            ".######......",
-            ".###.###.....",
-            ".###..###....",
-            "..##...###...",
-            "........###..",
-            ".....#...###.",
-            "....##...###.",
-            "...#########.",
-            "....#######..",
-            ".....#.......",
-            ".............",
-        ],
-        // 잔불 흩기: 바닥의 불과 흩어져 오르는 불티.
-        Kind::Embers => [
-            "..#.....#....",
-            ".....#.....#.",
-            ".#.......#...",
-            "....#.#......",
-            "..#..###..#..",
-            "....#####....",
-            ".#..#####..#.",
-            "...#######...",
-            "...###.###...",
-            "...##...##...",
-            "....#####....",
-            ".............",
-            "#############",
-        ],
-        // 제비걸음(0214): 꼬리가 갈라진 제비.
-        Kind::Swallow => [
-            ".............",
-            "#...........#",
-            "##.........##",
-            ".##.......##.",
-            "..###...###..",
-            "...#######...",
-            "....#####....",
-            ".....###.....",
-            "....##.##....",
-            "...##...##...",
-            "..##.....##..",
-            ".............",
-            ".............",
-        ],
-        // 막아치기(0214): 내민 주먹과 부딪는 결.
-        Kind::Bash => [
-            ".............",
-            ".......#.....",
-            "...####.#....",
-            "..######.#...",
-            "..######..#..",
-            "..######...#.",
-            "..######..#..",
-            "..######.#...",
-            "...####.#....",
-            ".......#.....",
-            ".............",
-            ".............",
-            ".............",
-        ],
-        // 뿌리 솟기(0214): 땅에서 차례로 솟는 뿌리 셋.
-        Kind::Roots => [
-            ".............",
-            ".............",
-            ".........#...",
-            ".....#...#...",
-            ".....#..###..",
-            ".#..###.###..",
-            ".#..###.###..",
-            "###.###.###..",
-            "###.###.###.#",
-            "###.###.###.#",
-            "#############",
-            ".............",
-            ".............",
-        ],
-        // 큰 기술 몰아치기: 잇달아 긋는 빗금 셋.
-        Kind::Flurry => [
-            ".........###.",
-            ".......####..",
-            ".....####....",
-            "...####......",
-            ".###.....###.",
-            ".......####..",
-            ".....####....",
-            "...####......",
-            ".###.....###.",
-            ".......####..",
-            ".....####....",
-            "...####......",
-            ".###.........",
-        ],
-        // 큰 기술 한 줄기: 화면을 가르는 긴 한 줄과 번쩍임 둘.
-        Kind::Line => [
-            "##...........",
-            "###..........",
-            ".###.........",
-            "..###....#...",
-            "...###...#...",
-            "....###.###..",
-            ".....###.#...",
-            "......###....",
-            "..#....###...",
-            ".###....###..",
-            "..#......###.",
-            "..........###",
-            "...........##",
-        ],
-        // 수류탄(원거리 무기의 RB): 둥근 몸과 도화선.
-        Kind::Bomb => [
-            ".........##..",
-            "........#..#.",
-            ".......#.....",
-            "....#####....",
-            "...#######...",
-            "..####..###..",
-            "..###...###..",
-            "..#########..",
-            "..#########..",
-            "..#########..",
-            "...#######...",
-            "....#####....",
-            ".............",
-        ],
-        // 뿌리 씨앗(0231): 위에 둥근 씨, 아래로 갈라져 내리는 뿌리.
-        Kind::Seed => [
-            "....#####....",
-            "...#######...",
-            "..#########..",
-            "..#########..",
-            "..#########..",
-            "...#######...",
-            "....#####....",
-            "......#......",
-            ".....###.....",
-            "....#.#.#....",
-            "...#..#..#...",
-            "..#...#...#..",
-            ".#....#....#.",
-        ],
-        // 바꾸기(0223): 마주 가는 화살 둘 — 버튼에는 바꿔 들 무기의 그림이 올라가고, 이 그림은 그 무기에 그림이 없을 때만.
-        Kind::Swap => [
-            ".............",
-            ".............",
-            "....#........",
-            "...##........",
-            "..#########..",
-            "...##........",
-            "....#........",
-            "........#....",
-            "........##...",
-            "..#########..",
-            "........##...",
-            "........#....",
-            ".............",
-        ],
-        Kind::View => [
-            ".............",
-            ".............",
-            ".............",
-            "....#####....",
-            "..##.....##..",
-            ".#...###...#.",
-            "#...#####...#",
-            ".#...###...#.",
-            "..##.....##..",
-            "....#####....",
-            ".............",
-            ".............",
-            ".............",
-        ],
-        Kind::TurnLeft | Kind::TurnRight => [
-            ".............",
-            ".............",
-            "...######....",
-            "..########...",
-            ".###....###..",
-            ".##......##..",
-            "##.......##..",
-            "##....#######",
-            "##.....#####.",
-            "........###..",
-            ".........#...",
-            ".............",
-            ".............",
-        ],
-    }
-}
+// 그림 데이터(13×13 마스크)는 `touch/icons.rs`(0278 R25b).
+mod icons;
+pub use icons::icon_mask;
 
 /// 픽토그램의 칸 `(x, y)`가 칠해졌나 — 왼쪽 돌리기는 오른쪽 돌리기의 거울상.
 pub fn icon_cell(k: Kind, x: usize, y: usize) -> bool {
@@ -1956,6 +1581,52 @@ mod tests {
             Kind::Swallow,
             Kind::Bash,
             Kind::Roots,
+            Kind::Stitch,
+            Kind::Ram,
+            Kind::Toll,
+            Kind::Swat,
+            Kind::Ripple,
+            Kind::Snow,
+            Kind::Flare,
+            Kind::Snare,
+            Kind::GreatBell,
+            Kind::Blizzard,
+            Kind::Fuse,
+            Kind::Mine,
+            Kind::Rain,
+            Kind::Spear,
+            Kind::Skewer,
+            Kind::Pole,
+            Kind::Pin,
+            Kind::Gale,
+            Kind::Pommel,
+            Kind::Shove,
+            Kind::Rally,
+            Kind::HandAxe,
+            Kind::Smite,
+            Kind::Javelin,
+            Kind::Pebble,
+            Kind::Daggers,
+            Kind::Slip,
+            Kind::Ambush,
+            Kind::Knives,
+            Kind::ShieldToss,
+            Kind::IronSnare,
+            Kind::Greatsword,
+            Kind::Sunder,
+            Kind::Sear,
+            Kind::Tempest,
+            Kind::Quake2,
+            Kind::Sickle,
+            Kind::Reap,
+            Kind::Harvest,
+            Kind::Grove,
+            Kind::ThornSeed,
+            Kind::Wand,
+            Kind::Hex,
+            Kind::Blight,
+            Kind::Price,
+            Kind::CurseBolt,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,
@@ -2212,16 +1883,24 @@ mod tests {
             prev: at,
             moved: false,
         };
-        assert_eq!(r.drag(at + vec2(10.0, 0.0)), Vec2::ZERO, "jitter");
-        assert_eq!(r.drag(at + vec2(20.0, 0.0)), Vec2::ZERO, "still inside");
-        assert_eq!(r.drag(at + vec2(30.0, 0.0)), Vec2::ZERO, "crosses: no jump");
+        assert_eq!(r.drag(at + vec2(10.0, 0.0), 1.0), Vec2::ZERO, "jitter");
         assert_eq!(
-            r.drag(at + vec2(45.0, 5.0)),
+            r.drag(at + vec2(20.0, 0.0), 1.0),
+            Vec2::ZERO,
+            "still inside"
+        );
+        assert_eq!(
+            r.drag(at + vec2(30.0, 0.0), 1.0),
+            Vec2::ZERO,
+            "crosses: no jump"
+        );
+        assert_eq!(
+            r.drag(at + vec2(45.0, 5.0), 1.0),
             vec2(15.0, 5.0),
             "then follows"
         );
         assert_eq!(
-            r.drag(at + vec2(10.0, 5.0)),
+            r.drag(at + vec2(10.0, 5.0), 1.0),
             vec2(-35.0, 0.0),
             "even back inside"
         );
@@ -2271,7 +1950,16 @@ mod tests {
         use crate::weapons::Id;
         assert_eq!(cast_icon(Id::Crossbow), Kind::Bomb);
         assert_eq!(attack_icon(Id::Crossbow), Kind::Crossbow);
-        assert_eq!(cast_icon(Id::Sword), Kind::Cast);
+        // 0274 ②b: 근접 무기의 RB는 종류마다 다른 그림 — 지팡이만 마법탄의 별.
+        assert_eq!(cast_icon(Id::Sword), Kind::HandAxe);
+        assert_eq!(cast_icon(Id::Hammer), Kind::Smite);
+        assert_eq!(cast_icon(Id::Staff), Kind::Cast);
+        assert_eq!(cast_icon(Id::Spear), Kind::Javelin);
+        assert_eq!(cast_icon(Id::Fists), Kind::Pebble);
+        let rbs: Vec<Kind> = crate::weapons::IDS.iter().map(|w| cast_icon(*w)).collect();
+        for (i, a) in rbs.iter().enumerate() {
+            assert!(!rbs[i + 1..].contains(a), "{a:?} on two weapons");
+        }
     }
 
     #[test]
@@ -2279,16 +1967,17 @@ mod tests {
         let mut pinch = 0.0;
         // 한 손가락: 끈 만큼.
         let was = [(1, vec2(700.0, 300.0))];
-        let (l, z) = look_from(&was, &[Some(vec2(730.0, 290.0))], &mut pinch);
+        let (l, z) = look_from(&was, &[Some(vec2(730.0, 290.0))], &mut pinch, 1.0);
         assert_eq!((l, z), (vec2(30.0, -10.0), 0));
         // 뗀 손가락은 돌리지 않는다.
-        assert_eq!(look_from(&was, &[None], &mut pinch), (Vec2::ZERO, 0));
+        assert_eq!(look_from(&was, &[None], &mut pinch, 1.0), (Vec2::ZERO, 0));
         // 두 손가락: 벌리면 + 한 칸(돌리지는 않는다), 오므리면 −, 조금씩 벌린 것도 쌓인다.
         let two = [(1, vec2(600.0, 300.0)), (2, vec2(800.0, 300.0))];
         let (l, z) = look_from(
             &two,
             &[Some(vec2(560.0, 300.0)), Some(vec2(840.0, 300.0))],
             &mut pinch,
+            1.0,
         );
         assert_eq!((l, z), (Vec2::ZERO, 1));
         let mut pinch = 0.0;
@@ -2296,16 +1985,18 @@ mod tests {
             &two,
             &[Some(vec2(640.0, 300.0)), Some(vec2(760.0, 300.0))],
             &mut pinch,
+            1.0,
         );
         assert_eq!(z, -1);
         let mut pinch = 0.0;
         let small = [Some(vec2(580.0, 300.0)), Some(vec2(820.0, 300.0))];
-        assert_eq!(look_from(&two, &small, &mut pinch).1, 0);
+        assert_eq!(look_from(&two, &small, &mut pinch, 1.0).1, 0);
         let wider = [(1, vec2(580.0, 300.0)), (2, vec2(820.0, 300.0))];
         let (_, z) = look_from(
             &wider,
             &[Some(vec2(560.0, 300.0)), Some(vec2(840.0, 300.0))],
             &mut pinch,
+            1.0,
         );
         assert_eq!(z, 1, "40 + 40 = 80 px");
     }
@@ -2381,5 +2072,261 @@ mod tests {
         let plain = layout_at(w, h, Ctx::ALL, 1.0);
         let same = safe_layout(w, h, Ctx::ALL, 1.0, [0.0; 4]);
         assert!(plain.iter().zip(&same).all(|(a, b)| a.center == b.center));
+    }
+
+    /// 0277: 교체 공격의 창이 열린 동안(`World::swap_strikes`)만 바꾸기 버튼이 금빛으로 켜진다 — HUD의 부무기 칸 테와 같은 때.
+    /// 다른 버튼은 그 창과 상관없다(락온 버튼은 락온 때만).
+    #[test]
+    fn the_swap_button_lights_gold_only_while_a_swap_strike_is_open() {
+        let view = |swap_strike: bool, locked: bool| View {
+            locked,
+            turn: 1.0,
+            attack: Kind::Attack,
+            cast: Kind::Cast,
+            swap: Kind::Hammer,
+            skills: [(Kind::Whirl, 1.0); 2],
+            vacant: [false; 2],
+            unfit: [false; 2],
+            active: [0.0; 2],
+            ult: Kind::Upend,
+            swap_strike,
+        };
+        assert!(lit(Kind::Swap, &view(true, false)));
+        assert!(!lit(Kind::Swap, &view(false, true)));
+        assert!(
+            !lit(Kind::Lock, &view(true, false)),
+            "the swap window lights only the swap"
+        );
+        assert!(lit(Kind::Lock, &view(false, true)));
+        for k in [Kind::Attack, Kind::Dodge, Kind::Parry, Kind::Jump] {
+            assert!(!lit(k, &view(true, true)), "{k:?}");
+        }
+    }
+
+    // --- 손가락을 손으로 짓는 시험(0278 R23 — `Touch::read_fingers`는 엔진을 부르지 않는다) ---
+
+    const PHONE: Surface = Surface {
+        w: 1280.0,
+        h: 720.0,
+        dp: 1.0,
+        size: 1.0,
+        safe: [0.0; 4],
+    };
+
+    fn finger(id: u64, phase: TouchPhase, at: Vec2) -> Finger {
+        Finger {
+            id,
+            phase,
+            position: at,
+        }
+    }
+
+    fn button(ctx: Ctx, k: Kind) -> Vec2 {
+        safe_layout(PHONE.w, PHONE.h, ctx, PHONE.size, PHONE.safe)
+            .iter()
+            .find(|b| b.kind == k)
+            .unwrap()
+            .center
+    }
+
+    /// 화면 오른쪽 반에서 어느 버튼에서도 `room`보다 먼 자리(시점 손가락이 닿을 빈 자리).
+    fn empty_right(ctx: Ctx, room: f32) -> Vec2 {
+        let b = safe_layout(PHONE.w, PHONE.h, ctx, PHONE.size, PHONE.safe);
+        (0..72)
+            .flat_map(|y| {
+                (0..64).map(move |x| vec2(PHONE.w * 0.5 + x as f32 * 10.0, y as f32 * 10.0))
+            })
+            .find(|p| {
+                p.x - room >= PHONE.w * 0.5
+                    && p.x + room < PHONE.w
+                    && b.iter()
+                        .all(|b| (*p - b.center).length() > b.radius * 1.25 + room)
+            })
+            .expect("an empty spot on the right half")
+    }
+
+    #[test]
+    fn a_tap_on_a_button_presses_it_once_and_holding_keeps_it_held() {
+        let mut t = Touch::default();
+        let at = button(t.ctx, Kind::Dodge);
+        let a = t.read_fingers(&[finger(1, TouchPhase::Started, at)], PHONE, false);
+        assert!(a.active && a.dodge && a.dodge_held);
+        let a = t.read_fingers(&[finger(1, TouchPhase::Stationary, at)], PHONE, false);
+        assert!(!a.dodge && a.dodge_held, "held, not pressed again");
+        let a = t.read_fingers(&[finger(1, TouchPhase::Ended, at)], PHONE, false);
+        assert!(!a.dodge && !a.dodge_held);
+        let a = t.read_fingers(&[], PHONE, false);
+        assert_eq!(a, Read::default());
+    }
+
+    #[test]
+    fn letting_go_of_an_aiming_button_taps_the_nearest_fires_the_drag_or_cancels_at_the_centre() {
+        let ctx = Ctx {
+            aim_cast: true,
+            ..Ctx::default()
+        };
+        let r = stick_radius(PHONE.w, PHONE.h);
+        let run = |path: &[Vec2]| -> Vec<Read> {
+            let mut t = Touch {
+                ctx,
+                ..Touch::default()
+            };
+            path.iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let phase = match i {
+                        0 => TouchPhase::Started,
+                        i if i + 1 == path.len() => TouchPhase::Ended,
+                        _ => TouchPhase::Moved,
+                    };
+                    t.read_fingers(&[finger(7, phase, *p)], PHONE, false)
+                })
+                .collect()
+        };
+        let c = button(ctx, Kind::Cast);
+        // 톡: 짚는 동안은 누름 없이 가까운 적, 떼면 그 일 + 가까운 적.
+        let tap = run(&[c, c]);
+        assert!(!tap[0].cast && tap[0].auto_aim && tap[0].aim_hold);
+        assert!(tap[1].cast && tap[1].auto_aim && !tap[1].aim_drag);
+        // 끌기: 끄는 동안은 그 쪽(누름 없이), 떼면 그 쪽으로.
+        let right = c + vec2(r, 0.0);
+        let drag = run(&[c, right, right]);
+        let east = |v: Vec2| (v - vec2(1.0, 0.0)).length() < 1e-5;
+        assert!(!drag[1].cast && drag[1].aim_drag && east(drag[1].aim));
+        assert!(drag[2].cast && drag[2].aim_drag && east(drag[2].aim));
+        // 끌었다가 가운데로 되돌려 떼면 하지 않는다.
+        let back = c + vec2(r * 0.1, 0.0);
+        let cancel = run(&[c, right, back, back]);
+        assert!(!cancel[3].cast && !cancel[3].aim_drag && !cancel[3].auto_aim);
+    }
+
+    #[test]
+    fn in_the_shoulder_view_a_button_finger_turns_the_view_past_the_tap_slop_while_the_press_stays()
+    {
+        let ctx = Ctx {
+            look_aim: true,
+            ..Ctx::default()
+        };
+        let mut t = Touch {
+            ctx,
+            ..Touch::default()
+        };
+        let at = button(ctx, Kind::Dodge);
+        let mut step =
+            |phase, dx: f32| t.read_fingers(&[finger(3, phase, at + vec2(dx, 0.0))], PHONE, false);
+        let a = step(TouchPhase::Started, 0.0);
+        assert!(a.dodge && a.look == Vec2::ZERO);
+        let a = step(TouchPhase::Moved, 10.0);
+        assert!(
+            a.look == Vec2::ZERO && a.dodge_held,
+            "jitter inside the slop"
+        );
+        let a = step(TouchPhase::Moved, 30.0);
+        assert_eq!(a.look, Vec2::ZERO, "crossing does not jump");
+        let a = step(TouchPhase::Moved, 45.0);
+        assert_eq!(a.look, vec2(15.0, 0.0));
+        assert!(
+            a.dodge_held && !a.dodge,
+            "the press stays held, not repeated"
+        );
+        // 쿼터뷰(숄더뷰가 아니면)에는 같은 손가락이 시점을 돌리지 않는다.
+        let mut q = Touch::default();
+        q.read_fingers(&[finger(3, TouchPhase::Started, at)], PHONE, false);
+        let a = q.read_fingers(
+            &[finger(3, TouchPhase::Moved, at + vec2(80.0, 0.0))],
+            PHONE,
+            false,
+        );
+        assert_eq!(a.look, Vec2::ZERO);
+    }
+
+    /// 빈 오른쪽 반의 두 손가락을 `spread`만큼(양쪽 반씩) 벌린 뒤의 거리 단계.
+    fn pinch_by(spread: f32, at: Surface) -> i32 {
+        let ctx = Ctx::default();
+        let s = empty_right(ctx, 100.0);
+        let mut t = Touch::default();
+        let (l, r) = (s - vec2(50.0, 0.0), s + vec2(50.0, 0.0));
+        let a = t.read_fingers(
+            &[
+                finger(1, TouchPhase::Started, l),
+                finger(2, TouchPhase::Started, r),
+            ],
+            at,
+            false,
+        );
+        assert_eq!((a.look, a.zoom), (Vec2::ZERO, 0));
+        let h = vec2(spread * 0.5, 0.0);
+        let a = t.read_fingers(
+            &[
+                finger(1, TouchPhase::Moved, l - h),
+                finger(2, TouchPhase::Moved, r + h),
+            ],
+            at,
+            false,
+        );
+        assert_eq!(a.look, Vec2::ZERO, "pinching does not turn");
+        a.zoom
+    }
+
+    #[test]
+    fn two_fingers_on_the_empty_right_half_pinch_one_zoom_step_per_sixty_dp() {
+        assert_eq!(pinch_by(80.0, PHONE), 1);
+        assert_eq!(pinch_by(-80.0, PHONE), -1);
+        assert_eq!(pinch_by(40.0, PHONE), 0);
+        // 한 손가락은 끈 만큼 돌린다.
+        let s = empty_right(Ctx::default(), 100.0);
+        let mut t = Touch::default();
+        t.read_fingers(&[finger(1, TouchPhase::Started, s)], PHONE, false);
+        let a = t.read_fingers(
+            &[finger(1, TouchPhase::Moved, s + vec2(-20.0, 5.0))],
+            PHONE,
+            false,
+        );
+        assert_eq!((a.look, a.zoom), (vec2(-20.0, 5.0), 0));
+    }
+
+    /// 0252: 탭 범위 · 꼬집기 한 칸은 dp다 — Android(화면 단위 = 화소)에서는 같은 손가락 거리가 화소로 dp배.
+    #[test]
+    fn the_tap_slop_and_the_pinch_step_are_in_dp() {
+        let dense = Surface { dp: 2.0, ..PHONE };
+        // 꼬집기: dp 1이면 한 칸인 80 px가 dp 2에서는 모자라다(120 px).
+        assert_eq!(pinch_by(80.0, dense), 0);
+        assert_eq!(pinch_by(130.0, dense), 1);
+        // 메뉴의 탭: 30 px 움직이고 떼면 dp 1에서는 끌기(탭 아님), dp 2에서는 탭.
+        let tap_after = |at: Surface| {
+            let mut t = Touch::default();
+            let p = vec2(400.0, 300.0);
+            t.read_fingers(&[finger(1, TouchPhase::Started, p)], at, true);
+            let a = t.read_fingers(
+                &[finger(1, TouchPhase::Ended, p + vec2(30.0, 0.0))],
+                at,
+                true,
+            );
+            a.tap
+        };
+        assert_eq!(tap_after(PHONE), None);
+        assert_eq!(tap_after(dense), Some(vec2(430.0, 300.0)));
+        // 숄더뷰의 버튼 손가락: 30 px는 dp 2의 탭 범위(48) 안이다.
+        let ctx = Ctx {
+            look_aim: true,
+            ..Ctx::default()
+        };
+        let mut t = Touch {
+            ctx,
+            ..Touch::default()
+        };
+        let at = button(ctx, Kind::Dodge);
+        t.read_fingers(&[finger(3, TouchPhase::Started, at)], dense, false);
+        t.read_fingers(
+            &[finger(3, TouchPhase::Moved, at + vec2(30.0, 0.0))],
+            dense,
+            false,
+        );
+        let a = t.read_fingers(
+            &[finger(3, TouchPhase::Moved, at + vec2(45.0, 0.0))],
+            dense,
+            false,
+        );
+        assert_eq!(a.look, Vec2::ZERO);
     }
 }

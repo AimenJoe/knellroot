@@ -3,6 +3,7 @@
 //! (KB reference/macroquad/3d-rendering.md).
 //!
 //! 가림: 벽 칸·소품마다 상자를 들고 있어, 카메라와 플레이어 사이를 막으면 그 덩어리만 옅게 그린다(0008의 기둥 옅어짐 그대로).
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::ground::Ground;
@@ -1396,7 +1397,7 @@ fn quad_lm_n(p: &mut Piece, corners: [Vec3; 4], col: Color, uv: &dyn Fn(Vec3) ->
 fn tuft(p: &mut Piece, at: Vec3, sx: usize, sz: usize, lights: &[Light]) {
     for b in 0..7u32 {
         let ang = std::f32::consts::TAU * (b as f32 / 7.0 + hash(sx, sz, 200 + b) * 0.3);
-        let (s, c) = ang.sin_cos();
+        let (s, c) = ang.sin_cos_d();
         let dir = vec3(c, 0.0, s);
         let side = vec3(-s, 0.0, c) * 0.07;
         let r = 0.03 + 0.12 * hash(sx, sz, 210 + b);

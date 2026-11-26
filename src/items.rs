@@ -868,6 +868,26 @@ pub fn elite_drops(first: bool, seed: u64) -> bool {
 
 pub const RARITY_ODDS: [[u32; 3]; 3] = [[60, 32, 8], [20, 55, 25], [0, 40, 60]];
 
+/// 필드 보스가 떨구는 것(0270 D — "드롭은 처음만 확정, 그 뒤는 굴림"): 기록에서 처음 쓰러뜨리면 굴리는 등급 가운데 **가장 높은 것**
+/// (`Rare` — 옵션 두 줄)의 여벌 하나가 확정이고 그 보스의 장신구도 떨어진다. 그 뒤로는 문지기의 급(`luck` 2)으로 굴린 여벌 하나뿐.
+/// 옵션의 세기는 어느 쪽이든 그 지역의 상한(`tier_cap`). 모두 바닥에 떨어진다(0226) — 앱 `on_field_down`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FieldLoot {
+    /// 여벌의 등급: 정해졌으면 그 등급, 없으면 `luck`으로 굴린다.
+    pub rarity: Option<Rarity>,
+    pub luck: u8,
+    /// 그 보스의 장신구도 떨구나(아직 없을 때만 — 앱이 가진 것·바닥의 것을 본다).
+    pub charm: bool,
+}
+
+pub fn field_loot(first: bool) -> FieldLoot {
+    FieldLoot {
+        rarity: first.then_some(Rarity::Rare),
+        luck: 2,
+        charm: first,
+    }
+}
+
 /// 옵션을 굴려 아이템을 만든다: 등급만큼의 줄(서로 다른 옵션 — 바탕에 맞는 것만), 세기는 1~`cap`(낮은 단이 더 흔하다).
 pub fn roll(base: Base, rarity: Rarity, cap: u8, seed: u64) -> Item {
     let mut rng = Rng::new(seed);
@@ -898,6 +918,33 @@ pub fn roll(base: Base, rarity: Rarity, cap: u8, seed: u64) -> Item {
 
 #[cfg(test)]
 mod tests {
+    /// 0270 D: 필드 보스의 떨굼 — 처음은 가장 높은 굴림 등급(옵션 두 줄)이 확정이고 장신구가 함께, 그 뒤는 문지기의 급으로 굴린
+    /// 여벌 하나뿐(장신구 없음). 옵션의 세기는 지역의 상한을 넘지 않는다.
+    #[test]
+    fn a_field_boss_drops_a_sure_rare_and_its_charm_the_first_time_and_a_roll_after() {
+        let first = super::field_loot(true);
+        let later = super::field_loot(false);
+        assert_eq!(first.rarity, Some(Rarity::Rare));
+        assert!(first.charm);
+        assert_eq!((later.rarity, later.charm), (None, false));
+        assert_eq!(later.luck, 2, "rolled like a gate boss's");
+        // 굴려서 나오는 등급 가운데 가장 높다(어느 급으로 굴려도 이보다 높은 것은 없다).
+        for luck in 0..3 {
+            for seed in 0..200u64 {
+                assert!(roll_rarity(luck, seed) <= Rarity::Rare);
+            }
+        }
+        // 확정 떨굼은 늘 옵션 두 줄, 세기는 그 지역의 상한(성소 = 1단) 안. 그 뒤의 굴림은 보통 것이 아니다(문지기의 급).
+        let base = Base::Weapon(crate::weapons::Id::Sword);
+        for seed in 0..100u64 {
+            let it = roll(base, first.rarity.unwrap(), tier_cap(0), seed);
+            let got: Vec<_> = it.affixes.iter().flatten().collect();
+            assert_eq!(got.len(), 2, "seed {seed}");
+            assert!(got.iter().all(|a| a.tier <= tier_cap(0)));
+            assert_ne!(roll_rarity(later.luck, seed), Rarity::Plain);
+        }
+    }
+
     /// 0244: 처음 쓰러뜨린 엘리트는 늘 여벌, 되풀이는 넷에 하나 안팎(씨앗 천 개로 잰다).
     #[test]
     fn elites_drop_a_spare_on_the_first_kill_and_only_sometimes_after() {

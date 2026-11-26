@@ -2,8 +2,6 @@
 //   node tools/test/leak.js dist <초> [stage|stress]
 // WebGL 함수를 감싸 살아 있는 버퍼·텍스처 수와 바이트, 프레임당 그리기 호출, wasm 선형 메모리를 10초마다 찍는다.
 // 셋 중 하나라도 시간에 따라 계속 오르면 샌다. 처음 몇십 초 오르다 평평해지는 것은 "가장 많았던 순간"을 붙잡는 것(macroquad 호출 칸).
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -12,13 +10,6 @@ const DIST = path.resolve(process.argv[2] || 'dist');
 const SECS = Number(process.argv[3] || 120);
 const MODE = process.argv[4] || 'stage';
 const PORT = 8137;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm' };
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 const PROBE = () => {
   const s = { buffers: 0, bufBytes: 0, textures: 0, texBytes: 0, draws: 0, frames: 0, peakDraws: 0, cur: 0 };
@@ -64,36 +55,26 @@ const PROBE = () => {
 };
 
 async function main() {
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   await page.addInitScript(PROBE);
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error' && !/register_plugin/.test(m.text())) errors.push(m.text()); });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js). 오래 걷는 동안 쓰러져 결과 화면을 재지 않게(개발판).
-  const { press, until } = sceneKit(page, 60);
+  const { press, until, dev, keyboardOnly } = sceneKit(page, 60);
   await sceneKit.unhurt(page);
   await page.goto(`http://localhost:${PORT}/`);
   await until('Title', '타이틀', 60000); await page.waitForTimeout(300);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
-  // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스):
-  // 타이틀 → 설정(둘째) → 조작(타이틀의 설정에서는 맨 끝 줄 — 위로 한 번, 0164) → "키보드만 배치로"(끝에서 둘째) → 돌아가기 둘.
-  const keyboardOnly = async () => {
-    await press('ArrowDown'); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
-    await press('ArrowUp'); await press('Enter'); await until('Controls', '설정 → 조작');
-    await press('ArrowUp', 2); await press('Enter'); await page.waitForTimeout(200);
-    await press('Escape'); await until('Settings { host: Title', '조작 → 설정'); await press('Escape'); await until('Title', '설정 → 타이틀');
-    // 닫으면 연 줄로 돌아온다(0066 장면 스택): 타이틀 커서는 "설정"에 있다 → 위로 한 번 = 시작.
-    await press('ArrowUp'); await page.waitForTimeout(100);
-  };
+  // 키보드만 배치로(0058 — 이 스크립트는 J·K·L로 싸운다. 새로 설치한 판의 기본은 키보드+마우스) — 끝나면 타이틀, 커서는 "설정".
   await keyboardOnly();
-  // 타이틀(개발판): 시작·설정·개발(0094) — 시작에서 아래로 둘 = 개발.
-  // 개발 창(0083, nail 구조 → 2026-11-15 정리): 묶음 탭 도구·모션·기술·스테이지·전투·적·성능 — 오른쪽 넷 = 전투·적(첫 줄 보스 아레나), 그다음 숫자 키 7 = 부하 80.
+  // stress: 보스 아레나(개발 명령 `Scenario(Boss)` — 0278 R13, 개발 창을 세어 누르지 않는다), 그다음 숫자 키 7 = 부하 80.
   if (MODE === 'stress') {
-    await press('ArrowDown', 2); await press('Enter'); await until('Dev { tab: 0', '타이틀 → 개발 창');
-    await press('ArrowRight', 4); await until('Dev { tab: 4', '전투·적 묶음'); await press('Enter'); await until('Sandbox', '보스 아레나'); await press('Digit7');
-  } else {  // 시작하기 → 슬롯 창(0066) → 시작 → 깨어나는 장면 건너뛰기
+    await dev('Scenario(Boss)'); await until('Sandbox', '보스 아레나'); await press('Digit7');
+  } else {  // 위로 한 번 = 시작하기 → 슬롯 창(0066) → 시작 → 깨어나는 장면 건너뛰기
+    await press('ArrowUp'); await page.waitForTimeout(100);
     await press('Enter'); await until('Slots', '시작하기 → 슬롯 창'); await press('Enter'); await until('Play', '빈 슬롯 → 새 판');
     await page.waitForTimeout(1000); await press('Escape');
   }

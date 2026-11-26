@@ -3,6 +3,7 @@
 //! 스테이지(0019): 굽힌 지형(`scenery.rs`) + 모델(`models.rs` 목록, 상태 → 동작 이름) + 빛(달빛 + 화로, 정점 색). 모델이 없는 종류는
 //! 상자로. 개발 시나리오(스테이지 없음)는 PoC의 회색 아레나 그대로.
 //! 바닥 예고는 모양마다(원판·부채꼴·띠·고리, `TeleShape`) 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격(nail 0186~0188).
+use crate::det::Det;
 use crate::progression::Cell;
 use macroquad::camera::Camera as _;
 use macroquad::prelude::*;
@@ -58,8 +59,11 @@ pub(crate) fn hide_unheld(
 ) {
     for w in crate::weapons::WEAPONS.iter() {
         if w.id != weapon || away {
-            if let Some(n) = model.node(w.node) {
-                hide.push((n, Quat::IDENTITY, Vec3::ZERO));
+            // 왼손의 짝(0274 ③ 쌍단검)도 함께 — 빈 이름은 부위가 없다.
+            for name in [w.node, w.off_hand] {
+                if let Some(n) = model.node(name).filter(|_| !name.is_empty()) {
+                    hide.push((n, Quat::IDENTITY, Vec3::ZERO));
+                }
             }
         }
     }
@@ -148,6 +152,8 @@ pub struct Renderer {
     doll_rt: Option<RenderTarget>,
     /// 모션 보기의 동작마다 담을 틀(`items::sweep_box` — 아래 끝·위 끝·가로 반지름, 개발판).
     doll_fit: std::collections::HashMap<String, (f32, f32, f32)>,
+    /// 도감 그림의 키(0270 D): 모델이 판정의 키보다 훨씬 큰 종(뿔)의 모델 꼭대기 — 종마다 한 번 잰다(`draw_creature`).
+    creature_top: std::collections::HashMap<&'static str, f32>,
     /// 도감 생명체(0130).
     creature_rt: Option<RenderTarget>,
     /// 아이템 그림(0068): 아이콘은 아이템마다 한 번 찍어 둔 타깃, 고른 것 하나는 도는 큰 타깃.
@@ -268,6 +274,7 @@ impl Renderer {
             backdrop: Default::default(),
             doll_rt: None,
             doll_fit: Default::default(),
+            creature_top: Default::default(),
             creature_rt: None,
             icons: Default::default(),
             item_rt: None,
@@ -331,7 +338,7 @@ impl Renderer {
             cam.view.pos,
             tg,
         );
-        let k = 1.0 - (-10.0 * get_frame_time()).exp();
+        let k = 1.0 - (-10.0 * get_frame_time()).exp_d();
         // 법선 패스에 다시 그릴 불투명 기하를 모은다(0061) — 지형·소품·배우까지, 옅은 덩어리·효과는 빼고.
         let edges_on = t[crate::tuning::P::RenderEdge] >= 0.5;
         self.batch.record = edges_on;
@@ -479,6 +486,14 @@ impl Renderer {
         self.rows_target = t[crate::tuning::P::RenderRows];
         self.ssaa = t[crate::tuning::P::RenderSsaa] >= 0.5;
         self.menu_fine = t[crate::tuning::P::RenderMenuFine] >= 0.5;
+        // 헤드리스 시험의 "싸게 그리기"(깃발 8 — 개발판만): 흐름만 보는 스크립트는 화소를 줄인다. CI의 소프트웨어 GL은 화소 수가
+        // 곧 시간이다(1280×720 화면 = 2배 그리기로 패스마다 2560×1440) — 화면 크기·UI 배치는 그대로, 월드의 줄 수만 내린다.
+        #[cfg(feature = "dev")]
+        if crate::screen::test_flags() & 8 != 0 {
+            self.rows_target = 270.0;
+            self.ssaa = false;
+            self.menu_fine = false;
+        }
         let (iw, ih) = self.fit_screen();
         let aspect = iw as f32 / ih as f32;
         let c3 = cam.to_camera3d(self.rt.clone(), aspect);

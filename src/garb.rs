@@ -52,7 +52,7 @@ pub static TABLE: [Def; 3] = [
             stamina_regen: 1.1,
             knock: 1.35,
             flinch: 1.2,
-            ..MODS0
+            ..Mods::NONE
         },
     },
     Def {
@@ -68,7 +68,7 @@ pub static TABLE: [Def; 3] = [
             dodge_cost: 1.3,
             knock: 0.45,
             flinch: 0.55,
-            ..MODS0
+            ..Mods::NONE
         },
     },
     Def {
@@ -84,36 +84,10 @@ pub static TABLE: [Def; 3] = [
             dodge_cost: 1.1,
             knock: 0.8,
             flinch: 0.6,
-            ..MODS0
+            ..Mods::NONE
         },
     },
 ];
-
-/// 아무것도 안 바꾸는 보정(표의 `..` 자리 — `Mods::default()`는 const가 아니다).
-const MODS0: Mods = Mods {
-    hp: 0,
-    flask: 0,
-    heal: 0,
-    dmg: 0,
-    taken: 0,
-    atk_speed: 1.0,
-    dodge_cost: 1.0,
-    parry: 0.0,
-    kill_stamina: 0.0,
-    ember: 1.0,
-    stamina_max: 0.0,
-    stamina_regen: 1.0,
-    poise: 1.0,
-    heavy_dmg: 0,
-    light_dmg: 0,
-    opened_dmg: 0,
-    knock: 1.0,
-    flinch: 1.0,
-    shot_dmg: 0,
-    mag: 0,
-    skill_cd: 1.0,
-    ail: 1.0,
-};
 
 pub fn def(id: Id) -> &'static Def {
     TABLE
@@ -142,7 +116,7 @@ pub fn owned(finds: &[String]) -> Vec<Id> {
 
 /// 걸친 덧옷의 보정(없으면 아무것도).
 pub fn mods(worn: Option<Id>) -> Mods {
-    worn.map_or(MODS0, |id| def(id).mods)
+    worn.map_or(Mods::NONE, |id| def(id).mods)
 }
 
 #[cfg(test)]

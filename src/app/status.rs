@@ -20,19 +20,19 @@ pub(super) const SKILL_ROWS: usize = 4;
 pub(super) const ROWS: usize = LV_LINES.len() + SKILL_ROWS;
 
 /// 자리(480×270 기준 px, 몸의 왼쪽 위가 원점): 인형 단(왼쪽)의 폭, 고르는 줄 단의 왼쪽 끝과 폭.
-const DOLL_W: f32 = 92.0;
-const PICK_X: f32 = 100.0;
-const PICK_W: f32 = tabs::LEFT_W - PICK_X - 6.0;
+pub(super) const DOLL_W: f32 = 92.0;
+pub(super) const PICK_X: f32 = 100.0;
+pub(super) const PICK_W: f32 = tabs::LEFT_W - PICK_X - 6.0;
 /// 묶음 머리글(레벨 n · 기술)의 높이, 레벨 줄·기술 줄의 높이, 두 묶음 사이.
 const HEAD: f32 = 14.0;
 const LEVEL_H: f32 = 29.0;
-const CHARM_H: f32 = 19.0;
+pub(super) const CHARM_H: f32 = 19.0;
 const GROUP_GAP: f32 = 4.0;
 /// 단의 점: 한 변, 사이.
-const PIP: f32 = 6.0;
-const PIP_GAP: f32 = 2.0;
+pub(super) const PIP: f32 = 6.0;
+pub(super) const PIP_GAP: f32 = 2.0;
 /// 막대(체력·기력): 폭·높이, 이름표까지 한 묶음의 높이.
-const BAR_W: f32 = 80.0;
+pub(super) const BAR_W: f32 = 80.0;
 const BAR_H: f32 = 5.0;
 const BAR_ROW: f32 = 17.0;
 
@@ -171,7 +171,7 @@ pub(super) fn confirm(i: usize, lv: &Level, embers: u32, edits: bool) -> Option<
 }
 
 /// 레벨 줄 이름 · 그 아래 작은 한마디.
-fn line_name(l: LvLine) -> &'static str {
+pub(super) fn line_name(l: LvLine) -> &'static str {
     let s = s();
     match l {
         LvLine::Life => s.lv_life,
@@ -180,7 +180,7 @@ fn line_name(l: LvLine) -> &'static str {
     }
 }
 
-fn line_sub(l: LvLine) -> &'static str {
+pub(super) fn line_sub(l: LvLine) -> &'static str {
     let s = s();
     match l {
         LvLine::Life => s.lv_life_sub,
@@ -193,7 +193,7 @@ impl App {
     /// 상태 탭 한 틱: 위아래 = 줄(끝에서 돈다), 확인·고른 줄 다시 누르기 = 그 줄의 일, 뒤로·✕·창 밖 = 닫기.
     pub(super) fn tick_status(&mut self, a: &Actions, host: Host) {
         let mut a = *a;
-        let before = self.cursor;
+        let before = self.menu.cursor;
         self.turn_doll(&mut a);
         self.pane_scroll_lines(&mut a);
         let a = &a;
@@ -202,24 +202,29 @@ impl App {
             self.go(Go::Back);
             return;
         }
-        ui::menu_input(&mut self.cursor, ROWS, a.menu_up, a.menu_down);
+        ui::menu_input(&mut self.menu.cursor, ROWS, a.menu_up, a.menu_down);
         // 터치·마우스: 다른 줄은 고르기만(상세가 바뀐다), 고른 줄을 다시 누르면 확인 — 장비·기술 탭과 같은 두 걸음.
         let confirm_now = match tap {
             Some(Hit::Row(i)) => {
-                let again = self.cursor == i;
-                self.cursor = i;
+                let again = self.menu.cursor == i;
+                self.menu.cursor = i;
                 again
             }
             _ => a.confirm,
         };
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
         if !confirm_now {
             return;
         }
         let edits = host.edits();
-        match confirm(self.cursor, &self.progress.level, self.world.embers, edits) {
+        match confirm(
+            self.menu.cursor,
+            &self.progress.level,
+            self.world.embers(),
+            edits,
+        ) {
             Some(Do::Ask(i)) => self.ask(flow::Ask::Level(i)),
             // 기술 줄 → 기술 탭의 그 칸(탭을 바꾼다 — 쌓지 않는다).
             Some(Do::Skills(what)) => {
@@ -230,13 +235,19 @@ impl App {
                     self.progress.ult,
                 );
                 self.show(Go::Swap(Scene::Skills { host }));
-                self.cursor = at;
+                self.menu.cursor = at;
+                // 그 칸이 서는 판으로(0270 C2 — 든 무기의 판 먼저).
+                self.sync_plate();
             }
             Some(Do::Deny(st)) => {
                 // 까닭을 상태 줄 자리에 한 번 밝게(가게와 같다 — 0173: 멈춤에서는 소리만 나서 왜 안 오르는지 몰랐다).
                 match st {
-                    LevelState::Poor(_) => self.toast = Some((s().shop_poor.to_string(), 1.6)),
-                    LevelState::View(_) => self.toast = Some((s().toast_away.to_string(), 1.6)),
+                    LevelState::Poor(_) => {
+                        self.notice.toast = Some((s().shop_poor.to_string(), 1.6))
+                    }
+                    LevelState::View(_) => {
+                        self.notice.toast = Some((s().toast_away.to_string(), 1.6))
+                    }
                     LevelState::Full | LevelState::Ready(_) => {}
                 }
                 self.snd(crate::sfx::Id::Deny);
@@ -250,7 +261,7 @@ impl App {
         let s = s();
         let scene = Scene::Status { host };
         let w = self.draw_tab_window(f, scene);
-        let at = self.cursor.min(ROWS - 1);
+        let at = self.menu.cursor.min(ROWS - 1);
         let edits = host.edits();
         self.draw_status_doll(&w);
         self.draw_status_rows(&w, at, edits);
@@ -298,7 +309,7 @@ impl App {
             dh,
         );
         let t = get_time() as f32;
-        self.doll_rect = Some(doll);
+        self.tab.doll_rect = Some(doll);
         let spin = self.doll_spin();
         self.renderer.draw_doll(self.weapon, doll, spin, t);
         let pl = &self.world.player;
@@ -341,7 +352,7 @@ impl App {
         let s = s();
         let (k, u) = (w.k, w.s);
         let lv = self.progress.level;
-        let embers = self.world.embers;
+        let embers = self.world.embers();
         let guide = edits && self.tutor_menu() == Some(flow::Tab::Status);
         let kk = tabs::K_KIND * k;
         // 묶음 머리글: 작은 글 + 가는 선.
@@ -352,7 +363,7 @@ impl App {
                 HEAD + LEVEL_H * n as f32 + GROUP_GAP,
                 // 부무기가 있으면 칸이 무기마다 따로다(0223 V3) — 이 줄들이 어느 무기의 칸인지 머리글이 말한다.
                 match self.progress.sub {
-                    Some(_) => format!("{} — {}", s.status_skills, weapon_name(self.weapon)),
+                    Some(_) => format!("{} · {}", s.status_skills, weapon_name(self.weapon)),
                     None => s.status_skills.to_string(),
                 },
             ),
@@ -387,7 +398,7 @@ impl App {
                 draw_rectangle(r.x, r.y, r.w, r.h, ui::PANEL_LIGHT);
                 self.ui.edge(r, self.ui.u(1.0), ui::KEY_TEXT);
             }
-            self.hits.push((r, Hit::Row(i)));
+            self.menu.hits.push((r, Hit::Row(i)));
             // 튜토리얼의 올리기 걸음(0209): 지금 올릴 수 있는 줄의 오른쪽 위 귀퉁이에 반짝임.
             if let Row::Level(l) = what {
                 if guide && matches!(level_state(&lv, l, embers, edits), LevelState::Ready(_)) {
@@ -527,7 +538,7 @@ impl App {
         let mut lines: Vec<Ln> = Vec::new();
         match row(at) {
             Some(Row::Level(l)) => {
-                let st = level_state(&lv, l, self.world.embers, edits);
+                let st = level_state(&lv, l, self.world.embers(), edits);
                 let state = match st {
                     LevelState::Full => (s.lv_full_d.to_string(), DIM),
                     LevelState::View(_) => (s.sk_st_view.to_string(), INK),
@@ -676,18 +687,20 @@ impl App {
         let Some(cost) = self.progress.level.next_cost(l) else {
             return;
         };
-        if self.world.embers < cost {
-            self.toast = Some((s().shop_poor.to_string(), 1.6));
+        if self.world.embers() < cost {
+            self.notice.toast = Some((s().shop_poor.to_string(), 1.6));
             self.snd(crate::sfx::Id::Deny);
             return;
         }
-        self.world.embers -= cost;
-        self.progress.embers = self.world.embers;
+        // 값은 위에서 견줬다.
+        let paid = self.world.spend(cost);
+        debug_assert!(paid);
+        self.progress.embers = self.world.embers();
         self.progress.level = self.progress.level.raised(l);
         self.world.apply_stats(self.progress.stats(), true);
         self.snd(crate::sfx::Id::Buy);
         let rank = self.progress.level.rank(l).to_string();
-        self.toast = Some((fill(s().toast_level, &[line_name(l), &rank]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_level, &[line_name(l), &rank]), TOAST_TIME));
         self.persist();
     }
 
@@ -817,6 +830,7 @@ mod tests {
             skills_cursor(Row::Ult, &old, worn, sk::Ult::Upend),
             at(Entry::Ult(sk::Ult::Upend))
         );
-        assert_eq!(cell_count(), 29);
+        // 패시브 스물하나 · 다리 넷 · 결 여덟(0270 C3).
+        assert_eq!(cell_count(), 33);
     }
 }

@@ -496,7 +496,7 @@ fn landing_beat_rings_again_farther_out_a_moment_after_a_plunge() {
         let i = mob_with(&mut w, vec3(0.0, 0.0, -1.0), 990);
         w.enemies[i].pos.z -= r + w.enemies[i].radius - 1.0;
         idle(&mut w);
-        w.plunge_now = true;
+        w.notes.plunge = true;
         for _ in 0..40 {
             w.step(&Actions::default(), &t);
         }
@@ -596,4 +596,44 @@ fn the_sidestep_mark_fades_with_the_dash_window() {
         w.step(&Actions::default(), &t);
     }
     assert!(!w.player.flank, "gone with the dash window");
+}
+
+/// 0278 R24: 잔불 지갑 — 앱은 칸을 바로 고치지 않고 얻고 쓴다. 모자라면 쓰지 않는다(그대로), 되놓기는 셈이 아니다.
+#[test]
+fn the_ember_wallet_earns_spends_only_what_it_has_and_restores() {
+    let mut w = World::new("t", 20.0);
+    w.set_embers(30);
+    w.earn(12);
+    assert_eq!(w.embers(), 42);
+    assert!(!w.spend(43), "short");
+    assert_eq!(w.embers(), 42);
+    assert!(w.spend(42));
+    assert_eq!(w.embers(), 0);
+    assert!(w.spend(0));
+}
+
+/// 0278 R24: 바꿔 든 뒤 능력치를 다시 합쳐도 탄창은 바꿔 든 그대로(새 탄창 안으로) — 가득으로 나온 것만 벼려 늘린 탄창까지 가득.
+#[test]
+fn restating_after_a_swap_keeps_the_load_unless_it_came_out_full() {
+    use crate::stats::{Mods, Stats};
+    use crate::weapons::Id;
+    let big = Stats::compute(&[Mods {
+        mag: 2,
+        ..Mods::NONE
+    }]);
+    let mut w = World::new("t", 20.0);
+    w.set_weapon(Id::Crossbow);
+    let base = w.mag_of(Id::Crossbow);
+    w.player.ranged.ammo = 1;
+    w.swap_full = false;
+    w.restat_after_swap(big, Id::Crossbow);
+    assert_eq!(w.player.ranged.ammo, 1);
+    assert_eq!(w.mag_of(Id::Crossbow), base + 2);
+    w.swap_full = true;
+    w.restat_after_swap(big, Id::Crossbow);
+    assert_eq!(w.player.ranged.ammo, base + 2);
+    // 작아진 탄창 안으로.
+    w.swap_full = false;
+    w.restat_after_swap(Stats::default(), Id::Crossbow);
+    assert_eq!(w.player.ranged.ammo, base);
 }

@@ -88,11 +88,16 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
         add!(h.anim_heavy, Some((s0, s0 + a0)));
     }
     match w.rb {
-        Rb::Magic(_) => {
+        // 종류의 RB(0274 ②b): 던지는 것은 머리 위로 던지기, 빛·마법은 손을 내민다.
+        Rb::Toss if w.id.bolts().0.thrown() => {
+            add!("sk_throw", None);
+        }
+        Rb::Toss => {
             add!("cast_charge", None);
             add!("cast", None);
         }
-        Rb::Shot { .. } if w.id == crate::weapons::Id::Bow => {
+        // 당기는 리듬(활 — `Id::draws`)은 활쏘기 원본의 제 동작.
+        Rb::Shot { .. } if w.id.draws() => {
             add!("bow_draw", None);
             add!("bow_shoot", None);
         }
@@ -122,14 +127,10 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     ] {
         add!(a, None);
     }
-    let clips = crate::skills::SKILLS.iter().map(|s| s.clip).chain(
-        [
-            crate::skills::Ult::Upend,
-            crate::skills::Ult::Flurry,
-            crate::skills::Ult::Line,
-        ]
-        .map(|u| u.clip()),
-    );
+    let clips = crate::skills::SKILLS
+        .iter()
+        .map(|s| s.clip)
+        .chain(crate::skills::ULTS.map(|u| u.clip()));
     for c in clips {
         let [s, a, _] = c.seg;
         add!(c.name, Some((s, s + a.max(0.03))));
@@ -152,6 +153,15 @@ fn speed_label(speed: u8) -> String {
 }
 
 impl App {
+    /// 모션 보기의 고른 줄(헤드리스 시험에 알린다 — 0278 R13): (동작 이름, 달리기 공격 줄인가).
+    #[cfg(feature = "dev")]
+    pub(super) fn motion_focus(&self, weapon: u8) -> Option<(&'static str, bool)> {
+        let w = IDS[weapon as usize % IDS.len()].def();
+        rows(w, &self.t)
+            .get(self.menu.cursor)
+            .map(|r| (r.anim, r.dash))
+    }
+
     /// 모션 보기 한 틱: 뒤로·✕·창 밖 = 나가기, 탭 넘기기·탭 누르기 = 무기, 위아래·굴리기·줄 누르기 = 동작, 좌우 = 돌리기,
     /// 확인 = 빠르기(1 → ½ → ¼ → 멈춤). 동작을 바꾸면 처음부터.
     pub(super) fn tick_motions(&mut self, a: &Actions, weapon: u8, speed: u8, spin: i8, t_ms: u32) {
@@ -169,25 +179,28 @@ impl App {
         } as u8;
         let w = IDS[to_w as usize % IDS.len()].def();
         let list = rows(w, &self.t);
-        let before = self.cursor;
-        ui::menu_input(&mut self.cursor, list.len(), a.menu_up, a.menu_down);
+        let before = self.menu.cursor;
+        ui::menu_input(&mut self.menu.cursor, list.len(), a.menu_up, a.menu_down);
         let scroll = match tap {
             Some(Hit::Scroll(d)) => d,
             _ => 0,
         };
-        self.view
-            .scroll((a.drag, a.wheel + scroll), &mut self.cursor, list.len());
+        self.menu.view.scroll(
+            (a.drag, a.wheel + scroll),
+            &mut self.menu.cursor,
+            list.len(),
+        );
         if let Some(Hit::Row(i)) = tap {
-            self.cursor = i;
+            self.menu.cursor = i;
         }
-        self.cursor = self.cursor.min(list.len().saturating_sub(1));
+        self.menu.cursor = self.menu.cursor.min(list.len().saturating_sub(1));
         let speed = if a.confirm {
             (speed + 1) % SPEEDS.len() as u8
         } else {
             speed
         };
         let spin = spin.wrapping_add(a.menu_right as i8 - a.menu_left as i8);
-        let restart = to_w != weapon || self.cursor != before;
+        let restart = to_w != weapon || self.menu.cursor != before;
         let t_ms = if restart {
             0
         } else {
@@ -216,13 +229,13 @@ impl App {
         let title = fill(t(dv::MOTION_TITLE), &[weapon_name(id)]);
         let top = self.ui.panel(panel, Some(&title));
         let x = self.ui.close(panel);
-        self.hits.push((x, Hit::Close));
+        self.menu.hits.push((x, Hit::Close));
         let (lx, rx_end) = (panel.x + u * 10.0, panel.x + panel.w - u * 10.0);
         // 무기 탭: 개발 창의 묶음 탭과 같은 꼴 — 넘치면 가로로 굴린다(0257).
         let tab_h = px * 1.6;
         let names: Vec<&str> = IDS.iter().map(|&i| weapon_name(i)).collect();
         let rects = self.ui.button_strip(
-            &mut self.small_strip,
+            &mut self.tab.small_strip,
             &names,
             weapon as usize,
             lx,
@@ -231,7 +244,7 @@ impl App {
             tab_h,
         );
         for (i, r) in rects.into_iter().enumerate() {
-            self.hits.push((r, Hit::Cell(1, i)));
+            self.menu.hits.push((r, Hit::Cell(1, i)));
         }
         let tabs_end = top + tab_h;
         let body = tabs_end + u * 8.0;
@@ -251,8 +264,8 @@ impl App {
             split - lx - u * 4.0,
             hint_y - u * 6.0 - body,
         );
-        let cursor = self.cursor.min(list.len().saturating_sub(1));
-        let hits = self.ui.list(&ui_rows, cursor, &mut self.view, area);
+        let cursor = self.menu.cursor.min(list.len().saturating_sub(1));
+        let hits = self.ui.list(&ui_rows, cursor, &mut self.menu.view, area);
         self.push_hits(&hits);
         let Some(row) = list.get(cursor).copied() else {
             return;
@@ -325,6 +338,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::det::Det;
 
     /// 모션 보기는 무기마다 그 무기의 평타·강타·특수 동작과 공통 동작·기술을 다 보이고, 모든 줄은 모델에 있는 동작이며
     /// 판정 구간은 동작 길이 안이다(게임의 시간 셈 그대로).
@@ -401,7 +415,7 @@ mod tests {
                 let up = right.cross(fwd);
                 let to = p - eye;
                 let z = to.dot(fwd);
-                let half = 0.24_f32.tan();
+                let half = 0.24_f32.tan_d();
                 assert!(
                     (to.dot(up) / z).abs() <= half,
                     "{a}: {p} above/below the doll view"

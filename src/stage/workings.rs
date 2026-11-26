@@ -42,7 +42,15 @@ pub static DEF: StageDef = StageDef {
     obj_gate: |s| s.obj_winch,
     obj_core: |s| s.obj_core,
     boss_wakes: |s| s.overseer_wakes,
-    chest_loot: &[Loot::Charm(Charm::Feet)],
+    // 상자 차례 = 지도에서 위 → 아래(`marks_of`): 운반 회랑 서쪽 곁방(장신구) · 회랑 서쪽 끝 곁방의 구석(맡겨진 완드, 0274 ⑥ — 숫돌 곁,
+    // 맡겨 둔 짐 사이) · 0274 ⑦(얻는 차례 — 자원을 다루는 무기는 뒤쪽, 성소에서 옮김): 서쪽 작업대 북서 구석(화약 쇠뇌) · 위층 회랑
+    // 동쪽 벽 밑(순례자 지팡이) — 둘 다 아래 행이라 옛 상자의 번호는 그대로.
+    chest_loot: &[
+        Loot::Charm(Charm::Feet),
+        Loot::Weapon(crate::weapons::Id::Wand),
+        Loot::Weapon(crate::weapons::Id::Crossbow),
+        Loot::Weapon(crate::weapons::Id::Staff),
+    ],
     boss_charm: None,
     stones: &[|s| s.stone_w1, |s| s.stone_w2, |s| s.stone_w3],
     find_prefix: "works",
@@ -57,6 +65,7 @@ pub static DEF: StageDef = StageDef {
     env: &crate::backdrop::WORKS,
     shortcut: true,
     prologue: false,
+    field: None,
 };
 
 const MAP: &str = "
@@ -107,10 +116,10 @@ const MAP: &str = "
     ######.......||...j..................#   
     #............||..............u.......#   
     #.O...a......||.......e..............#   
-    #............||......................#   
+    #C...........||......................#   
     ################.......####..........#   
-    #.........................#..........#   
-    #.....................H...#..........#   
+    #C........................#..........#   
+    #.....................H...#.........C#   
     #.......u.................#.....o....#   
     #.q.........S...a.........#..........#   
     #.........................#..........#   

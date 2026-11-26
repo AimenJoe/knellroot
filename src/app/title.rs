@@ -4,7 +4,7 @@ use super::*;
 impl App {
     /// 타이틀(0066): [이어하기] · 시작하기 · 설정 · DEV.
     pub(super) fn tick_title(&mut self, a: Actions) {
-        let items = flow::title_items(self.slots.iter().any(Option::is_some));
+        let items = flow::title_items(self.book.slots.iter().any(Option::is_some));
         if let Some(i) = self.menu_pick(&a, items.len()) {
             match items[i] {
                 // 둘 다 슬롯 창으로(0066, KB): 고른 슬롯에서 판이 시작된다.
@@ -28,7 +28,7 @@ impl App {
         self.ui.text_center(s.game_title, cx, y, 3.0, AMBER);
         self.ui
             .text_center(s.title_subtitle, cx, y + self.ui.px(3.0) * 1.2, 1.0, DIM);
-        let has = self.slots.iter().any(Option::is_some);
+        let has = self.book.slots.iter().any(Option::is_some);
         let items: Vec<String> = flow::title_items(has)
             .iter()
             .map(|i| match i {
@@ -44,8 +44,8 @@ impl App {
         let bottom = self.menu_bottom(f);
         let hits = self.ui.menu(
             &items,
-            self.cursor,
-            &mut self.view,
+            self.menu.cursor,
+            &mut self.menu.view,
             cx,
             f.oy + f.h * TITLE_MENU_Y,
             bottom,

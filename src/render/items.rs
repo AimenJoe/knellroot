@@ -1,5 +1,6 @@
 //! 아이템 그림(0068)·장비 창 인형(0067)·도감 생물(0130): 작은 렌더 타깃 + 고정 카메라.
 use super::*;
+use crate::det::Det;
 
 impl Renderer {
     /// 아이템 아이콘(0068): 처음 부를 때 한 번 찍어 두고(정한 각도), 다음부터는 그 그림을 `dest`에 붙인다.
@@ -107,9 +108,17 @@ impl Renderer {
             _ => Quat::IDENTITY,
         };
         let inst = Mat4::from_quat(rot * undo) * Mat4::from_translation(-c);
+        // 짝(0277 — 쌍단검): 눕힌 각만 거울로 한 번 더 — 가운데에서 엇갈린다(경계 구는 같다).
+        let twin = v.twin.then(|| {
+            let rot = Quat::from_rotation_y(spin)
+                * Quat::from_rotation_z(-v.roll.to_radians())
+                * Quat::from_rotation_x(v.pitch.to_radians())
+                * Quat::from_rotation_y(v.yaw.to_radians());
+            Mat4::from_quat(rot * undo) * Mat4::from_translation(-c)
+        });
         let fovy: f32 = 0.5;
         let cam = Camera3D {
-            position: vec3(0.0, 0.0, rad.max(0.01) / (fovy * 0.5).sin() * 1.02),
+            position: vec3(0.0, 0.0, rad.max(0.01) / (fovy * 0.5).sin_d() * 1.02),
             target: Vec3::ZERO,
             up: Vec3::Y,
             fovy,
@@ -136,10 +145,12 @@ impl Renderer {
             radius: rad * 8.0 + 2.0,
             shaft: false,
         };
-        if dark {
-            self.batch.model(e, &self.pose, inst, SHADOW_INK, &[], 0.0);
-        } else {
-            self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
+        for inst in std::iter::once(inst).chain(twin) {
+            if dark {
+                self.batch.model(e, &self.pose, inst, SHADOW_INK, &[], 0.0);
+            } else {
+                self.batch.model(e, &self.pose, inst, WHITE, &[fire], 1.0);
+            }
         }
         self.batch.flush();
         set_look(saved);
@@ -306,10 +317,23 @@ impl Renderer {
     ) {
         let (rt, dest, aspect, rows) = self.fit_doll_rt(true, dest);
         let d = crate::species::def(kind);
-        let h = d.height.max(0.5);
+        // 그림의 키: 종의 키(`height` — 판정의 몸)지만, 모델이 그보다 훨씬 크면(고요한 사슴의 뿔 3.6m · 몸 2.4m — 0270 D) 모델의
+        // 꼭대기까지 담는다 — 뿔이 칸 위에서 잘렸다. 조금 삐져나온 것(가시짐승의 등 가시)은 그대로 둔다(보던 그림을 바꾸지 않는다).
+        let top = self.lib.get(d.model).map_or(0.0, |e| {
+            *self
+                .creature_top
+                .entry(d.model)
+                .or_insert_with(|| e.model.rest_top().unwrap_or(0.0))
+        });
+        let h = if top > d.height * TALL_MODEL {
+            top
+        } else {
+            d.height
+        }
+        .max(0.5);
         // 칸에 맞춰 당긴다(2026-11-19 사장 "모델들이 가로로 더 채워지면"): 키(위아래 반 + 여유)와 몸 둘레(돌려도 들어가게 — 가로 반)
         // 가운데 더 먼 쪽에 선다. 예전엔 키에 상관없이 멀찍이(키 × 2.3 + 1m) 서서 칸의 반도 안 찼다.
-        let half_tan = (CREATURE_FOVY * 0.5).tan();
+        let half_tan = (CREATURE_FOVY * 0.5).tan_d();
         let need_v = h * 0.56 / half_tan;
         let need_h = (d.radius * 1.35).max(h * 0.36) / (half_tan * aspect.max(0.1));
         let dist = need_v.max(need_h) * 1.14;
@@ -399,6 +423,9 @@ impl Renderer {
     }
 }
 
+/// 모델의 꼭대기가 종의 키의 이만큼을 넘으면 도감 그림을 모델에 맞춘다(`draw_creature`).
+pub(crate) const TALL_MODEL: f32 = 1.25;
+
 /// 모션 보기 인형의 쉬는 틀(아래 끝·위 끝·가로 반지름, m)의 바닥값 — 서기(`idle`)가 쓸고 가는 틀과 합쳐 쉬는 틀이 된다.
 /// 서서 하는 동작은 모두 그 틀로 같은 크기에 보인다(줄을 넘겨도 인형이 커졌다 작아졌다 하지 않게).
 const DOLL_BASE: (f32, f32, f32) = (0.0, 1.45, 0.5);
@@ -446,7 +473,7 @@ fn sweep_of(
             for v in &pos {
                 lo = lo.min(v.y);
                 hi = hi.max(v.y);
-                r = r.max(v.x.hypot(v.z));
+                r = r.max(v.x.hypot_d(v.z));
             }
         }
     }
@@ -457,7 +484,7 @@ fn sweep_of(
 /// 깊이 쪽 반지름의 반만큼 더 물러선다(가까운 쪽이 원근으로 커져도 들게).
 pub(crate) fn doll_eye(b: (f32, f32, f32), aspect: f32) -> (Vec3, Vec3) {
     let (lo, hi, r) = b;
-    let half = 0.24_f32.tan(); // fovy 0.48의 반
+    let half = 0.24_f32.tan_d(); // fovy 0.48의 반
     let need_h = (hi - lo) * 0.5 + DOLL_MARGIN;
     let need_w = r + DOLL_MARGIN;
     // 깊이 쪽은 반지름의 반만 — 반지름은 원점 둘레의 가장 먼 점(꼬리 끝)이라 앞쪽이 늘 그만큼 다가오지는 않는다.

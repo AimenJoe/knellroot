@@ -2,6 +2,7 @@
 //! 한 바퀴 번지고, 겹침 넷(묶인 적의 화상은 한 겹 더 — `status` · 화상 중에 묶이면 터진다 · 타는 적이 울리면 불이 옮는다 ·
 //! 금 간 적이 울리면 금이 번진다).
 use super::*;
+use crate::det::Det;
 use crate::skills::{Id as Sk, Loadout, Pick, Slot};
 use crate::status::Kind as Ty;
 use crate::tuning::{
@@ -90,29 +91,29 @@ fn a_cracked_foe_takes_more_from_every_blow_and_a_boss_less() {
     let t = Tuning::default();
     let mut w = World::new("test", 30.0);
     let i = foe(&mut w, vec3(3.0, 0.0, 0.0));
-    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, &t), 100);
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, Knack::NONE, &t), 100);
     fill(&mut w, i, Ty::Rift);
     assert_eq!(
-        hurt_by(&w.enemies[i], 100, false, 0, &t),
+        hurt_by(&w.enemies[i], 100, false, 0, Knack::NONE, &t),
         (100.0 * RIFT_MULT) as i32
     );
     w.enemies[i].marks.frail = 1.0;
     w.enemies[i].marks.frail_mult = 1.5;
     assert_eq!(
-        hurt_by(&w.enemies[i], 100, false, 0, &t),
+        hurt_by(&w.enemies[i], 100, false, 0, Knack::NONE, &t),
         150,
         "the larger one, not both"
     );
     let mut b = world_with_boss();
     fill(&mut b, 0, Ty::Rift);
     assert_eq!(
-        hurt_by(&b.enemies[0], 100, false, 0, &t),
+        hurt_by(&b.enemies[0], 100, false, 0, Knack::NONE, &t),
         (100.0 * RIFT_BOSS_MULT).round() as i32
     );
     // 금은 때가 되면 닫힌다.
     run(&mut w, &t, crate::tuning::RIFT_SECS + 0.1);
     w.enemies[i].marks.frail = 0.0;
-    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, &t), 100);
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, Knack::NONE, &t), 100);
 }
 
 /// 뿌리: 묶인 적은 자세가 더 깎인다.
@@ -161,7 +162,7 @@ fn ringing_runs_once_through_a_pack_and_stops() {
     let pack: Vec<usize> = (0..6)
         .map(|k| {
             let a = k as f32 * std::f32::consts::TAU / 6.0;
-            let i = foe(&mut w, vec3(8.0 + a.cos() * 1.5, 0.0, a.sin() * 1.5));
+            let i = foe(&mut w, vec3(8.0 + a.cos_d() * 1.5, 0.0, a.sin_d() * 1.5));
             w.enemies[i].ail.gauge[2] = 0.9;
             i
         })
@@ -239,6 +240,10 @@ fn a_typed_skill_leaves_its_mark_and_a_physical_one_none() {
     let cast = |id: Sk| {
         let mut w = World::new("test", 30.0);
         w.player.facing = std::f32::consts::PI;
+        // 0274 ③: 가로지르기는 쌍단검의 스킬.
+        if id == Sk::Cut {
+            w.set_weapon(crate::weapons::Id::Daggers);
+        }
         w.set_skills(Loadout {
             slots: [
                 Slot {
@@ -273,7 +278,10 @@ fn a_typed_skill_leaves_its_mark_and_a_physical_one_none() {
         1
     );
     let (ail, ev) = cast(Sk::Whirl);
-    assert_eq!((ail.gauge, ail.rift, ail.burn), ([0.0; 4], 0.0, 0));
+    assert_eq!(
+        (ail.gauge, ail.rift, ail.burn),
+        ([0.0; crate::status::N], 0.0, 0)
+    );
     assert_eq!(count(&ev, |e| matches!(e, Event::Ail { .. })), 0);
 }
 
@@ -286,6 +294,7 @@ fn item_affixes_scale_the_type_build_and_the_skill_cooldown() {
         let mut w = World::new("test", 30.0);
         w.player.facing = std::f32::consts::PI;
         w.apply_stats(Stats::compute(&[mods]), true);
+        w.set_weapon(crate::weapons::Id::Daggers);
         w.set_skills([Sk::Cut, Sk::Whirl]);
         let i = foe(&mut w, vec3(0.0, 0.0, -2.0));
         w.step(
@@ -324,7 +333,7 @@ fn a_whole_pack_tolling_at_once_hurts_each_foe_only_a_few_tolls_worth() {
         let ids: Vec<usize> = (0..n)
             .map(|k| {
                 let (a, r) = (k as f32 * 2.4, 0.6 + 0.35 * (k as f32).sqrt());
-                foe(&mut w, vec3(6.0 + r * a.cos(), 0.0, r * a.sin()))
+                foe(&mut w, vec3(6.0 + r * a.cos_d(), 0.0, r * a.sin_d()))
             })
             .collect();
         for &i in &ids {
@@ -350,4 +359,283 @@ fn a_foe_the_hit_just_killed_takes_no_affliction() {
     let ev = fill(&mut w, i, Ty::Root);
     assert!(ev.is_empty(), "{ev:?}");
     assert_eq!(w.enemies[i].ail, before);
+}
+
+/// 0270 B 충격: 가득 차면 잡몹은 기절해 선다(휘청 — 하던 것을 끊는다), 문지기는 휘청이지 않고 그 짧은 초 동안 느려지기만.
+/// 기절한 적은 자세가 더 깎인다.
+#[test]
+fn a_shocked_foe_is_stunned_and_a_boss_only_slows_for_a_moment() {
+    use crate::tuning::{SHOCK_POISE, STUN_SECS};
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let a = mob_with(&mut w, vec3(6.0, 0.0, 0.0), 500);
+    let b = foe(&mut w, vec3(-6.0, 0.0, 0.0));
+    let ev = fill(&mut w, a, Ty::Shock);
+    assert!(matches!(
+        ev[..],
+        [Event::Ail {
+            kind: Ty::Shock,
+            ..
+        }]
+    ));
+    assert!(
+        matches!(w.enemies[a].state, EState::Stagger { dur, .. } if (dur - STUN_SECS).abs() < 1e-5)
+    );
+    let mut ev = Vec::new();
+    add_poise(&mut w.enemies[a], 1.0, None, &t, &mut ev);
+    add_poise(&mut w.enemies[b], 1.0, None, &t, &mut ev);
+    assert!((w.enemies[a].stance.poise - w.enemies[b].stance.poise * SHOCK_POISE).abs() < 1e-4);
+
+    let mut w = world_with_boss();
+    fill(&mut w, 0, Ty::Shock);
+    assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
+    w.step(&Actions::default(), &t);
+    assert_eq!(w.enemies[0].marks.slow, ROOT_BOSS_SLOW);
+}
+
+/// 0270 B 날카로움: 상처 난 적은 움직이는 만큼 샌다 — 가만히 선 적은 새지 않는다. 새는 피로도 쓰러진다.
+#[test]
+fn a_cut_foe_bleeds_as_it_walks_and_not_while_it_stands() {
+    use crate::tuning::BLEED_DMG;
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let walker = mob_with(&mut w, vec3(9.0, 0.0, 0.0), 500);
+    let stander = foe(&mut w, vec3(-9.0, 0.0, 0.0));
+    fill(&mut w, walker, Ty::Sharp);
+    fill(&mut w, stander, Ty::Sharp);
+    let ev = run(&mut w, &t, 2.0);
+    let lost = 500 - w.enemies[walker].hp;
+    assert!(lost >= BLEED_DMG && lost % BLEED_DMG == 0, "{lost}");
+    assert!(count(&ev, |e| matches!(e, Event::Bleed { .. })) >= 1);
+    assert_eq!(w.enemies[stander].hp, 500, "standing still stops it");
+    w.enemies[walker].hp = 1;
+    run(&mut w, &t, 2.0);
+    assert!(!w.enemies[walker].alive(), "it can bleed out");
+}
+
+/// 0270 B 서리: 쌓이는 만큼 느려지고(문지기는 아니다), 가득 차면 얼어 선다. 언 적을 치면 그 한 대는 크게 들어가고 깨진다(한 번).
+#[test]
+fn frost_slows_then_freezes_and_the_next_blow_shatters_it() {
+    use crate::tuning::{FREEZE_SECS, SHATTER_MULT};
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let i = mob_with(&mut w, vec3(6.0, 0.0, 0.0), 500);
+    let mut ev = Vec::new();
+    afflict(&mut w.enemies[i], (Ty::Frost, 0.5), &mut ev);
+    w.step(&Actions::default(), &t);
+    assert!(w.enemies[i].marks.slow < 1.0, "chilled");
+    fill(&mut w, i, Ty::Frost);
+    assert!(
+        matches!(w.enemies[i].state, EState::Stagger { dur, .. } if (dur - FREEZE_SECS).abs() < 1e-5)
+    );
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, Knack::NONE, &t),
+        (100.0 * SHATTER_MULT) as i32
+    );
+    // 얼린 그 타는 깨지 않는다(0270 C3) — 한 틱 지나 굳은 얼음을 다음 타가 깬다.
+    w.enemies[i].struck();
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Shatter { .. })), 0);
+    assert!(
+        w.enemies[i].ail.frozen > 0.0,
+        "the freezing blow does not break it"
+    );
+    w.enemies[i].struck();
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Shatter { .. })), 1);
+    assert_eq!(w.enemies[i].ail.frozen, 0.0);
+    assert!(
+        !matches!(w.enemies[i].state, EState::Stagger { .. }),
+        "free again"
+    );
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, Knack::NONE, &t), 100);
+
+    let mut b = world_with_boss();
+    afflict(&mut b.enemies[0], (Ty::Frost, 0.5), &mut Vec::new());
+    b.step(&Actions::default(), &t);
+    assert_eq!(
+        b.enemies[0].marks.slow, 1.0,
+        "a boss is not chilled by the gauge"
+    );
+}
+
+/// 0270 B 흡수: 표지가 붙은 적을 치면 체력·기력이 조금 돌아온다 — 표지가 붙은 떼를 한꺼번에 쳐도 틱에 한 번만.
+#[test]
+fn striking_drained_foes_heals_a_little_once_a_tick_however_many() {
+    use crate::tuning::{DRAIN_HP, DRAIN_STAMINA};
+    let t = Tuning::default();
+    let mut w = World::new("test", 30.0);
+    let pack: Vec<usize> = (0..5)
+        .map(|k| foe(&mut w, vec3(4.0 + k as f32, 0.0, 0.0)))
+        .collect();
+    let plain = foe(&mut w, vec3(-4.0, 0.0, 0.0));
+    w.player.hp = 10;
+    w.player.stamina = 0.0;
+    // 표지 없는 적을 쳐도 아무것도.
+    w.enemies[plain].struck();
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Drain { .. })), 0);
+    assert_eq!(w.player.hp, 10);
+    for &i in &pack {
+        fill(&mut w, i, Ty::Drain);
+        w.enemies[i].struck();
+    }
+    let st = w.player.stamina;
+    let ev = w.step(&Actions::default(), &t);
+    assert_eq!(count(&ev, |e| matches!(e, Event::Drain { .. })), 1);
+    assert_eq!(w.player.hp, 10 + DRAIN_HP);
+    assert!(w.player.stamina >= st + DRAIN_STAMINA - 1e-3);
+    // 다음 틱에 안 쳤으면 그대로.
+    w.step(&Actions::default(), &t);
+    assert_eq!(w.player.hp, 10 + DRAIN_HP);
+}
+
+/// 0270 B: 새 타입 넷을 싣는 스킬이 하나씩은 있다(무기의 길 — 판은 0270 C에서 무기마다).
+#[test]
+fn every_new_type_rides_on_some_skill() {
+    for k in [Ty::Shock, Ty::Sharp, Ty::Frost, Ty::Drain] {
+        assert!(
+            crate::skills::SKILLS
+                .iter()
+                .any(|s| s.kind == k && s.build > 0.0),
+            "{k:?}"
+        );
+    }
+}
+
+/// 0270 C5 날카로움의 덤: 피 흘리는 적을 결투의 손(한손 · 방패 없이)이 치면 그 타는 ×`SHARP_CUT_MULT` — 평타도 스킬도.
+/// 다른 쥔 꼴(망치 · 검과 방패)은 그대로, 새는 피는 덤 없이 `BLEED_DMG` 그대로. 금(균열)과는 곱한다(표지 둘의 큰 하나 × 날카로움).
+#[test]
+fn a_duel_hand_cuts_deeper_into_a_bleeding_foe() {
+    use crate::tuning::{BLEED_DMG, SHARP_CUT_MULT};
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    // 셈: 결투의 손 · 피 흘림이 함께일 때만, 금과는 곱한다.
+    let mut w = World::new("test", 30.0);
+    let i = foe(&mut w, vec3(3.0, 0.0, 0.0));
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, Knack::KEEN, &t),
+        100,
+        "not bleeding"
+    );
+    fill(&mut w, i, Ty::Sharp);
+    assert!(w.enemies[i].ail.bleed > 0.0);
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, Knack::KEEN, &t),
+        crate::skills::scaled(100, SHARP_CUT_MULT)
+    );
+    assert_eq!(hurt_by(&w.enemies[i], 100, false, 0, Knack::NONE, &t), 100);
+    fill(&mut w, i, Ty::Rift);
+    assert_eq!(
+        hurt_by(&w.enemies[i], 100, false, 0, Knack::KEEN, &t),
+        crate::skills::scaled(100, RIFT_MULT * SHARP_CUT_MULT)
+    );
+    let mut b = world_with_boss();
+    fill(&mut b, 0, Ty::Sharp);
+    assert!(
+        hurt_by(&b.enemies[0], 100, false, 0, Knack::KEEN, &t) > 100,
+        "a boss too"
+    );
+
+    // 월드의 타: 같은 무기로 피 흘리는 적 · 아닌 적을 쳐서 들어간 피해(새는 피는 뺀다)를 견준다.
+    let dealt = |weapon: W, shield: bool, skill: bool, bleeding: bool| {
+        let mut w = World::new("test", 30.0);
+        w.player.facing = std::f32::consts::PI;
+        w.set_weapon(weapon);
+        w.set_shield(shield.then_some(crate::shield::Id::Pilgrim));
+        // 누르는 칸(0)에 그 무기가 쓰는 스킬: 쌍단검은 가로지르기(0274 ③), 나머지는 휘돌이.
+        let first = if weapon == W::Daggers {
+            Sk::Cut
+        } else {
+            Sk::Whirl
+        };
+        w.set_skills(Loadout {
+            slots: [
+                Slot {
+                    id: first,
+                    rank: 1,
+                    pick: Pick::A,
+                },
+                Slot {
+                    id: Sk::Gather,
+                    rank: 1,
+                    pick: Pick::A,
+                },
+            ],
+            ult: 1,
+            great: crate::skills::Ult::Upend,
+        });
+        let i = foe(&mut w, vec3(0.0, 0.0, -1.5));
+        if bleeding {
+            fill(&mut w, i, Ty::Sharp);
+        }
+        let mut ev = w.step(
+            &Actions {
+                attack: !skill,
+                skill1: skill,
+                ..Default::default()
+            },
+            &t,
+        );
+        ev.extend(run(&mut w, &t, 0.6));
+        let leaked = BLEED_DMG * count(&ev, |e| matches!(e, Event::Bleed { .. })) as i32;
+        (
+            500 - w.enemies[i].hp - leaked,
+            count(&ev, |e| matches!(e, Event::Hit { .. })) as i32,
+        )
+    };
+    // 타마다 올림(휘돌이는 두 번 친다): 덤을 받은 피해 = 타의 수 × 한 타의 피해 × 덤.
+    let deeper = |(d, n): (i32, i32)| (n * crate::skills::scaled(d / n.max(1), SHARP_CUT_MULT), n);
+    // 0274 ③: 날카로움의 덤은 쌍단검(도적의 손)의 것 — 한손검(전사)은 넘겨주었다.
+    for skill in [false, true] {
+        let plain = dealt(W::Daggers, false, skill, false);
+        assert!(plain.0 > 0 && plain.1 > 0, "skill {skill}: it lands");
+        assert_eq!(
+            dealt(W::Daggers, false, skill, true),
+            deeper(plain),
+            "skill {skill}: the daggers cut deeper"
+        );
+        let sword = dealt(W::Sword, false, skill, false);
+        assert!(sword.0 > 0);
+        assert_eq!(
+            dealt(W::Sword, false, skill, true),
+            sword,
+            "skill {skill}: the sword no longer"
+        );
+        // 맨손(0272 — 무기 판이 없다): 평타는 빈 손의 덤을 받고, 무기 판의 스킬은 나가지 않는다.
+        let fists = dealt(W::Fists, false, skill, false);
+        if skill {
+            assert_eq!(fists, (0, 0), "bare hands wield no weapon skill");
+        } else {
+            assert_eq!(
+                dealt(W::Fists, false, false, true),
+                deeper(fists),
+                "fists are a free hand too"
+            );
+        }
+        let hammer = dealt(W::Hammer, false, skill, false);
+        assert!(hammer.0 > 0);
+        assert_eq!(
+            dealt(W::Hammer, false, skill, true),
+            hammer,
+            "skill {skill}: hammer"
+        );
+    }
+    let shielded = dealt(W::Sword, true, false, false);
+    assert_eq!(
+        dealt(W::Sword, true, false, true),
+        shielded,
+        "sword and shield"
+    );
+
+    // 새는 피는 덤 없이: 날카로움의 손을 든 채 걷는 적이 잃는 피 = 샌 번 × `BLEED_DMG`.
+    let mut w = World::new("test", 30.0);
+    w.set_weapon(W::Daggers);
+    assert!(w.keen());
+    let walker = mob_with(&mut w, vec3(9.0, 0.0, 0.0), 500);
+    fill(&mut w, walker, Ty::Sharp);
+    let ev = run(&mut w, &t, 2.0);
+    let leaks = count(&ev, |e| matches!(e, Event::Bleed { .. })) as i32;
+    assert!(leaks > 0);
+    assert_eq!(500 - w.enemies[walker].hp, BLEED_DMG * leaks);
 }

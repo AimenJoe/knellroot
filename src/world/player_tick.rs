@@ -4,6 +4,7 @@
 //! → 이동 → 바라보기 → 떨어지기 → 마무리. 새 동작(나무 칸, 0102)은 그 상태의 메서드에 한 줄씩 넣는다.
 //! 상태가 서로 쓰는 시작(회피·패링)은 `try_dodge`·`try_parry` 한 곳.
 use super::*;
+use crate::det::Det;
 use crate::progression::{cell, Cell, Link};
 
 /// 이번 틱 플레이어 단계가 같이 보는 것 — 입력 기준·조준을 한 번 계산해 상태 메서드들이 나눠 쓴다.
@@ -64,9 +65,16 @@ impl World {
         let mut cx = self.player_ctx(cancelled, t, dt);
         self.tick_player_clocks(&mut cx);
         self.try_turn(&cx);
+        // 던진 창(0274 ②b): 평타를 누르면 곧바로 손에 돌아온다 — 창이 없는 동안에도 평타는 막히지 않는다.
+        if cx.a.attack {
+            self.recall_javelin();
+        }
 
+        // 교체 공격(0272 1b): 이 틱에 바꿔 든 무기가 들어오며 친다(`weapon_swap`이 세웠다) — 다른 누름보다 먼저. 이 틱에 못 나가면 버린다.
+        let entry = std::mem::take(&mut self.player.swap.entry);
         // 상태 전이.
         match self.player.state {
+            PState::Idle if entry => self.start_entry(&cx),
             PState::Idle => self.tick_idle(&cx),
             PState::Drink { t: e, gulped } => self.tick_drink(&cx, e, gulped),
             PState::Hurt { t: e, dur } => {
@@ -114,6 +122,12 @@ impl World {
                 };
             }
             PState::Block { t: e } => self.tick_block(&cx, e),
+            PState::Rush {
+                t: e,
+                dir,
+                power,
+                swing,
+            } => self.tick_rush(&cx, e, dir, power, swing),
             PState::Parry { t: e } => {
                 // 방패(0223): 패링 창이 지나도 쥐고 있으면 막기로 잇는다 — 헛친 패링의 굳음 대신 방패 뒤에 선다.
                 self.player.state =
@@ -212,7 +226,7 @@ impl World {
                 &self.enemies,
                 self.player.pos,
                 t[P::AimRange],
-                aim.map(|d| (d, (t[P::AimCone] * 0.5).to_radians().cos())),
+                aim.map(|d| (d, (t[P::AimCone] * 0.5).to_radians().cos_d())),
             )
         } else {
             None
@@ -302,7 +316,15 @@ impl World {
     fn tick_player_clocks(&mut self, cx: &mut Ctx) {
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
         let mag = self.mag_of(self.player.weapon);
+        // 던진 창 · 방패(0274 ②b · 0276)가 날고 있나, 방패가 RB를 맡나(방패 던지기는 칸을 쓰지 않고 모으지 않는다), RB 칸의 수.
+        let javelin = self.rb_out();
+        let shield_rb = self.shield_throws();
+        let charges = self.cast_charges();
+        // 한 칸이 차는 시간의 배(0274 ⑥ — 완드의 저주탄은 빨리 찬다, 나머지는 1).
+        let refill = self.rb_toss().map_or(1.0, |r| r.refill);
         let pl = &mut self.player;
+        // 그림자 걸음(0276)의 창.
+        pl.bare.shadow = (pl.bare.shadow - dt).max(0.0);
         // 콤보·원거리 무기 시계(0051).
         pl.combo_left = (pl.combo_left - dt).max(0.0);
         // 뿌리내린 몸(0214): 땅에 서서 움직이지 않은 시간 — 걷거나 구르거나 뜨면 처음부터.
@@ -318,13 +340,47 @@ impl World {
                 }
             }
         }
+        // 쇠뇌의 덧장전(0274 ②b — `Rhythm::Crank`): 탄이 남아 있고 쏘지 않고 멈춰 서 있으면 `wait`초 뒤부터 `each`초마다 한 발.
+        // 쏘거나 모으거나·구르거나 뛰거나·맞거나·걸으면 처음부터 — 수류탄을 던지는 동안(서 있다)은 이어 간다.
+        if let Some(weapons::Rhythm::Crank { wait, each }) = pl.weapon.rhythm() {
+            let busy = matches!(
+                pl.state,
+                PState::Cast { .. }
+                    | PState::CastCharge { .. }
+                    | PState::Dodge { .. }
+                    | PState::Jump { .. }
+                    | PState::Hurt { .. }
+                    | PState::Recoil { .. }
+            );
+            if busy || !still || pl.ranged.reload > 0.0 || pl.ranged.ammo >= mag {
+                pl.ranged.topup = 0.0;
+            } else {
+                pl.ranged.topup += dt;
+                if pl.ranged.topup >= wait + each {
+                    pl.ranged.ammo += 1;
+                    pl.ranged.topup = wait;
+                }
+            }
+        }
         if let Some(g) = wpn.grenade {
             pl.ranged.grenades =
                 (pl.ranged.grenades + dt / g.cooldown.max(0.1)).min(g.count as f32);
         }
+        // 멘 쇠뇌(보조특성, 0272 1b): 등에서도 장전이 돈다 — 손에 든 것과 같은 빠르기로, 다 차면 가득(`Stowed::full`).
+        // 다른 무기의 멘 탄창은 그대로 멈춰 있다(0223).
+        if let (Some(sub), Some(l)) = (pl.sub, pl.sub_load.as_mut()) {
+            if l.reload > 0.0 && sub.sub_trait().is_some_and(|s| s.stowed_reload) {
+                l.reload -= dt;
+                if l.reload <= 0.0 {
+                    l.reload = 0.0;
+                    l.full = true;
+                }
+            }
+        }
         // 마법 칸(0111): 수류탄처럼 시간으로 찬다 — 한 칸 `cast.cooldown s`.
-        if let Rb::Magic(_) = wpn.rb {
-            pl.ranged.mana = (pl.ranged.mana + dt / t[P::CastCooldown].max(0.1)).min(CAST_CHARGES);
+        if let Rb::Toss = wpn.rb {
+            pl.ranged.mana =
+                (pl.ranged.mana + dt / (t[P::CastCooldown] * refill).max(0.1)).min(charges);
         }
         // 공중 RB(0111): 땅에 서면 다음 점프에 다시 쏠 수 있다.
         if !matches!(pl.state, PState::Jump { .. }) {
@@ -362,9 +418,17 @@ impl World {
             *cd = (*cd - dt).max(0.0);
         }
         pl.skill.denied = (pl.skill.denied - dt).max(0.0);
+        pl.skill.chord = pl
+            .skill
+            .chord
+            .map(|(s, left)| (s, left - dt))
+            .filter(|&(_, left)| left > 0.0);
+        pl.skill.stride = (pl.skill.stride - dt).max(0.0);
+        pl.skill.mend_rest = (pl.skill.mend_rest - dt).max(0.0);
         // 되울림·몰아치기(0158 G2)의 남은 시간 — 로직 시계라 히트스톱 동안은 줄지 않는다.
         pl.skill.echo_left = (pl.skill.echo_left - dt).max(0.0);
         pl.skill.flurry_left = (pl.skill.flurry_left - dt).max(0.0);
+        pl.skill.steady = (pl.skill.steady - dt).max(0.0);
         pl.flask_lock = (pl.flask_lock - dt).max(0.0);
         pl.flask_denied = (pl.flask_denied - dt).max(0.0);
         // 새 누름이면 0부터, 쥐고 있으면 늘고, 놓으면 0.
@@ -378,9 +442,9 @@ impl World {
         } else {
             pl.ranged.cast_hold + dt
         };
-        // 원거리 강공격(0056)을 모을 수 있나 — 떼는 순간 칸(마법)·볼트(쇠뇌) 하나를 쓴다.
+        // 원거리 강공격(0056)을 모을 수 있나 — 떼는 순간 칸(마법)·볼트(쇠뇌) 하나를 쓴다. 던진 창이 날고 있으면 못 한다(0274 ②b).
         cx.can_charge_cast = match wpn.rb {
-            Rb::Magic(_) => pl.ranged.mana >= 1.0,
+            Rb::Toss => pl.ranged.mana >= 1.0 && !javelin && !shield_rb,
             Rb::Shot { heavy, .. } => pl.ranged.ammo >= heavy.max(1),
         };
         pl.since_spill = (pl.since_spill + dt).min(f32::MAX);
@@ -413,7 +477,7 @@ impl World {
             pl.turn_cd = t[P::TurnCooldown];
             // 쏟는 쪽: 카메라가 도는 쪽(+ = 시계).
             let cw = plan.quarters > 0;
-            self.turn_now = Some((plan.quarters, cw));
+            self.notes.turn = Some((plan.quarters, cw));
             // 쥔 스틱은 곧바로 새 화면 기준 — 몸과 화면이 같이 돌았으니 그대로 새 정면으로 직진한다(0028).
             // 예전엔 돌기 전 기준을 붙잡아(0010) 돌린 뒤 엉뚱한 쪽으로 걸었다.
             self.hold = None;
@@ -461,22 +525,80 @@ impl World {
             return false;
         }
         if let Some(d) = cx.auto_dir.or(cx.aim) {
-            pl.facing = d.x.atan2(d.z);
+            pl.facing = d.x.atan2_d(d.z);
         }
         pl.state = PState::Parry { t: 0.0 };
         true
     }
 
     /// 방패 막기(0223): 쥔 동안 머문다. 떼거나 다른 것을 누르면 그 틱에 그 동작으로(막다가 치기·피하기가 늦지 않게).
+    /// 들이받기(0276 — 하데스의 방패): 막는 동안 힘이 모이고(`ClassState::rush`, `RUSH_FULL`초에 가득), 다른 것을 누르지 않고 패링
+    /// 버튼만 놓으면 모인 만큼 앞으로 들이받는다(`RUSH_MIN`보다 덜 모였으면 그냥 내린다 — 톡 막기가 새지 않게). 막기의 기력 셈은 그대로.
     fn tick_block(&mut self, cx: &Ctx, e: f32) {
         if !cx.a.parry_held || block_breaks(&cx.a) || !self.can_block() {
+            let power = std::mem::take(&mut self.player.class.rush);
+            if !cx.a.parry_held
+                && !block_breaks(&cx.a)
+                && self.can_block()
+                && power >= crate::tuning::RUSH_MIN
+                && self.start_rush(cx, power)
+            {
+                return;
+            }
             self.player.state = PState::Idle;
             self.tick_idle(cx);
             return;
         }
         // 막는 동안은 기력이 차지 않는다 — 방패 뒤에 오래 서면 칠 기력이 없다.
-        self.player.stamina_idle = 0.0;
-        self.player.state = PState::Block { t: e + cx.dt };
+        let pl = &mut self.player;
+        pl.stamina_idle = 0.0;
+        if e <= 0.0 {
+            pl.class.rush = 0.0;
+        }
+        pl.class.rush = (pl.class.rush + cx.dt / crate::tuning::RUSH_FULL).min(1.0);
+        pl.state = PState::Block { t: e + cx.dt };
+    }
+
+    /// 들이받기 시작(0276): 평타 한 번 값의 기력(없으면 막힌다 — 그냥 내린다). 쪽 = 이동 입력 > 바라보는 쪽(막는 동안 본 쪽).
+    fn start_rush(&mut self, cx: &Ctx, power: f32) -> bool {
+        let pl = &mut self.player;
+        if !pl.spend(cx.t[P::StaminaAttack]) {
+            return false;
+        }
+        let dir = if let Some(d) = cx.auto_dir.or(cx.aim).filter(|_| cx.target.is_none()) {
+            d
+        } else {
+            pl.facing_dir()
+        };
+        pl.facing = dir.x.atan2_d(dir.z);
+        pl.swings += 1;
+        pl.state = PState::Rush {
+            t: 0.0,
+            dir,
+            power,
+            swing: pl.swings,
+        };
+        self.skill_ev.push(Event::Rush {
+            at: self.player.pos,
+            dir,
+            power,
+        });
+        true
+    }
+
+    /// 들이받기: 내달린 뒤 짧게 굳는다(`RUSH_RECOVER`), 그 뒤 선다. 굳는 동안은 회피로 끊는다(`cancel_ready`).
+    fn tick_rush(&mut self, cx: &Ctx, e: f32, dir: Vec3, power: f32, swing: u32) {
+        let e2 = e + cx.dt;
+        self.player.state = if e2 >= crate::tuning::RUSH_TIME + crate::tuning::RUSH_RECOVER {
+            PState::Idle
+        } else {
+            PState::Rush {
+                t: e2,
+                dir,
+                power,
+                swing,
+            }
+        };
     }
 
     fn tick_idle(&mut self, cx: &Ctx) {
@@ -502,6 +624,20 @@ impl World {
         } else if self.try_parry(cx) || self.try_skill(cx) {
         } else if a.attack && !a.dodge && wpn.grenade.is_some() {
             self.throw_grenade(cx);
+        } else if a.cast && self.shield_throws() {
+            // 방패 던지기(0276 — 하데스의 방패): 종류의 RB보다 앞선다. 칸을 쓰지 않고 모으지 않는다 — 날아가 돌아올 때까지 다시 못 던진다.
+            if self.rb_out() {
+                self.player.ranged.cast_denied = 0.6;
+                self.notes.cast_denied = true;
+            } else {
+                let pl = &mut self.player;
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+                pl.state = PState::Cast {
+                    t: 0.0,
+                    dir: cx.cast_dir,
+                    fired: false,
+                };
+            }
         } else if a.attack && !a.dodge && self.swing_pays(cx) {
             self.start_swing(cx);
         } else if a.aim_hold
@@ -510,16 +646,27 @@ impl World {
             && cx.can_charge_cast
         {
             // 터치로 끌어 겨누는 동안(0217)은 쏘지 않고 쥐고 있으니, 쥔 채로 모으기에 든다 — 떼는 순간 모은 탄.
-            let pl = &mut self.player;
-            pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
-            pl.state = PState::CastCharge { t: 0.0 };
+            // 활(0274 ②b)은 누르는 순간부터 당기니 같은 길(`start_shot`)로.
+            if self.player.weapon.draws() {
+                self.start_shot(cx);
+            } else {
+                let pl = &mut self.player;
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+                pl.state = PState::CastCharge { t: 0.0 };
+            }
         } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
             self.start_shot(cx);
         } else if a.cast {
+            let javelin = self.rb_out();
+            let winds = self.player.weapon.winds();
             let pl = &mut self.player;
-            if pl.ranged.mana >= 1.0 {
+            if winds && pl.ranged.mana >= 1.0 && !javelin {
+                // 창 던지기(0274 ②b): 던지면 손에 창이 없어 "쏜 뒤 쥐어 모으기"를 못 한다 — 누르면 들어 겨누고 떼면 던진다(`tick_wind`).
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+                pl.state = PState::CastCharge { t: 0.0 };
+            } else if pl.ranged.mana >= 1.0 && !javelin {
                 pl.ranged.mana -= 1.0;
-                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
                 pl.state = PState::Cast {
                     t: 0.0,
                     dir: cx.cast_dir,
@@ -527,7 +674,7 @@ impl World {
                 };
             } else {
                 pl.ranged.cast_denied = 0.6;
-                self.cast_denied_now = true;
+                self.notes.cast_denied = true;
             }
         } else if a.flask && self.player.flask_lock <= 0.0 {
             // 등잔(0031): 가득이거나 0이면 몸짓 없이 깜빡만(빈 병 몸짓으로 묶지 않는다 — 급할 때 연타해도).
@@ -539,7 +686,7 @@ impl World {
                 };
             } else {
                 pl.flask_denied = 0.6;
-                self.flask_denied_now = true;
+                self.notes.flask_denied = true;
             }
         }
     }
@@ -556,7 +703,7 @@ impl World {
             let to = cx.throw_to.unwrap_or(pl.pos);
             let d = vec3(to.x - pl.pos.x, 0.0, to.z - pl.pos.z);
             if d.length() > 0.1 {
-                pl.facing = d.x.atan2(d.z);
+                pl.facing = d.x.atan2_d(d.z);
             }
             pl.state = PState::Throw {
                 t: 0.0,
@@ -565,7 +712,7 @@ impl World {
             };
         } else {
             pl.ranged.cast_denied = 0.6;
-            self.cast_denied_now = true;
+            self.notes.cast_denied = true;
         }
     }
 
@@ -586,7 +733,7 @@ impl World {
         if go {
             pl.beat.swing_beat = beat;
             if beat {
-                self.beat_now = true;
+                self.notes.beat = true;
                 pl.beat.chain += 1;
                 pl.beat.since = 0.0;
                 let tree = self.tree;
@@ -596,7 +743,7 @@ impl World {
                 }
                 // 이어지는 박자(0107): 박자 타 셋마다 둘레 충격.
                 if tree.has(Cell::FlowingBeat) && pl.beat.chain.is_multiple_of(cell::FLOW_EVERY) {
-                    self.shock_now = true;
+                    self.notes.shock = true;
                 }
                 // 이어지는 숨(0214): 박자 셋을 이으면 다음 회피가 기력 없이.
                 if tree.has(Cell::HeldBreath) && pl.beat.chain >= cell::HELD_BREATH_CHAIN {
@@ -629,7 +776,7 @@ impl World {
         pl.swings += 1;
         // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
         if let Some(d) = cx.auto_dir.or(cx.aim) {
-            pl.facing = d.x.atan2(d.z);
+            pl.facing = d.x.atan2_d(d.z);
         }
         // 내딛는 쪽 = 진행 방향(0018): 누른 순간의 이동 입력, 없으면 아직 움직이던 쪽, 서 있으면 바라보는 쪽.
         // 휘두르는 쪽(바라보는 쪽 — 자동 조준·조준 스틱)과는 따로다.
@@ -687,8 +834,47 @@ impl World {
         }
     }
 
-    /// 원거리 무기의 RB = 사격(0051): 탄창이 비면 장전이 끝날 때까지 못 쏜다.
+    /// 교체 공격의 한 타(0272 1b): 막 바꿔 든 무기(`cx.wpn`)가 들어오며 친다 — 근접 = 대시 공격(값은 대시 공격 그대로: 기력을
+    /// 치르고 박자 타가 아니다), 사격 무기 = 지금 겨눈 쪽으로 보통 한 발(탄 하나 · 기력). 반격 대신 나가는 타다 — 반격 창과
+    /// 이어 패링은 닫힌다(패링 하나에 보상 하나). 판정 시간·무적은 없다.
+    fn start_entry(&mut self, cx: &Ctx) {
+        let Some(entry) = self.player.weapon.entry() else {
+            return;
+        };
+        let pl = &mut self.player;
+        pl.parry.since = f32::MAX;
+        pl.parry.chain_left = 0.0;
+        pl.parry.chain_n = 0;
+        pl.beat.on = false;
+        pl.combo_left = 0.0;
+        match entry {
+            weapons::Entry::Dash => {
+                pl.dash_left = DASH_ATTACK_LATE;
+                if self.swing_pays(cx) {
+                    self.start_swing(cx);
+                }
+            }
+            // 교체 공격은 당기지 않고 곧장 한 발(활도 — 0274 ②b).
+            weapons::Entry::Shot => self.start_shot_as(cx, false),
+        }
+        let pl = &self.player;
+        if matches!(pl.state, PState::Attack { .. } | PState::Cast { .. }) {
+            self.skill_ev.push(Event::SwapStrike {
+                at: pl.pos,
+                dir: pl.facing_dir(),
+                to: pl.weapon,
+            });
+        }
+    }
+
+    /// 원거리 무기의 RB = 사격(0051): 탄창이 비면 장전이 끝날 때까지 못 쏜다. 활(0274 ②b — `Rhythm::Draw`)은 쏘지 않고 화살을
+    /// 메겨 당기기 시작한다(`CastCharge`) — 화살은 떼는 순간에 쓴다(당기다 구르면 잃지 않는다), 기력과 박자는 누르는 순간에.
     fn start_shot(&mut self, cx: &Ctx) {
+        self.start_shot_as(cx, self.player.weapon.draws());
+    }
+
+    /// `start_shot` — `draws`면 당기기 시작, 아니면 곧장 한 발(쇠뇌 · 교체 공격으로 들어오는 활).
+    fn start_shot_as(&mut self, cx: &Ctx, draws: bool) {
         let Rb::Shot { reload, time, .. } = cx.wpn.rb else {
             return;
         };
@@ -705,29 +891,35 @@ impl World {
         pl.beat.on = false;
         if pl.ranged.ammo > 0 {
             if free {
-                self.beat_now = true;
+                self.notes.beat = true;
                 pl.beat.chain += 1;
                 pl.beat.since = 0.0;
             } else {
                 pl.beat.chain = 0;
-                pl.ranged.ammo -= 1;
-                // 회피로 넣은 한 발을 장전 중에 쏘면 장전은 이어 간다(처음부터 다시 세지 않는다, 0210).
-                if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
-                    pl.ranged.reload = reload;
+                if !draws {
+                    pl.ranged.ammo -= 1;
+                    // 회피로 넣은 한 발을 장전 중에 쏘면 장전은 이어 간다(처음부터 다시 세지 않는다, 0210).
+                    if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
+                        pl.ranged.reload = reload;
+                    }
                 }
             }
             pl.beat.swing_beat = free;
             pl.beat.since_swing = 0.0;
             pl.beat.period = cx.t[P::CastTime] * time;
-            pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
-            pl.state = PState::Cast {
-                t: 0.0,
-                dir: cx.cast_dir,
-                fired: false,
+            pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+            pl.state = if draws {
+                PState::CastCharge { t: 0.0 }
+            } else {
+                PState::Cast {
+                    t: 0.0,
+                    dir: cx.cast_dir,
+                    fired: false,
+                }
             };
         } else {
             pl.ranged.cast_denied = 0.6;
-            self.cast_denied_now = true;
+            self.notes.cast_denied = true;
         }
     }
 
@@ -737,6 +929,7 @@ impl World {
             return;
         }
         let t = cx.t;
+        let prays = self.bare() == Some(weapons::Bare::Prayer);
         let pl = &mut self.player;
         let e2 = e + cx.dt;
         let mut gulped = gulped;
@@ -744,7 +937,9 @@ impl World {
             gulped = true;
             pl.flask -= 1;
             pl.hp = (pl.hp + t[P::FlaskHeal].round() as i32).min(pl.max_hp);
-            self.gulp_now = true;
+            self.notes.gulp = true;
+            // 기도하는 손(0276 — 망치의 빈 손): 삼킨 순간 둘레에 울림 고리(`apply_strike`가 낸다).
+            self.notes.prayer = prays;
         }
         if e2 >= t[P::FlaskTime] {
             pl.state = PState::Idle;
@@ -757,11 +952,11 @@ impl World {
     /// 평타 동작: 회피·패링·점프·마법·다음 타는 캔슬(0057, `cancel_or_buffer`)이 맡는다 — 여기서는 모으기와 끝만.
     fn tick_attack(&mut self, cx: &Ctx, e: f32, swing: u32, dir: Vec3, hit: u8) {
         let (a, t, wpn) = (&cx.a, cx.t, cx.wpn);
+        let after_hit = self.next_hit(hit);
         let pl = &mut self.player;
         let (s0, a0, r0) = hit_times(t, wpn, hit);
         let total = s0 + a0 + r0;
         let after = e >= s0 + a0;
-        let after_hit = wpn.after(hit);
         if a.attack_held && pl.attack_hold >= t[P::HeavyHoldStart] && after && wpn.heavy.is_some() {
             // 강공격(0030): 평타는 누르는 순간 나갔고, 한 번 누른 채 `heavy.hold start s`를 쥐고 있으면(활성이 끝난 뒤) 모으기로.
             // "그 순간 눌려 있나"만 보면 연타 중 휘두르기 도중의 짧은 누름이 활성 끝에 걸려 모으기로 샜다.
@@ -800,7 +995,7 @@ impl World {
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
         if a.attack_held {
             let full = t[P::HeavyCharge] * wpn.heavy.map_or(1.0, |h| h.charge);
-            self.charged_now |= e < full && e + dt >= full;
+            self.notes.charged |= e < full && e + dt >= full;
             self.player.state = PState::Charging { t: e + dt };
             return;
         }
@@ -810,7 +1005,7 @@ impl World {
             let full_at = t[P::HeavyCharge] * h.charge;
             // 떼면 강타 — 자동 조준·조준 스틱 쪽으로, 내딛는 쪽은 이동 입력(없으면 바라보는 쪽).
             if let Some(d) = cx.auto_dir.or(cx.aim) {
-                pl.facing = d.x.atan2(d.z);
+                pl.facing = d.x.atan2_d(d.z);
             }
             let dir = if cx.world_move.length_squared() > 1e-4 {
                 cx.world_move.normalize()
@@ -840,9 +1035,31 @@ impl World {
     }
 
     /// 강타: 활성이 끝난 뒤엔 회피로 끊는다.
+    /// 자루를 길게 잡은 창(0276 — 창의 빈 손)은 내달려 꿰뚫기가 끝나는 순간 한 번 더 내달린다(새 스윙 — 앞의 적을 다시 꿰뚫는다,
+    /// 기력 · 덤은 없다). 벼랑 앞에서 멈춘 꿰뚫기는 잇지 않는다.
     fn tick_heavy(&mut self, cx: &Ctx, e: f32, swing: u32, dir: Vec3, full: bool, perfect: bool) {
         let (s0, a0, r0) = heavy_times(cx.t, cx.wpn);
         let total = s0 + a0 + r0;
+        let lane = cx.wpn.heavy.is_some_and(|h| h.shape.lane_half().is_some());
+        if lane
+            && self.bare() == Some(weapons::Bare::LongGrip)
+            && swing != self.player.bare.relunge
+            && e < s0 + a0
+            && e + cx.dt >= s0 + a0
+            && !self.lunge_stops(dir, 0.3)
+        {
+            let pl = &mut self.player;
+            pl.swings += 1;
+            pl.bare.relunge = pl.swings;
+            pl.state = PState::Heavy {
+                t: 0.0,
+                swing: pl.swings,
+                dir,
+                full,
+                perfect: false,
+            };
+            return;
+        }
         if e >= s0 + a0 && self.try_dodge(cx) {
             return;
         }
@@ -870,13 +1087,15 @@ impl World {
         let mut fired = fired;
         let k = match wpn.rb {
             Rb::Shot { time, .. } => time,
-            Rb::Magic(_) => 1.0,
+            Rb::Toss => 1.0,
         };
         if !fired && e2 >= t[P::CastStartup] * k {
             fired = true;
             cx.fire = Some((dir, 0));
         }
+        // 활(0274 ②b)은 쏜 뒤 쥐어도 다시 당기지 않는다 — 새 누름이 `start_shot`으로 메긴다(기력·화살을 치르고).
         pl.state = if fired
+            && !pl.weapon.draws()
             && a.cast_held
             && pl.ranged.cast_hold >= t[P::CastHoldStart]
             && cx.can_charge_cast
@@ -895,13 +1114,22 @@ impl World {
         if self.try_dodge(cx) {
             return;
         }
+        if self.player.weapon.draws() {
+            self.tick_draw(cx, e);
+            return;
+        }
+        if self.player.weapon.winds() {
+            self.tick_wind(cx, e);
+            return;
+        }
         let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
-        let full = t[P::CastCharge];
+        // 두 손으로 엮는 지팡이(0276)는 빨리 모은다.
+        let full = self.cast_full(t);
         if a.cast_held && cx.can_charge_cast {
-            self.charged_now |= e < full && e + dt >= full;
+            self.notes.charged |= e < full && e + dt >= full;
             if ranged_aim_given(&cx.a) {
                 // 겨누는 손(끌기·스틱·숄더뷰의 카메라, 0217·0219)을 몸이 따라 돈다 — 뗄 때 어디로 갈지 보이게.
-                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                self.player.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
             }
             self.player.state = PState::CastCharge { t: e + dt };
             return;
@@ -913,7 +1141,7 @@ impl World {
         }
         // 떼면 모은 탄 — 칸·볼트 하나, 다 모았으면 무기 표의 `charged`, 덜 모았으면 약하게. 쏘는 동작의 뒷부분으로 이어진다.
         match wpn.rb {
-            Rb::Magic(_) => pl.ranged.mana -= 1.0,
+            Rb::Toss => pl.ranged.mana -= 1.0,
             Rb::Shot { reload, heavy, .. } => {
                 // 모은 사격은 볼트 `heavy`발(0210 — 모으기를 잇달아 하면 장전이 곧 온다).
                 pl.ranged.ammo = pl.ranged.ammo.saturating_sub(heavy.max(1));
@@ -925,7 +1153,7 @@ impl World {
                 pl.stamina_idle = 0.0;
             }
         }
-        pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+        pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
         // 모으기 공격의 패링(0089): 원거리 무기의 모은 사격도 떼는 순간부터 패링 창(근접 무기의 RB 마법은 무기의 공격이 아니라 뺀다, 0077·0078과 같은 경계).
         if matches!(wpn.rb, Rb::Shot { .. }) {
             pl.parry.release_guard = t[P::ParryWindow];
@@ -943,10 +1171,105 @@ impl World {
         ));
         let k = match wpn.rb {
             Rb::Shot { time, .. } => time,
-            Rb::Magic(_) => 1.0,
+            Rb::Toss => 1.0,
         };
         pl.state = PState::Cast {
             t: t[P::CastStartup] * k,
+            dir: cx.cast_dir,
+            fired: true,
+        };
+    }
+
+    /// 창 던지기를 들어 겨누기(0274 ②b — `Id::winds`): 쥔 동안 모으고, 떼면 칸 하나로 던진다 — 톡(`cast.hold start s` 전) = 보통 창,
+    /// 그 뒤 = 덜 모은 창, 다 모으면(`cast.charge s`) 모은 창. 근접 무기의 RB라 딱 맞춤 덤은 없다(0077 · 0078 경계 그대로).
+    /// 톡은 보통 RB와 같은 길이(던지는 자리를 앞당길 뿐).
+    fn tick_wind(&mut self, cx: &mut Ctx, e: f32) {
+        let (a, t, dt) = (&cx.a, cx.t, cx.dt);
+        let full = t[P::CastCharge];
+        if a.cast_held && cx.can_charge_cast {
+            self.notes.charged |= e < full && e + dt >= full;
+            if ranged_aim_given(&cx.a) {
+                self.player.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+            }
+            self.player.state = PState::CastCharge { t: e + dt };
+            return;
+        }
+        let pl = &mut self.player;
+        if !cx.can_charge_cast {
+            pl.state = PState::Idle;
+            return;
+        }
+        pl.ranged.mana -= 1.0;
+        let power = if e >= full {
+            2
+        } else if e >= t[P::CastHoldStart] {
+            1
+        } else {
+            0
+        };
+        pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+        cx.fire = Some((cx.cast_dir, power));
+        pl.state = PState::Cast {
+            t: e.min(t[P::CastStartup]),
+            dir: cx.cast_dir,
+            fired: true,
+        };
+    }
+
+    /// 활 당기기(0274 ②b — `Rhythm::Draw`): 쥔 동안 당기고(겨누는 손을 몸이 따른다), 떼면 당긴 시간의 단계로 쏜다 —
+    /// 톡 = 보통 화살(0) · `mid`초 넘게 = 반쯤 당긴 화살(1) · 끝까지 = 끝까지 당긴 화살(2 — 꿰뚫고 오금) · 다 당긴 뒤 창 안에 떼면
+    /// 딱 맞춤(3). 화살은 떼는 순간 하나(박자에 맞춰 메긴 것은 공짜 — `swing_beat`), 끝까지 당긴 것은 강타 값의 기력을 더 쓴다.
+    /// 쏘는 동작의 뒷부분으로 잇는다 — 톡은 보통 사격과 같은 길이(쏘는 자리를 앞당길 뿐), 오래 당긴 것은 놓는 자리부터.
+    fn tick_draw(&mut self, cx: &mut Ctx, e: f32) {
+        let (a, t, dt, wpn) = (&cx.a, cx.t, cx.dt, cx.wpn);
+        let Rb::Shot { reload, time, .. } = wpn.rb else {
+            return;
+        };
+        let Some(weapons::Rhythm::Draw { mid, .. }) = self.player.weapon.rhythm() else {
+            return;
+        };
+        let full = t[P::CastCharge];
+        if a.cast_held {
+            self.notes.charged |= e < full && e + dt >= full;
+            if ranged_aim_given(&cx.a) {
+                self.player.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+            }
+            self.player.state = PState::CastCharge { t: e + dt };
+            return;
+        }
+        let pl = &mut self.player;
+        if pl.ranged.ammo == 0 {
+            pl.state = PState::Idle;
+            return;
+        }
+        if !pl.beat.swing_beat {
+            pl.ranged.ammo -= 1;
+            if pl.ranged.ammo == 0 && pl.ranged.reload <= 0.0 {
+                pl.ranged.reload = reload;
+            }
+        }
+        let perfect = e >= full && e <= full + PERFECT_RELEASE;
+        let power = if perfect {
+            3
+        } else if e >= full {
+            2
+        } else if e >= mid {
+            1
+        } else {
+            0
+        };
+        if power >= 2 {
+            // 끝까지 당긴 화살은 강타 값(0117)을 더 낸다 — 옛 "한 발 + 모은 사격"(평타 값 + 강타 값)과 같은 값, 막지 않고 0까지(소울류).
+            let more = t[P::HeavyStamina] * wpn.stamina;
+            pl.stamina = (pl.stamina - more).max(0.0);
+            pl.stamina_idle = 0.0;
+            // 모으기 공격의 패링(0089)과 같은 경계: 끝까지 당겨 놓는 순간부터 패링 창.
+            pl.parry.release_guard = t[P::ParryWindow];
+        }
+        pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+        cx.fire = Some((cx.cast_dir, power));
+        pl.state = PState::Cast {
+            t: e.min(t[P::CastStartup] * time),
             dir: cx.cast_dir,
             fired: true,
         };
@@ -1010,19 +1333,24 @@ impl World {
             plunge = true;
             pl.ranged.hover = 0.0;
             if let Some(d) = cx.auto_dir.or(cx.aim) {
-                pl.facing = d.x.atan2(d.z);
+                pl.facing = d.x.atan2_d(d.z);
             }
         } else if cx.a.cast && !plunge && !pl.ranged.air_shot {
             // 공중 RB(0111, 사장 2026-11-08): 근접 무기 = 마법 한 칸을 내려 쏘고, 쇠뇌 = 볼트를 부채꼴로 내려 쏜다(탄창은 안 쓴다).
             // 쏘는 순간 잠깐 떠 있다(체공) — 한 점프에 한 번이라 연타로 떠 있지 못한다.
+            let javelin = self.rb_out();
+            let shield_rb = self.shield_throws();
+            let pl = &mut self.player;
             let ok = match cx.wpn.rb {
-                Rb::Magic(_) if pl.ranged.mana >= 1.0 => {
+                // 방패(0276): 칸 없이 — 날고 있지 않으면.
+                Rb::Toss if shield_rb && !javelin => true,
+                Rb::Toss if pl.ranged.mana >= 1.0 && !javelin && !shield_rb => {
                     pl.ranged.mana -= 1.0;
                     true
                 }
-                Rb::Magic(_) => {
+                Rb::Toss => {
                     pl.ranged.cast_denied = 0.6;
-                    self.cast_denied_now = true;
+                    self.notes.cast_denied = true;
                     false
                 }
                 // 쇠뇌 내려 쏘기(0111)도 기력(0117) — 볼트는 그대로 안 쓴다.
@@ -1033,8 +1361,8 @@ impl World {
                 pl.ranged.air_shot = true;
                 pl.ranged.hover = AIR_SHOT_HOVER;
                 pl.vy = pl.vy.max(0.0);
-                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
-                self.air_fire = Some(cx.cast_dir);
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
+                self.notes.air_fire = Some(cx.cast_dir);
             }
         }
         let pl = &mut self.player;
@@ -1123,10 +1451,37 @@ impl World {
         } else {
             1.0
         };
+        // 내달리는 강타(창 — 길 모양, 0272 2단계)는 벼랑 · 턱 끝에서 멈춘다(떨어지며 꿰뚫지 않는다).
+        let lunge_halts = match self.player.state {
+            PState::Heavy { dir, .. }
+                if wpn.heavy.is_some_and(|h| h.shape.lane_half().is_some()) =>
+            {
+                let step = t[P::HeavyLunge] * wpn.heavy.map_or(1.0, |h| h.lunge);
+                let (s0, a0, _) = heavy_times(t, wpn);
+                self.lunge_stops(dir, step / (s0 + a0).max(1e-3) * dt + 0.05)
+            }
+            _ => false,
+        };
+        let light_step = self.bare() == Some(weapons::Bare::LightStep);
         let pl = &mut self.player;
         match pl.state {
             PState::Dodge { dir, .. } => {
                 pl.vel = dir * (t[P::DodgeDist] / t[P::DodgeTime]);
+            }
+            // 들이받기(0276): 모인 힘만큼의 거리를 `RUSH_TIME`초에 — 문지기에 닿으면(`connected`) 거기서 멈춘다.
+            PState::Rush {
+                t: e,
+                dir,
+                power,
+                swing,
+            } => {
+                let (d0, d1) = crate::tuning::RUSH_DIST;
+                let dist = d0 + (d1 - d0) * power;
+                pl.vel = if e < crate::tuning::RUSH_TIME && pl.connected != swing {
+                    dir * (dist / crate::tuning::RUSH_TIME)
+                } else {
+                    Vec3::ZERO
+                };
             }
             PState::Attack {
                 t: e,
@@ -1163,40 +1518,66 @@ impl World {
             // 휘돌이의 도는 걸음(ㄱ)은 돌면서 느리게 걷고, 땅울림의 멀리 뛰기(ㄱ)는 시동 동안 정해 둔 거리를 뛰어든다.
             PState::Skill { id, t: e, dir, .. } => {
                 use crate::skills::{Form, Twist};
-                let d = d_skill.unwrap_or_else(|| id.def().at(1, crate::skills::Pick::A));
+                // 스킬이면 위에서 `skill_eff`로 센 값이 늘 있다(이 사이에 상태를 바꾸지 않는다 — 0278 R20: 옛 "1레벨 표의 값"으로
+                // 떨어지는 길은 닿지 않는 길이었다).
+                let Some(d) = d_skill else {
+                    unreachable!("skill {id:?} without its values")
+                };
                 let s = d.skill;
-                pl.vel = match (s.form, d.twist) {
-                    (Form::Lane { dist, time, .. }, twist) if e >= s.startup => {
+                // 모양마다 한 갈래(와일드카드 없이 — 0278 R14): 걷지 않는 모양·때가 아닌 틱은 선다.
+                let walk = |pl: &Player, speed: f32| {
+                    let want = world_move * t[P::MoveSpeed] * speed;
+                    let diff = want - pl.vel;
+                    let max = t[P::MoveAccel] * dt;
+                    pl.vel
+                        + if diff.length() > max {
+                            diff.normalize() * max
+                        } else {
+                            diff
+                        }
+                };
+                let acting = e >= s.startup && e < s.startup + d.active();
+                pl.vel = match s.form {
+                    Form::Lane { dist, time, .. } if e >= s.startup => {
                         let v = dist / time.max(1e-3);
                         if e < s.startup + time {
                             dir * v
-                        } else if twist == Some(Twist::Return) && e < s.startup + time * 2.0 {
+                        } else if d.twist == Some(Twist::Return) && e < s.startup + time * 2.0 {
                             -dir * v
                         } else {
                             Vec3::ZERO
                         }
                     }
-                    // 버팀의 버티는 걸음(0158 G2 ㄱ)도 같은 걸음 — 버티는 동안만.
-                    (Form::Ring { .. }, Some(Twist::Walk { speed }))
-                    | (Form::Brace { .. }, Some(Twist::Walk { speed }))
-                        if !matches!(s.form, Form::Brace { .. })
-                            || (e >= s.startup && e < s.startup + d.active()) =>
-                    {
-                        let want = world_move * t[P::MoveSpeed] * speed;
-                        let diff = want - pl.vel;
-                        let max = t[P::MoveAccel] * dt;
-                        pl.vel
-                            + if diff.length() > max {
-                                diff.normalize() * max
-                            } else {
-                                diff
-                            }
+                    Form::Lane { .. } => Vec3::ZERO,
+                    // 휘돌이의 도는 걸음(ㄱ) — 버팀의 버티는 걸음(0158 G2 ㄱ)도 같은 걸음, 버티는 동안만.
+                    Form::Ring { .. } => match d.twist {
+                        Some(Twist::Walk { speed }) => walk(pl, speed),
+                        _ => Vec3::ZERO,
+                    },
+                    Form::Brace { .. } => match d.twist {
+                        Some(Twist::Walk { speed }) if acting => walk(pl, speed),
+                        _ => Vec3::ZERO,
+                    },
+                    // 빠지며 베기(0274 ③): 벤 뒤 `time`초 동안 `back` m 뒤로(먼 걸음 ㄱ은 `Skill::at`이 거리를 바꿔 둔다).
+                    Form::Slip { back, time, .. } if e >= s.startup && e < s.startup + time => {
+                        -dir * (back / time.max(1e-3))
                     }
-                    (Form::Cone { .. }, Some(Twist::Leap { .. })) if e < s.startup => {
-                        dir * (pl.skill.leap / s.startup.max(1e-3))
-                    }
+                    Form::Slip { .. } => Vec3::ZERO,
+                    // 바늘땀의 파고드는 걸음(0270 C3 ㄱ): 찌르는 동안 앞으로 내딛는다.
+                    Form::Stab { .. } => match d.twist {
+                        Some(Twist::Lunge { dist }) if acting => {
+                            dir * (dist / d.active().max(1e-3))
+                        }
+                        _ => Vec3::ZERO,
+                    },
+                    Form::Cone { .. } => match d.twist {
+                        Some(Twist::Leap { .. }) if e < s.startup => {
+                            dir * (pl.skill.leap / s.startup.max(1e-3))
+                        }
+                        _ => Vec3::ZERO,
+                    },
                     // 제비걸음(0214): 걸음마다 앞 6할 동안 닿을 자리로 뛴다.
-                    (Form::Hop { gap, .. }, _) if e >= s.startup && e < s.startup + d.active() => {
+                    Form::Hop { gap, .. } if acting => {
                         let into = (e - s.startup) % gap.max(1e-3);
                         let dash = gap * crate::tuning::HOP_DASH;
                         if into < dash {
@@ -1206,14 +1587,27 @@ impl World {
                             Vec3::ZERO
                         }
                     }
-                    _ => Vec3::ZERO,
+                    Form::Hop { .. }
+                    | Form::Pull { .. }
+                    | Form::Drift { .. }
+                    | Form::Trap { .. }
+                    | Form::Wave { .. }
+                    | Form::Echo { .. }
+                    | Form::Throw { .. }
+                    | Form::Field { .. }
+                    | Form::Bash { .. }
+                    | Form::Bell { .. }
+                    | Form::Rally { .. }
+                    | Form::Reap { .. }
+                    | Form::Hex { .. }
+                    | Form::Erupt { .. } => Vec3::ZERO,
                 };
             }
             PState::Heavy { t: e, dir, .. } => {
                 let (s0, a0, _) = heavy_times(t, wpn);
                 let reach = s0 + a0;
                 let lunge = t[P::HeavyLunge] * wpn.heavy.map_or(1.0, |h| h.lunge);
-                pl.vel = if e < reach {
+                pl.vel = if e < reach && !lunge_halts {
                     dir * (lunge / reach.max(1e-3))
                 } else {
                     Vec3::ZERO
@@ -1246,14 +1640,27 @@ impl World {
                     PState::Charging { .. } => {
                         t[P::HeavyChargeWalk] * wpn.heavy.map_or(1.0, |h| h.walk) * charge_walk
                     }
-                    PState::Cast { .. } | PState::Throw { .. } | PState::CastCharge { .. } => {
-                        t[P::CastWalk]
-                    }
+                    // 활을 당기는 동안(0274 ②b)은 쇠뇌를 모을 때보다 조금 덜 느리다 — 움직이며 당겨 쏘는 무기.
+                    // 가벼운 걸음(0276 — 활의 빈 손)은 거의 걷는 빠르기로.
+                    PState::CastCharge { .. } => match pl.weapon.rhythm() {
+                        Some(weapons::Rhythm::Draw { .. }) if light_step => {
+                            t[P::CastWalk] * weapons::BARE_BOW_WALK
+                        }
+                        Some(weapons::Rhythm::Draw { walk, .. }) => t[P::CastWalk] * walk,
+                        Some(weapons::Rhythm::Crank { .. }) | None => t[P::CastWalk],
+                    },
+                    PState::Cast { .. } | PState::Throw { .. } => t[P::CastWalk],
                     PState::Block { .. } => crate::tuning::BLOCK_WALK,
                     PState::Idle if pl.running => RUN_SPEED_X,
                     _ => 1.0,
                 };
-                let want = world_move * t[P::MoveSpeed] * slow;
+                // 흐르는 걸음(결, 0270 C3): 피 흘리는 적을 친 뒤 잠깐 빨리 걷는다.
+                let stride = if pl.skill.stride > 0.0 {
+                    crate::progression::vein::SHARP_STRIDE
+                } else {
+                    1.0
+                };
+                let want = world_move * t[P::MoveSpeed] * slow * stride;
                 let diff = want - pl.vel;
                 let max = t[P::MoveAccel] * dt;
                 pl.vel += if diff.length() > max {
@@ -1290,15 +1697,15 @@ impl World {
             ) => None,
             (Basis::Lock(tg), _) => {
                 let d = tg - pl.pos;
-                Some(d.x.atan2(d.z))
+                Some(d.x.atan2_d(d.z))
             }
-            _ if cx.aim.is_some() => cx.aim.map(|d| d.x.atan2(d.z)),
+            _ if cx.aim.is_some() => cx.aim.map(|d| d.x.atan2_d(d.z)),
             // 막는 동안(0223)은 걷는 쪽으로 돌지 않는다 — 방패를 든 채 뒤로 물러설 수 있게(락온·조준 스틱은 위에서 돌린다).
             (_, PState::Block { .. }) => None,
             (Basis::Quarter { .. } | Basis::Frozen(_), _)
                 if cx.world_move.length_squared() > 1e-4 =>
             {
-                Some(cx.world_move.x.atan2(cx.world_move.z))
+                Some(cx.world_move.x.atan2_d(cx.world_move.z))
             }
             _ => None,
         };
@@ -1337,17 +1744,35 @@ impl World {
         started_from: std::mem::Discriminant<PState>,
         was_dodging: bool,
     ) {
-        self.plunge_now |= cx.landed_plunge;
+        self.notes.plunge |= cx.landed_plunge;
+        // 그림자 걸음(0276 — 쌍단검의 빈 손): 회피가 끝나면(끊고 나간 공격까지) 창이 열리고, 그 뒤 첫 휘두르기(평타 · 대시 · 강공격)가
+        // 그 표지를 받는다 — 헛쳐도 쓴다. 창이 닫히거나 다른 휘두르기가 먼저면 없다.
+        if self.bare() == Some(weapons::Bare::ShadowStep) {
+            let pl = &mut self.player;
+            if was_dodging && !matches!(pl.state, PState::Dodge { .. }) {
+                pl.bare.shadow = weapons::SHADOW_STEP_LATE;
+                pl.bare.shadow_from = match pl.state {
+                    PState::Attack { swing, .. } | PState::Heavy { swing, .. } => swing - 1,
+                    _ => pl.swings,
+                };
+            }
+            if pl.bare.shadow > 0.0 && pl.swings > pl.bare.shadow_from {
+                if let PState::Attack { swing, .. } | PState::Heavy { swing, .. } = pl.state {
+                    pl.bare.shadow_swing = swing;
+                }
+                pl.bare.shadow = 0.0;
+            }
+        }
         // 받아 둔 행동이 쓰였다(새 동작이 시작됐다) — 끝나서 서게 된 것(`Idle`)이면 남겨 둔다(다음 틱에 나간다).
         let now = std::mem::discriminant(&self.player.state);
         if now != started_from && !matches!(self.player.state, PState::Idle) {
             self.player.pending = None;
         }
         if cx.fire.is_some() {
-            self.cast_fire = cx.fire;
+            self.notes.cast_fire = cx.fire;
         }
         if cx.thrown.is_some() {
-            self.throw_to = cx.thrown;
+            self.notes.throw_to = cx.thrown;
         }
         // 원거리 무기는 회피하면 한 발 장전(0051, PoE2 착상) — 회피를 공격 리듬에 넣는다.
         if !was_dodging && matches!(self.player.state, PState::Dodge { .. }) {
@@ -1386,13 +1811,8 @@ impl World {
     }
 
     pub(super) fn assist_aim(&self, d: Vec3, deg: f32, t: &Tuning) -> Vec3 {
-        let wpn = self.player.weapon.def();
-        let range = match wpn.rb {
-            Rb::Magic(b) => b.range,
-            Rb::Shot { bolt, .. } => bolt.range,
-        };
-        let reach = t[P::CastRange] * range;
-        let cos = deg.to_radians().cos();
+        let reach = t[P::CastRange] * self.rb_bolts().0.range;
+        let cos = deg.to_radians().cos_d();
         let p = self.player.pos;
         self.enemies
             .iter()

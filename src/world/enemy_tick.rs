@@ -4,6 +4,7 @@
 //! 패링·막음·맞음으로 가른다) → 2단계 전환의 밀어냄 → 종 조각 → 남는 고리 → 돌진 미리 받기 → 패링의 결과 → 되울림 →
 //! **방랑자가 맞는다**(`wanderer_takes_hit` — 체력을 깎는 한 자리, 0143). 새 피해 경로는 `hurt_player`에 친 자리를 넣는다.
 use super::*;
+use crate::det::Det;
 
 /// 적마다 한 틱이 낸 것 — 뒤 단계(조각·고리·패링·맞음)가 이어 쓴다.
 struct EnemyActs {
@@ -130,18 +131,58 @@ impl World {
                 }
                 EState::Chase => {
                     let gone = vec3(en.pos.x - home.x, 0.0, en.pos.z - home.z).length();
-                    if gone > en.leash && from_home > en.leash {
+                    // 필드 보스(0270 D)는 제 터를 지킨다: 방랑자가 터에서 끈보다 멀어지면 어디에 있든 돌아가 엎드린다.
+                    let lost = if en.field {
+                        from_home > en.leash
+                    } else {
+                        gone > en.leash && from_home > en.leash
+                    };
+                    if lost {
                         en.state = EState::Return;
+                    }
+                }
+                // 엎드린 필드 보스(0270 D): 보이는 자리에서 `FIELD_WAKE_R` 안으로 다가오면 일어난다(벽 너머·다른 층은 아니다).
+                EState::Dormant if en.lying() => {
+                    let near = from_home <= en.leash && (body - en.pos.y).abs() <= SIGHT_DY;
+                    if near && d <= crate::tuning::FIELD_WAKE_R && nav.clear(en.pos, p, 0.1) {
+                        en.stir();
                     }
                 }
                 _ => {}
             }
         }
+        self.stir_fields(p);
         for at in woke {
             for en in self.enemies.iter_mut() {
                 if en.state == EState::Idle && en.pos.distance(at) <= ALERT_RADIUS {
                     en.notice();
                 }
+            }
+        }
+    }
+
+    /// 엎드린 필드 보스를 쳤다(0270 D "다가가거나 치면 일어난다"): 잠든 몸은 맞지 않는다(`active`가 거짓) — 방랑자의 탄·수류탄·
+    /// 던진 무기가 몸 곁(`FIELD_STIR_R`)에 오면 맞힌 것으로 쳐 깨운다(피해는 없다). 근접은 닿기 전에 `FIELD_WAKE_R`이 먼저 깨운다.
+    /// 방랑자가 터의 끈 밖이면 깨우지 않는다(일어났다 곧 돌아가 눕기만 한다).
+    fn stir_fields(&mut self, p: Vec3) {
+        let reach = crate::tuning::FIELD_STIR_R;
+        let mut shots = self.bolts.iter().map(|b| b.pos).collect::<Vec<_>>();
+        shots.extend(self.bombs.iter().map(|g| g.pos));
+        shots.extend(self.skill_blades.iter().map(|b| b.pos));
+        if shots.is_empty() {
+            return;
+        }
+        for en in self.enemies.iter_mut().filter(|e| e.lying()) {
+            let Some((home, _)) = en.home else { continue };
+            if vec3(p.x - home.x, 0.0, p.z - home.z).length() > en.leash {
+                continue;
+            }
+            let touched = shots.iter().any(|s| {
+                vec3(s.x - en.pos.x, 0.0, s.z - en.pos.z).length() <= en.radius + reach
+                    && s.y - en.pos.y <= en.height + reach
+            });
+            if touched {
+                en.stir();
             }
         }
     }
@@ -237,7 +278,7 @@ impl World {
             }
             let away = to.normalize_or(Vec3::Z);
             for deg in [0.0f32, 35.0, -35.0, 70.0, -70.0] {
-                let dir = Quat::from_rotation_y(deg.to_radians()) * away;
+                let dir = crate::det::turn_y(away, deg.to_radians());
                 let mut land = en.pos + dir * crate::tuning::POD_HOP;
                 if nav.g.cell_of(land).is_none() || !nav.clear(en.pos, land, en.radius) {
                     continue;
@@ -290,7 +331,7 @@ impl World {
                 h.t += dt;
                 let d = vec3(h.to.x - h.from.x, 0.0, h.to.z - h.from.z);
                 if d.length_squared() > 1e-6 {
-                    en.facing = d.x.atan2(d.z);
+                    en.facing = d.x.atan2_d(d.z);
                 }
                 en.pos = h.at(h.t / h.dur);
                 en.hop = if h.t >= h.dur {
@@ -310,26 +351,40 @@ impl World {
                     blow,
                     boss: en.boss,
                 });
+                // 뿌리 줄이 여럿이면(0270 D 내려 딛기 2단계) 양옆 줄도 제 쪽으로 — 줄마다 금이 뻗는다.
+                if matches!(blow, crate::enemy::Blow::Line { .. }) {
+                    for (yaw, len) in en.root_lines().into_iter().skip(1) {
+                        ev.push(Event::EnemyStrike {
+                            at,
+                            dir: en.dir_at(yaw),
+                            blow: crate::enemy::Blow::Line { len },
+                            boss: en.boss,
+                        });
+                    }
+                }
             }
             // 돌진 길이(0076): 벽·기둥·턱·아레나 끝까지 — 예고 띠와 몸이 같은 길이.
             // 뿌리 기둥 줄(0133)도 같은 길이 칸 — 벽·기둥을 뚫고 솟지 않는다.
-            if matches!(en.atk, Atk::Charge | Atk::Roots) && matches!(en.state, EState::Tele { .. })
+            if matches!(en.atk, Atk::Charge | Atk::Roots | Atk::Stomp)
+                && matches!(en.state, EState::Tele { .. })
             {
                 let d = en.def();
-                let max = if en.atk == Atk::Roots {
-                    crate::tuning::ROOTS_LEN
-                } else {
+                let max = if en.atk == Atk::Charge {
                     d.charge_speed * d.charge_time
+                } else {
+                    crate::tuning::ROOTS_LEN
                 };
-                let room = nav.charge_room(
-                    &self.obstacles,
-                    self.arena,
-                    en.pos,
-                    en.facing_dir(),
-                    en.radius,
-                    max,
-                );
+                let (at, r) = (en.pos, en.radius);
+                let room_at =
+                    |dir: Vec3| nav.charge_room(&self.obstacles, self.arena, at, dir, r, max);
+                let room = room_at(en.facing_dir());
                 en.set_charge_room(room, p);
+                // 내려 딛기(0270 D)의 양옆 줄도 벽·기둥 앞까지.
+                if en.atk == Atk::Stomp {
+                    let a = crate::tuning::STOMP_FAN_DEG.to_radians();
+                    let (left, right) = (room_at(en.dir_at(-a)), room_at(en.dir_at(a)));
+                    en.set_fan_room(left, right);
+                }
             }
             // 바닥을 훑는 파동은 높이 떠 있으면 넘는다(0027) — 높은 단 위도 마찬가지(0043).
             let above = body - en.pos.y;
@@ -356,7 +411,7 @@ impl World {
                     } else {
                         k as f32 / (n - 1) as f32 - 0.5
                     };
-                    let dir = Quat::from_rotation_y(f * spread) * aim;
+                    let dir = crate::det::turn_y(aim, f * spread);
                     thrown.push(Shard {
                         pos: en.pos + dir * (en.radius + 0.2) + Vec3::Y * 1.1,
                         dir,
@@ -501,7 +556,7 @@ impl World {
                 continue;
             }
             en.hp -= SHARD_REFLECT_DAMAGE;
-            en.hurt = 0.15;
+            en.struck();
             ev.push(Event::Hit { at });
             if en.hp <= 0 {
                 en.state = EState::Dead;
@@ -720,11 +775,23 @@ impl World {
             // 버팀(0158 G2): 버티는 동안은 타마다 덜 다치고(0 아래로는 안 내려간다) 밀리지도 끊기지도 않는다 — 받아낸 타를 센다.
             let braced = self.bracing();
             // 디딘 발(0214): 스킬의 시동 동안 맞아도 끊기지 않는다 — 피해는 받는다.
-            let planted = self.tree.has(Cell::Planted)
+            // 칼바람(0274 ④): 휘도는 동안과 그 뒤 잠깐(`SkillState::steady`)도 — 피해는 받는다.
+            let planted = (self.tree.has(Cell::Planted)
                 && match self.player.state {
                     PState::Skill { id, t: e, .. } => e < self.skill_eff(id).skill.startup,
                     _ => false,
-                };
+                })
+                || self.player.skill.steady > 0.0;
+            // 대검을 휘두르는 동안(0274 ④ — 종류 표의 `Quirks::steady_swing`): 맞아도 덜 휘청이고 덜 밀린다(덧옷 `flinch`와 같은 손잡이 — 받는 피해는 그대로).
+            let (flinch, knocked) = match self.steady_swing() {
+                #[cfg(test)]
+                Some(_) if self.flinch_probe.is_some() => {
+                    let k = self.flinch_probe.unwrap_or(1.0);
+                    (k, k)
+                }
+                Some(fk) => fk,
+                None => (1.0, 1.0),
+            };
             // 뿌리내린 몸(0214 맺음): 서 있으면 덜 다치고 밀리지 않는다.
             let rooted = self.tree.keyed(crate::progression::Key::Rooted)
                 && self.player.hurt.still >= crate::progression::key::ROOTED_STILL;
@@ -769,7 +836,7 @@ impl World {
                 // `STUN_CHAIN_GRACE` 동안 또 맞으면 경직이 그전의 반 — 맞을수록 짧아져 떼 속에서도 빠져나갈 틈이 생긴다.
                 (pl.hurt.stun_chain, pl.hurt.stun_window) =
                     stun_chain_next(pl.hurt.stun_window, pl.hurt.stun_chain, t[P::HitStun]);
-                let dur = t[P::HitStun] * 0.5f32.powi(pl.hurt.stun_chain);
+                let dur = t[P::HitStun] * 0.5f32.powi(pl.hurt.stun_chain) * flinch;
                 if planted {
                     // 스킬은 그대로 나간다.
                 } else if dur > 0.0 {
@@ -780,7 +847,7 @@ impl World {
                 }
                 if !planted && !rooted {
                     let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
-                    pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
+                    pl.vel = away * t[P::HitKnock] * KNOCK_DECAY * knocked;
                 }
             }
             if felt {

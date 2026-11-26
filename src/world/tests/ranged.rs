@@ -26,10 +26,7 @@ fn a_cast_spends_a_charge_and_the_bolt_hits() {
         "{}",
         w.player.ranged.mana
     );
-    let magic = match w.player.weapon.def().rb {
-        weapons::Rb::Magic(b) => b.damage,
-        weapons::Rb::Shot { bolt, .. } => bolt.damage,
-    };
+    let magic = w.player.weapon.bolts().0.damage;
     assert_eq!(w.enemies[0].hp, 90 - magic);
     assert!(w.bolts.is_empty());
     assert!(matches!(w.player.state, PState::Idle));
@@ -553,7 +550,7 @@ fn holding_rb_charges_a_stronger_magic_bolt() {
     let mut w = World::new("test", 40.0);
     let got = charge_cast(&mut w, &t, full);
     assert_eq!(got.len(), 1);
-    assert_eq!(got[0].def, weapons::Id::Sword.def().charged);
+    assert_eq!(got[0].def, weapons::Id::Sword.bolts().1);
     // 톡 한 칸 + 모은 탄 한 칸 — 그 사이 시간으로 찬 몫(0111)은 한 칸에 못 미친다.
     assert!(
         w.player.ranged.mana >= CAST_CHARGES - 2.0 && w.player.ranged.mana < CAST_CHARGES - 1.0,
@@ -563,7 +560,7 @@ fn holding_rb_charges_a_stronger_magic_bolt() {
     // 덜 모으고 떼면 약하게(반 피해, 꿰뚫기 없음).
     let mut w = World::new("test", 40.0);
     let got = charge_cast(&mut w, &t, 3);
-    let c = weapons::Id::Sword.def().charged;
+    let c = weapons::Id::Sword.bolts().1;
     // 반은 옛 눈금으로 올림(0158 N0): 30 → 옛 (3 + 1) / 2 = 2의 열 배.
     assert_eq!((c.damage, got[0].def.damage), (30, 20));
     assert!(!got[0].def.pierce);
@@ -575,7 +572,7 @@ fn the_crossbow_charges_a_piercing_shot() {
     let t = Tuning::default();
     let full = (t[P::CastCharge] / TICK_DT).ceil() as usize;
     let past_perfect = (PERFECT_RELEASE / TICK_DT).ceil() as usize + 2;
-    let charged = weapons::Id::Crossbow.def().charged;
+    let charged = weapons::Id::Crossbow.bolts().1;
     let mut w = World::new("test", 40.0);
     w.set_weapon(weapons::Id::Crossbow);
     let mag = w.player.ranged.ammo;
@@ -591,7 +588,7 @@ fn the_crossbow_charges_a_piercing_shot() {
     // 근접 무기의 RB 마법은 무기의 모으기 공격이 아니다 — 딱 맞춤 없음.
     let mut w = World::new("test", 40.0);
     let got = charge_cast(&mut w, &t, full + 2);
-    assert_eq!(got[0].def.damage, weapons::Id::Sword.def().charged.damage);
+    assert_eq!(got[0].def.damage, weapons::Id::Sword.bolts().1.damage);
     // 볼트가 다 떨어지면 쥐어도 모으기로 가지 않는다.
     w.player.ranged.ammo = 1;
     let held = Actions {
@@ -660,7 +657,7 @@ fn a_crossbow_shot_on_the_beat_keeps_its_bolt_and_mashing_spends_them() {
 }
 
 /// 원거리 시험 마당: 5×8칸(2m), z가 음수인 위쪽 네 줄의 높이가 `far`, 아래 네 줄은 0. 방랑자는 아래쪽(z = +4)에서 위(-z)를 본다.
-fn split_yard(far: f32) -> World {
+pub(super) fn split_yard(far: f32) -> World {
     use crate::ground::{Cell::Flat, Ground};
     let mut cells = vec![Flat(0.0); 5 * 8];
     for c in cells.iter_mut().take(5 * 4) {
@@ -701,6 +698,8 @@ fn a_level_shot_follows_the_ground_to_foes_above_and_below() {
         (0.0, 0.0, "flat ground still hits"),
     ] {
         let mut w = split_yard(far);
+        // 땅을 따라 흐르는 것은 마법 탄(지팡이의 RB — 0274 ②b부터 검은 손도끼를 던진다: `toss.rs`의 곧게 나는 것).
+        w.set_weapon(weapons::Id::Staff);
         w.player.pos.y = mine;
         w.spawn_mob(vec3(0.0, far, -4.0));
         let ev = shoot(&mut w);
@@ -717,12 +716,14 @@ fn a_level_shot_follows_the_ground_to_foes_above_and_below() {
         }
         w.ground = Some(Ground::new(5, 8, 2.0, cells));
     }
+    w.set_weapon(weapons::Id::Staff);
     w.player.pos.y = 1.5;
     w.player.prev = w.player.pos;
     w.spawn_mob(vec3(0.0, 0.0, -4.0));
     assert!(hit(&shoot(&mut w)), "shooting down off a terrace");
     // 벼랑(넘는 턱보다 높은 단) 위의 적에게는 닿지 않는다 — 탄은 벼랑 면에서 사라진다.
     let mut w = split_yard(3.0);
+    w.set_weapon(weapons::Id::Staff);
     w.spawn_mob(vec3(0.0, 3.0, -4.0));
     assert!(!hit(&shoot(&mut w)), "a cliff face stops the bolt");
     assert!(w.bolts.is_empty());
@@ -730,7 +731,7 @@ fn a_level_shot_follows_the_ground_to_foes_above_and_below() {
 
 /// 재는 도구(0173): 무기마다 서 있는 적에게 `secs`초 동안 준 피해(초당) — 평타를 박자에 맞춰/마구 눌러.
 /// `cargo test weapon_dps_probe -- --ignored --nocapture`
-fn dps(id: weapons::Id, secs: f32, on_beat: bool, dist: f32) -> (f32, f32) {
+pub(super) fn dps(id: weapons::Id, secs: f32, on_beat: bool, dist: f32) -> (f32, f32) {
     dps_at(id, 0, secs, on_beat, dist)
 }
 
@@ -799,6 +800,7 @@ fn forged_dps_probe() {
         weapons::Id::Staff,
         weapons::Id::Crossbow,
         weapons::Id::Bow,
+        weapons::Id::Spear,
     ] {
         let d = if id.is_ranged() { 8.0 } else { 1.2 };
         for rank in 0..=crate::forge::RANKS {
@@ -1157,10 +1159,7 @@ fn the_aim_previews_match_where_the_shot_stops_and_the_grenade_bursts() {
         max: vec3(p0.x + 1.0, 3.0, p0.z - 6.0),
     });
     let face = w.player.facing_dir();
-    let bolt = match w.player.weapon.def().rb {
-        Rb::Shot { bolt, .. } => bolt,
-        Rb::Magic(b) => b,
-    };
+    let bolt = w.player.weapon.bolts().0;
     let said = w.shot_reach(face, bolt, &t);
     w.step(
         &Actions {

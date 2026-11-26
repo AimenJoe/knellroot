@@ -76,6 +76,11 @@ impl Progress {
         self.elites.sort();
     }
 
+    /// 필드 보스를 처음 쓰러뜨렸다(0270 D): 그 지역의 기록 이름을 적는다(겹치지 않게, 정렬).
+    pub fn note_field(&mut self, prefix: &str) {
+        add_sorted(&mut self.fields, prefix.to_string());
+    }
+
     /// 핵을 쥐었다(지역 `stage`의 문지기): 그 문지기의 핵 수를 하나(상한까지). 첫 지역은 끝낸 판 수(`clears`)도 센다 —
     /// "처음"은 첫 지역만 끝낸 판 수로, 다른 지역은 그 문지기의 핵이 0이었나로 본다(예전 그대로).
     pub fn take_core(&mut self, stage: usize) -> CoreTaken {

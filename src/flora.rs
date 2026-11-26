@@ -4,6 +4,7 @@
 //!   (0061: 큰 면 몇 개의 둥근 덩어리. 상자는 "마인크래프트" 인상이라 쓰지 않는다).
 //! - 뿌리만 각지다(0037): 네모 단면의 가는 줄기가 벽 꼭대기에서 바닥으로 구불구불 내려와 바닥에서 갈라진다.
 //! - 색(0037 "색 = 생명"): 성소 둘레 나무는 대부분 바랜 잿빛 잎(뿌리에 먹힘), 몇 그루만 살아 있는 민트빛. 뿌리는 짙은 보라.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::render::lit;
@@ -176,7 +177,7 @@ pub fn log(p: &mut Piece, a: Vec3, b: Vec3, r: f32, seed: u32, lights: &[Light])
     const SIDES: usize = 14;
     let tau = std::f32::consts::TAU;
     let groove = |ang: f32, t: f32| {
-        let g = (ang * 7.0 + t * 1.7 + h(seed, 9) * tau).cos();
+        let g = (ang * 7.0 + t * 1.7 + h(seed, 9) * tau).cos_d();
         g.max(0.0).powi(3)
     };
     let frame = |t: f32| -> (Vec3, Vec3, Vec3) {
@@ -206,7 +207,7 @@ pub fn log(p: &mut Piece, a: Vec3, b: Vec3, r: f32, seed: u32, lights: &[Light])
         let c = cr(t);
         for j in 0..=SIDES {
             let ang = j as f32 / SIDES as f32 * tau;
-            let out = sd * ang.cos() + up * ang.sin();
+            let out = sd * ang.cos_d() + up * ang.sin_d();
             let g = groove(ang, t);
             let v = c + out * rad(t) * (1.0 - 0.08 * g);
             // 껍질 빛: 골은 어둡게, 큰 얼룩(씨앗)으로 조금씩.
@@ -234,7 +235,7 @@ pub fn log(p: &mut Piece, a: Vec3, b: Vec3, r: f32, seed: u32, lights: &[Light])
         for (k, col) in [(0.5, RING), (0.62, SAP), (0.86, SAP), (1.0, BARK)] {
             for j in 0..SIDES {
                 let ang = j as f32 / SIDES as f32 * tau;
-                let v = c + (sd * ang.cos() + up * ang.sin()) * r0 * k + n * 0.002;
+                let v = c + (sd * ang.cos_d() + up * ang.sin_d()) * r0 * k + n * 0.002;
                 push(p, v, n, col);
             }
         }
@@ -262,7 +263,7 @@ pub fn log(p: &mut Piece, a: Vec3, b: Vec3, r: f32, seed: u32, lights: &[Light])
         let t = 0.12 + 0.76 * (m as f32 + h(seed, 30 + m)) / 4.0;
         let (_, sd, up) = frame(t);
         let lean = (h(seed, 34 + m) - 0.5) * 0.9;
-        let at = cr(t) + (up * lean.cos() + sd * lean.sin()) * rad(t) * 0.9;
+        let at = cr(t) + (up * lean.cos_d() + sd * lean.sin_d()) * rad(t) * 0.9;
         let size = rad(t) * (0.55 + 0.3 * h(seed, 38 + m));
         let start = p.verts.len() as u16;
         let col = mul(MOSS, 0.9 + 0.2 * h(seed, 42 + m));
@@ -288,7 +289,7 @@ pub fn log(p: &mut Piece, a: Vec3, b: Vec3, r: f32, seed: u32, lights: &[Light])
     let c = cr(0.0);
     for k in 0..3u32 {
         let ang = (k as f32 / 3.0 + h(seed, 50 + k) * 0.2) * tau;
-        let out = sd * ang.cos() + up * ang.sin().max(-0.2);
+        let out = sd * ang.cos_d() + up * ang.sin_d().max(-0.2);
         let from = c + out * rad(0.0) * 0.7 + fwd * 0.05;
         let to = from - fwd * (0.35 + 0.25 * h(seed, 54 + k)) + out * 0.25 - Vec3::Y * 0.1;
         strand(
@@ -373,7 +374,7 @@ pub fn tree(p: &mut Piece, base: Vec3, seed: u32, live: f32, lights: &[Light]) -
             1 => 0.85,
             _ => 0.75 + 0.25 * h(seed, 30 + k),
         } * (0.85 + 0.3 * h(seed, 6));
-        let c = top + vec3(a.cos() * d, up, a.sin() * d);
+        let c = top + vec3(a.cos_d() * d, up, a.sin_d() * d);
         let rr = vec3(r, r * 0.9, r);
         blob(
             p,
@@ -401,7 +402,7 @@ pub fn bush(p: &mut Piece, base: Vec3, seed: u32, size: f32, live: f32, lights: 
         let a = h(seed, 10 + k) * std::f32::consts::TAU;
         let d = if k == 0 { 0.0 } else { size * 0.6 };
         let r = size * (0.55 + 0.25 * h(seed, 20 + k));
-        let c = base + vec3(a.cos() * d, r * 0.55, a.sin() * d);
+        let c = base + vec3(a.cos_d() * d, r * 0.55, a.sin_d() * d);
         blob(
             p,
             c,
@@ -436,7 +437,7 @@ pub fn wall_root(p: &mut Piece, top: Vec3, out: Vec3, floor_y: f32, seed: u32, l
     let foot = *pts.last().unwrap();
     for (k, s) in [(0u32, 1.0f32), (1, -1.0)] {
         let a = (h(seed, 20 + k) - 0.5) * 0.8;
-        let dir = (out * a.cos() + side * s * (0.4 + a.sin().abs())).normalize_or_zero();
+        let dir = (out * a.cos_d() + side * s * (0.4 + a.sin_d().abs())).normalize_or_zero();
         let len = 0.5 + 0.5 * h(seed, 30 + k);
         let tip = foot + dir * len + Vec3::Y * 0.02;
         strand(

@@ -156,12 +156,14 @@ fn the_swap_button_swaps_at_once_when_standing() {
     assert_eq!(swapped(&w.step(&press, &t)), None);
 }
 
-/// 바꿔 치기: 튕겨 낸 뒤 반격 창 안에 바꿔 들고 치면 **새 무기의** 반격(모으지 않은 다 모은 강타)이 나간다 — 바꾸기가 반격 창을 닫지 않는다.
+/// 튕겨 낸 뒤 반격 창 안에 바꿔 들고 치면 **새 무기의** 반격(모으지 않은 다 모은 강타)이 나간다 — 그냥 바꾸기는 반격 창을 닫지
+/// 않는다. 0272 1b부터 받아친 직후의 바꾸기는 교체 공격이 되므로(`swap_strike.rs`), 그냥 바꾸는 때 = 교체 공격의 잠금 동안.
 #[test]
-fn swapping_inside_the_riposte_window_ripostes_with_the_new_weapon() {
+fn a_plain_swap_inside_the_riposte_window_ripostes_with_the_new_weapon() {
     let t = Tuning::default();
     let mut w = mob_swinging_in_front(&t);
     w.set_sub(Some(Id::Hammer));
+    w.player.swap.lock = 1.0;
     let mut ev = w.step(
         &Actions {
             parry: true,
@@ -190,6 +192,7 @@ fn swapping_inside_the_riposte_window_ripostes_with_the_new_weapon() {
         &t,
     );
     assert_eq!(swapped(&ev), Some(Id::Hammer));
+    assert!(!ev.iter().any(|e| matches!(e, Event::SwapStrike { .. })));
     w.step(
         &Actions {
             attack: true,
@@ -212,8 +215,8 @@ fn swapping_weapons_swaps_the_skill_slots_and_an_unfit_skill_is_an_empty_slot() 
     use crate::skills::Id as Sk;
     let t = Tuning::default();
     let mut w = armed(Id::Sword, Id::Hammer);
-    // 검의 칸: 제비걸음(한손) · 땅울림(양손 — 검으로는 못 쓴다). 망치의 칸: 땅울림 · 휘돌이.
-    w.set_skills([Sk::Swallow, Sk::Quake]);
+    // 검의 칸: 자루 치기(한손검) · 땅울림(망치 — 검으로는 못 쓴다). 망치의 칸: 땅울림 · 휘돌이. 0274 ③: 제비걸음은 쌍단검으로 옮겼다.
+    w.set_skills([Sk::Pommel, Sk::Quake]);
     w.set_sub_skills([Sk::Quake, Sk::Whirl]);
     assert_eq!(w.player.skill.rank, [1, 0]);
     let quake = Actions {
@@ -241,7 +244,7 @@ fn swapping_weapons_swaps_the_skill_slots_and_an_unfit_skill_is_an_empty_slot() 
     // 다시 검으로: 검의 칸이 돌아오고, 방금 쓴 땅울림의 대기는 흐르는 채다.
     w.player.state = PState::Idle;
     assert_eq!(w.swap_weapons(), Some(Id::Sword));
-    assert_eq!(w.player.skill.worn, [Sk::Swallow, Sk::Quake]);
+    assert_eq!(w.player.skill.worn, [Sk::Pommel, Sk::Quake]);
     assert_eq!(w.player.skill.rank, [1, 0]);
     assert!(w.player.skill.cd[Sk::Quake.index()] > 0.0);
     // 무기를 통째로 바꿔 들어도(장비 탭) 칸은 그 자리의 것 — 망치를 주무기로 들면 땅울림이 살아난다.

@@ -1,4 +1,5 @@
 use super::*;
+use crate::det::Det;
 use crate::skills::Id as Sk;
 use std::f32::consts::PI;
 
@@ -50,8 +51,9 @@ fn an_empty_slot_does_nothing_when_pressed() {
         rank,
         pick: Pick::A,
     };
+    // 0274 ③: 가로지르기는 쌍단검으로 옮겨 검으로는 못 쓴다 — 검이 쓰는 끌어모으기로.
     w.set_skills(Loadout {
-        slots: [slot(Sk::Whirl, 0), slot(Sk::Cut, 1)],
+        slots: [slot(Sk::Whirl, 0), slot(Sk::Gather, 1)],
         ult: 1,
         great: Ult::Upend,
     });
@@ -71,7 +73,7 @@ fn an_empty_slot_does_nothing_when_pressed() {
     let ev = run(&mut w, &t, skill(1), 5);
     assert!(ev
         .iter()
-        .any(|e| matches!(e, Event::SkillStart { id: Sk::Cut })));
+        .any(|e| matches!(e, Event::SkillStart { id: Sk::Gather })));
     // 둘 다 빈 칸이어도 게이지가 차면 "함께" = 큰 기술.
     let (mut w, t) = world();
     w.set_skills(Loadout {
@@ -99,7 +101,7 @@ fn whirl_cuts_everyone_around_twice_and_pushes_them_out() {
     let (mut w, t) = world();
     for k in 0..6 {
         let a = k as f32 / 6.0 * std::f32::consts::TAU;
-        w.spawn_mob(vec3(a.cos() * 2.2, 0.0, a.sin() * 2.2));
+        w.spawn_mob(vec3(a.cos_d() * 2.2, 0.0, a.sin_d() * 2.2));
     }
     w.spawn_mob(vec3(0.0, 0.0, -6.0));
     still(&mut w);
@@ -228,7 +230,7 @@ fn felling_enemies_brings_skills_back_sooner_and_skill_kills_count_half() {
     let want = 5.0 - 2.0 * t[P::SkillMomentum];
     assert!(w.player.skill.cd.iter().all(|c| (c - want).abs() < 1e-5));
     w.player.skill.cd = [5.0; skills::N];
-    w.skill_hit_tick = true;
+    w.notes.skill_hit = true;
     w.skill_books(&t, &mut vec![down]);
     let want = 5.0 - t[P::SkillMomentumOwn];
     assert!(w.player.skill.cd.iter().all(|c| (c - want).abs() < 1e-5));
@@ -481,9 +483,9 @@ fn forced(n: i32) -> i32 {
     (n as f32 * crate::weapons::ART_FORCE).round() as i32
 }
 
-/// 스킬 `id`를 쓸 수 있는 것을 든다(0225 — 이미 맞으면 그대로): 방패 → 망치 → 쇠뇌 → 지팡이 차례로.
+/// 스킬 `id`를 쓸 수 있는 것을 든다(0225 — 이미 맞으면 그대로): 방패 → 무기 표(`weapons::IDS`)의 차례로 종류가 있는 무기 — 단
+/// 마법력의 배(`Art::channel`)가 붙는 종류(지팡이)는 끝에: 타입 스킬의 시험은 바탕의 게이지로 잰다(배 없는 쇠뇌 · 활이 먼저).
 fn hold_for(w: &mut World, id: Sk) {
-    use crate::weapons::Id as W;
     let def = id.def();
     if def.fits(w.grip()) {
         return;
@@ -493,8 +495,12 @@ fn hold_for(w: &mut World, id: Sk) {
         return;
     }
     w.set_shield(None);
-    // (쇠뇌가 지팡이보다 먼저 — 타입 스킬의 시험은 바탕의 게이지로 잰다: 지팡이는 마법력의 배가 붙는다.)
-    for arm in [W::Hammer, W::Crossbow, W::Staff] {
+    let mut arms: Vec<crate::weapons::Id> = crate::weapons::IDS
+        .into_iter()
+        .filter(|a| a.class().is_some())
+        .collect();
+    arms.sort_by_key(|a| a.art().channel() > 1.0);
+    for arm in arms {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
             return;
@@ -711,9 +717,10 @@ fn cut_pick_a_dashes_back_and_cuts_again() {
         "back at the start: {:?}",
         w.player.pos
     );
-    // 가는 길의 타가 금을 내고(균열 타입 — 0223 V2) 오는 길의 타는 그 금에 더 아프다.
+    // 가는 길의 타가 금을 내고(균열 타입 — 0223 V2) 오는 길의 타는 그 금에 더 아프다. 0274 ③: 가로지르기는 쌍단검의 스킬 —
+    // 되돌아오는 길은 적의 등 뒤에서 치니 급소(`Art::sneak`)도 얹힌다(적은 처음 자리 쪽 +z를 본다).
     let dmg = w.skill_eff(Sk::Cut).skill.damage + w.stats.dmg;
-    let back = skills::scaled(dmg, crate::tuning::RIFT_MULT);
+    let back = skills::scaled(dmg, crate::tuning::RIFT_MULT * crate::weapons::ART_SNEAK);
     for e in &w.enemies[..3] {
         assert!(e.ail.rift > 0.0);
         assert_eq!(e.hp, 90 - dmg - back, "cut going and coming");
@@ -1104,7 +1111,7 @@ fn gather_capstone_makes_the_gathered_take_more_for_two_seconds() {
     still(&mut w);
     run(&mut w, &t, Actions::default(), 90);
     assert_eq!(w.enemies[0].marks.frail, 0.0);
-    assert_eq!(hurt_by(&w.enemies[0], 10, false, 0, &t), 10);
+    assert_eq!(hurt_by(&w.enemies[0], 10, false, 0, Knack::NONE, &t), 10);
     // 4단에는 없다.
     let (mut w, t) = world();
     wear(&mut w, Sk::Gather, 4, Pick::A);
@@ -1200,6 +1207,14 @@ fn upend_ranks_lengthen_the_stagger_and_harden_the_wall() {
 /// 스킬의 타(되돌아 베기·셋째 바퀴·모인 자리의 터짐까지)는 큰 기술 게이지를 채우지 않고, 스킬은 기력을 쓰지 않는다.
 #[test]
 fn at_max_rank_with_every_pick_a_boss_is_never_pulled_or_staggered_and_skills_stay_free() {
+    // 문지기와 필드 보스(0270 D — 고요한 사슴: 문지기가 아니어도 보스의 규칙은 같다).
+    for boss in [Kind::Warden, Kind::Stag] {
+        boss_rules_hold_for(boss);
+    }
+}
+
+fn boss_rules_hold_for(boss: Kind) {
+    assert!(crate::species::def(boss).boss);
     for id in skills::IDS {
         for pick in [Pick::A, Pick::B] {
             let (mut w, t) = world();
@@ -1207,16 +1222,16 @@ fn at_max_rank_with_every_pick_a_boss_is_never_pulled_or_staggered_and_skills_st
             // 보스는 어느 모양에도 닿는 자리(앞 2.5m), 잡몹 하나는 그 곁. 끌어모으기는 보스가 부채꼴 안·끌려오는 길 밖에
             // 서게(끌려온 잡몹의 몸에 밀리는 것은 끌림이 아니다).
             if id == Sk::Gather {
-                w.spawn_boss(vec3(3.0, 0.0, -5.0));
+                w.spawn(boss, vec3(3.0, 0.0, -5.0));
                 w.spawn_mob(vec3(0.0, 0.0, -3.0));
             } else {
-                w.spawn_boss(vec3(0.6, 0.0, -2.5));
+                w.spawn(boss, vec3(0.6, 0.0, -2.5));
                 w.spawn_mob(vec3(-1.2, 0.0, -2.5));
             }
             still(&mut w);
             let (boss_was, boss_hp) = (w.enemies[0].pos, w.enemies[0].hp);
             let stamina = w.player.stamina;
-            let tag = format!("{id:?} {pick:?}");
+            let tag = format!("{boss:?} {id:?} {pick:?}");
             let mut ev = w.step(&skill(0), &t);
             for k in 0..150 {
                 // 되울림(G2)은 패링이 있어야 울린다: 울림을 두른 뒤 잡몹이 앞에서 내려치게 하고 받아친다(보스는 둘레 안).
@@ -1255,7 +1270,7 @@ fn at_max_rank_with_every_pick_a_boss_is_never_pulled_or_staggered_and_skills_st
             if id == Sk::Gather {
                 assert!(flat(w.enemies[0].pos, boss_was) < 0.05, "{tag}: pulled");
                 assert_eq!(w.enemies[0].hp, boss_hp, "{tag}: gather alone does no harm");
-            } else if id == Sk::Swallow {
+            } else if id == Sk::Swallow || id == Sk::Ram || (id == Sk::Stitch && pick == Pick::A) {
                 // 제비걸음(0214)은 방랑자가 뛰어든다 — 보스가 처음 자리에서 끌려오지 않았는지만.
                 let moved = flat(w.enemies[0].pos, Vec3::ZERO);
                 assert!(moved > was - 0.6, "{tag}: drawn in ({was} -> {moved})");
@@ -2265,4 +2280,1685 @@ fn root_eruption_runs_ahead_and_binding_roots_hold() {
     still(&mut w);
     finish(&mut w, &t, 0);
     assert!(w.enemies[0].hp < 90, "the ring reaches beside");
+}
+
+// ---- 0270 C3: 무기 판을 채운 새 스킬 ----
+
+/// 바늘땀: 좁은 앞을 세 번 찌른다 — 앞의 적은 땀마다 맞고 날카로움이 쌓여 피가 새기 시작한다, 옆의 적은 아니다.
+/// 파고드는 걸음(ㄱ)이면 앞으로 내딛고, 촘촘한 땀(ㄴ)이면 두 번 더, 꿰매기(맺음)는 마지막 땀에 휘청.
+#[test]
+fn needle_stitch_thrusts_a_narrow_line_three_times_and_makes_it_bleed() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Stitch, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    w.spawn_mob(vec3(2.2, 0.0, -0.6));
+    still(&mut w);
+    let ev = finish(&mut w, &t, 0);
+    let stabs = ev
+        .iter()
+        .filter(|e| matches!(e, Event::Skill { id: Sk::Stitch, .. }))
+        .count();
+    assert_eq!(stabs, 3);
+    let dmg = 90 - w.enemies[0].hp;
+    assert!(dmg >= 30, "three thrusts: {dmg}");
+    assert_eq!(w.enemies[1].hp, 90, "not the one beside");
+    assert!(w.enemies[0].ail.bleed > 0.0, "it bleeds");
+    // 파고드는 걸음(ㄱ — 3단): 앞으로 내딛는다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Stitch, 3, Pick::A);
+    let p0 = w.player.pos;
+    finish(&mut w, &t, 0);
+    assert!(flat(w.player.pos, p0) > 1.5, "{:?}", w.player.pos);
+    // 촘촘한 땀(ㄴ): 다섯 번. 꿰매기(맺음 — 5단): 마지막 땀에 휘청.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Stitch, 5, Pick::B);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    still(&mut w);
+    let mut ev = w.step(&skill(0), &t);
+    let mut staggered = false;
+    for _ in 0..60 {
+        ev.extend(w.step(&Actions::default(), &t));
+        staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+    }
+    let stabs = ev
+        .iter()
+        .filter(|e| matches!(e, Event::Skill { id: Sk::Stitch, .. }))
+        .count();
+    assert_eq!(stabs, 5);
+    assert!(staggered, "the last thrust pins");
+}
+
+/// 방패 돌진: 방패를 앞세워 내달린다 — 길 위의 적을 치고 밀어 내며 흡수를 건다(그 적을 치면 체력이 돌아온다). 벽에 박기(ㄱ)면
+/// 밀려난 적이 벽에 박혀 더 다치고, 방패 뒤(ㄴ)면 내달리는 동안 맞지 않는다.
+#[test]
+fn shield_rush_charges_through_shoving_and_draining() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Ram, 1, Pick::A);
+    assert_eq!(w.grip(), crate::weapons::Grip::Shield);
+    w.spawn_mob(vec3(0.3, 0.0, -2.0));
+    still(&mut w);
+    let p0 = w.player.pos;
+    let was = w.enemies[0].pos;
+    finish(&mut w, &t, 0);
+    assert!(flat(w.player.pos, p0) > 3.5, "charged: {:?}", w.player.pos);
+    assert!(w.enemies[0].hp < 90);
+    assert!(w.enemies[0].ail.drain > 0.0, "drained");
+    assert!(flat(w.enemies[0].pos, was) > 0.8, "shoved aside");
+    // 벽에 박기(ㄱ — 3단): 밀려난 적이 아레나 끝 벽에 박힌다.
+    let (mut w, t) = world();
+    w.arena = 3.0;
+    wear(&mut w, Sk::Ram, 3, Pick::A);
+    w.spawn_mob(vec3(0.6, 0.0, -1.6));
+    still(&mut w);
+    let mut ev = finish(&mut w, &t, 0);
+    for _ in 0..60 {
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::Slam { .. })),
+        "into the wall"
+    );
+    // 방패 뒤(ㄴ): 내달리는 동안 맞지 않는다.
+    let (mut w, _t) = world();
+    wear(&mut w, Sk::Ram, 3, Pick::B);
+    let d = w.skill_eff(Sk::Ram);
+    assert_eq!(d.twist, Some(Twist::Ghost));
+}
+
+/// 종 치기: 앞의 적 하나를 치고 종을 건다 — 곧 그 적이 울려 둘레의 적이 모두 맞는다(울림이 실린다). 두 번 울림(ㄱ)이면 두 번,
+/// 넓은 울림(ㄴ)이면 더 멀리. 앞이 비었으면 허공에서 울린다(헛된 누름이 아니다). 보스에게도 걸리지만 휘청이지 않는다.
+#[test]
+fn toll_hangs_a_bell_on_one_foe_and_it_rings_around_it() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Toll, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    w.spawn_mob(vec3(2.0, 0.0, -3.0));
+    w.spawn_mob(vec3(0.0, 0.0, 6.0));
+    still(&mut w);
+    let mut ev = finish(&mut w, &t, 0);
+    assert!(w.enemies[0].hp < 90, "the struck foe");
+    assert_eq!(w.enemies[1].hp, 90, "not yet");
+    for _ in 0..ticks(1.0) {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    let tolls = ev
+        .iter()
+        .filter(|e| matches!(e, Event::Toll { .. }))
+        .count();
+    assert!(tolls >= 1, "the bell rang");
+    assert!(w.enemies[1].hp < 90, "the ring reached the one beside it");
+    assert_eq!(w.enemies[2].hp, 90, "not the far one behind");
+    // 두 번 울림(ㄱ — 3단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Toll, 3, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    let hung = |w: &World| w.skill_bursts.iter().filter(|b| b.toll()).count();
+    assert_eq!(hung(&w), 2, "two rings hang on it");
+    for _ in 0..ticks(2.0) {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+    }
+    assert_eq!(hung(&w), 0, "both rang");
+    // 넓은 울림(ㄴ): 둘레가 더 넓다.
+    let reach = |pick| match w.skill_eff(Sk::Toll).skill.form {
+        Form::Bell { radius, .. } => {
+            let _ = pick;
+            radius
+        }
+        _ => unreachable!(),
+    };
+    let a = reach(Pick::A);
+    wear(&mut w, Sk::Toll, 3, Pick::B);
+    let b = match w.skill_eff(Sk::Toll).skill.form {
+        Form::Bell { radius, .. } => radius,
+        _ => unreachable!(),
+    };
+    assert!(b > a * 1.4, "{a} -> {b}");
+    // 앞이 비었으면 허공에서 울린다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Toll, 1, Pick::A);
+    finish(&mut w, &t, 0);
+    assert_eq!(hung(&w), 1, "it rings in the air");
+    assert!(w.skill_bursts[0].on().is_none());
+}
+
+/// 후려치기: 망치로 앞 넓은 부채꼴을 친다 — 맞은 적은 멀리 밀리고 충격으로 기절한다(보통 적은 한 번에). 뒤의 적은 아니다.
+/// 크게 휘두르기(ㄴ)면 부채꼴이 넓어진다.
+#[test]
+fn swat_knocks_the_front_far_back_and_stuns() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Swat, 1, Pick::A);
+    assert_eq!(
+        w.grip(),
+        crate::weapons::Grip::Class(crate::weapons::Class::Hammer)
+    );
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    w.spawn_mob(vec3(0.0, 0.0, 2.0));
+    still(&mut w);
+    let was = w.enemies[0].pos;
+    let mut stunned = false;
+    let mut ev = w.step(&skill(0), &t);
+    for _ in 0..60 {
+        ev.extend(w.step(&Actions::default(), &t));
+        stunned |= w.enemies[0].ail.stun > 0.0;
+    }
+    assert!(w.enemies[0].hp < 90);
+    assert!(stunned, "the shock stuns a plain foe in one swing");
+    assert!(
+        flat(w.enemies[0].pos, was) > 1.5,
+        "knocked back: {:?}",
+        w.enemies[0].pos
+    );
+    assert_eq!(w.enemies[1].hp, 90, "not the one behind");
+    let arc = |w: &World| match w.skill_eff(Sk::Swat).skill.form {
+        Form::Cone { arc_deg, .. } => arc_deg,
+        _ => unreachable!(),
+    };
+    let a = arc(&w);
+    wear(&mut w, Sk::Swat, 3, Pick::B);
+    assert!(arc(&w) > a + 60.0);
+}
+
+/// 파문: 물결이 몸에서 둘레로 번진다 — 가까운 적이 먼저, 먼 적이 나중에(같은 물결에 한 번씩), 둘레 밖은 아니다.
+/// 밀어내는 물결(ㄱ)은 바깥으로 밀고, 갈라진 땅(ㄴ)은 둘레를 남겨 늦춘다.
+#[test]
+fn ripple_spreads_outward_hitting_near_then_far_once_each() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Ripple, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -1.5));
+    w.spawn_mob(vec3(5.0, 0.0, 0.0));
+    w.spawn_mob(vec3(0.0, 0.0, 9.0));
+    still(&mut w);
+    let mut first: [Option<usize>; 3] = [None; 3];
+    w.step(&skill(0), &t);
+    for k in 0..90 {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+        for (i, f) in first.iter_mut().enumerate() {
+            if f.is_none() && w.enemies[i].hp < 90 {
+                *f = Some(k);
+            }
+        }
+    }
+    let (near, far) = (first[0].unwrap(), first[1].unwrap());
+    assert!(near < far, "near first: {near} {far}");
+    assert_eq!(first[2], None, "beyond the ripple");
+    assert_eq!(
+        90 - w.enemies[0].hp,
+        90 - w.enemies[1].hp,
+        "once each, the same"
+    );
+    // 밀어내는 물결(ㄱ — 3단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Ripple, 3, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    for _ in 0..20 {
+        w.step(&Actions::default(), &t);
+    }
+    assert!(flat(w.enemies[0].pos, w.player.pos) > 3.0, "pushed out");
+    // 갈라진 땅(ㄴ): 둘레가 남아 늦춘다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Ripple, 3, Pick::B);
+    w.spawn_mob(vec3(3.0, 0.0, 3.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    w.step(&Actions::default(), &t);
+    assert!(w.enemies[0].marks.slow < 1.0, "slowed behind the ripple");
+}
+
+/// 눈발: 앞에 눈발을 뿌린다 — 그 안의 적이 초마다 맞고 서리가 쌓여 얼어붙는다(보통 적은 셋째 타 안에), 방랑자 곁의 적은 아니다.
+/// 흐르는 눈발(ㄱ)은 겨눈 쪽으로 흘러가고, 큰 눈송이(ㄴ)는 넓다.
+#[test]
+fn snowfall_lands_ahead_and_freezes_who_stands_in_it() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snow, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -5.0));
+    w.spawn_mob(vec3(1.2, 0.0, 0.0));
+    still(&mut w);
+    let mut ev = finish(&mut w, &t, 0);
+    let mut frozen = false;
+    for _ in 0..ticks(3.2) {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+        frozen |= w.enemies[0].ail.frozen > 0.0;
+    }
+    let pulses = ev
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                Event::FieldPulse {
+                    kind: crate::status::Kind::Frost,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(pulses, 3, "every second for three seconds");
+    assert!(w.enemies[0].hp < 90);
+    assert!(frozen, "the frost froze it");
+    assert_eq!(w.enemies[1].hp, 90, "not the one beside the wanderer");
+    // 흐르는 눈발(ㄱ — 3단): 놓인 자리에서 앞으로 흘러간다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snow, 3, Pick::A);
+    finish(&mut w, &t, 0);
+    let z0 = w.skill_fields[0].pos.z;
+    for _ in 0..30 {
+        w.step(&Actions::default(), &t);
+    }
+    assert!(w.skill_fields[0].pos.z < z0 - 0.5, "it drifts ahead (-z)");
+    // 큰 눈송이(ㄴ).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snow, 3, Pick::B);
+    finish(&mut w, &t, 0);
+    assert!(w.skill_fields[0].radius > 4.0);
+}
+
+/// 불길: 앞 부채꼴에 불을 내뿜는다 — 닿은 적에게 불이 붙는다(보통 적은 한 번에), 뒤는 아니다. 타는 땅(ㄴ)이면 그 자리에 불티가
+/// 남고, 맺음이면 닿은 잡몹이 잠깐 더 다친다.
+#[test]
+fn flare_sets_the_cone_ahead_alight() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Flare, 1, Pick::A);
+    // 0272: 불길은 지팡이와 쇠뇌의 것 — 시험은 배 없는 쇠뇌로 잰다(`hold_for`).
+    assert_eq!(
+        w.grip(),
+        crate::weapons::Grip::Class(crate::weapons::Class::Crossbow)
+    );
+    w.spawn_mob(vec3(0.0, 0.0, -3.0));
+    w.spawn_mob(vec3(0.0, 0.0, 3.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert!(w.enemies[0].hp < 90);
+    assert!(w.enemies[0].ail.burn > 0, "alight");
+    assert_eq!(w.enemies[1].hp, 90, "not behind");
+    // 타는 땅(ㄴ — 3단) · 맺음(5단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Flare, 5, Pick::B);
+    w.spawn_mob(vec3(0.0, 0.0, -3.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 1, "scorched ground");
+    assert!(w.enemies[0].marks.frail > 0.0, "it takes more for a while");
+}
+
+/// 뿌리 덫: 앞에 씨를 심는다 — 적이 들어서야 솟는다(한 번, 둘레의 적을 모두 찌르고 묶는다), 그 전에는 기다린다.
+/// 두 알(ㄱ)이면 씨가 둘.
+#[test]
+fn root_snare_waits_for_a_foe_then_springs_once() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snare, 1, Pick::A);
+    // 0272: 뿌리 덫은 활의 것.
+    assert_eq!(
+        w.grip(),
+        crate::weapons::Grip::Class(crate::weapons::Class::Bow)
+    );
+    w.spawn_mob(vec3(0.0, 0.0, -9.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 1, "planted");
+    for _ in 0..ticks(1.0) {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+    }
+    assert_eq!(w.enemies[0].hp, 90, "nobody stepped in yet");
+    assert_eq!(w.skill_fields.len(), 1, "it waits");
+    // 한 적이 걸어 든다.
+    let at = w.skill_fields[0].pos;
+    w.enemies[0].pos = vec3(at.x + 0.5, 0.0, at.z);
+    w.spawn_mob(vec3(at.x - 1.0, 0.0, at.z));
+    still(&mut w);
+    let mut ev = Vec::new();
+    for _ in 0..5 {
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    assert!(
+        w.enemies[0].hp < 90 && w.enemies[1].hp < 90,
+        "everyone around"
+    );
+    let root = crate::status::Kind::Root.slot().unwrap();
+    assert!(
+        w.enemies[0].ail.bound > 0.0 || w.enemies[0].ail.gauge[root] > 0.5,
+        "the roots take hold"
+    );
+    assert!(w.skill_fields.is_empty(), "sprung once");
+    assert!(ev.iter().any(|e| matches!(e, Event::RootSpike { .. })));
+    // 두 알(ㄱ — 3단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Snare, 3, Pick::A);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 2);
+}
+
+/// 큰 종(0270 C3 — 방패 판): 세계가 멈춘 뒤 둘레를 한 번 울린다 — 둘레의 적은 모두 다치고 울림·흡수가 걸린다, 잡몹은 휘청이고
+/// 보스는 다치되 휘청이지 않는다. 둘레 밖은 아니다. 2단 = 넓게, 3단 = 세게.
+#[test]
+fn great_bell_rings_everyone_around_with_knell_and_drain() {
+    use crate::skills::BELL;
+    let ring = |rank: u8| {
+        let mut w = World::new("test", 30.0);
+        let t = Tuning::default();
+        wear_ult(&mut w, Ult::Bell, rank);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        w.spawn_mob(vec3(-9.0, 0.0, 0.0));
+        w.spawn_mob(vec3(12.0, 0.0, 0.0));
+        w.spawn_boss(vec3(4.0, 0.0, 2.0));
+        still(&mut w);
+        w.player.skill.gauge = 1.0;
+        w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= BELL.freeze - 1e-4, "the world stops");
+        let mut ev = Vec::new();
+        let (mut mob_staggered, mut boss_staggered) = (false, false);
+        for _ in 0..60 {
+            ev.extend(w.step(&Actions::default(), &t));
+            mob_staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            boss_staggered |= matches!(w.enemies[3].state, EState::Stagger { .. });
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::GreatBell { .. })));
+        assert!(
+            mob_staggered && !boss_staggered,
+            "{mob_staggered} {boss_staggered}"
+        );
+        assert!(w.enemies[0].ail.drain > 0.0, "drained");
+        assert!(w.enemies[3].hp < w.enemies[3].max_hp, "wardens too");
+        assert_eq!(w.player.skill.gauge, 0.0);
+        w.enemies[..3]
+            .iter()
+            .map(|e| 90 - e.hp)
+            .collect::<Vec<i32>>()
+    };
+    let one = ring(1);
+    assert!(
+        one[0] >= BELL.damage && one[1] == 0 && one[2] == 0,
+        "{one:?}"
+    );
+    let two = ring(2);
+    assert!(two[1] > 0 && two[2] == 0, "10 m: {two:?}");
+    let three = ring(3);
+    assert!(three[0] > one[0], "{three:?}");
+}
+
+/// 눈보라(0270 C3 — 지팡이 판): 몸을 따라 도는 눈보라 — 걷는 동안에도 둘레의 적을 거듭 치고 서리를 쌓아 얼린다. 2단 = 길게.
+#[test]
+fn blizzard_follows_the_wanderer_and_freezes_the_pack() {
+    use crate::skills::BLIZZARD;
+    let mut w = World::new("test", 30.0);
+    let t = Tuning::default();
+    wear_ult(&mut w, Ult::Blizzard, 1);
+    w.spawn_mob(vec3(0.0, 0.0, -3.0));
+    w.spawn_mob(vec3(0.0, 0.0, -10.0));
+    still(&mut w);
+    w.player.skill.gauge = 1.0;
+    w.step(
+        &Actions {
+            ult: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    let mut frozen = false;
+    for _ in 0..ticks(2.0) {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+        frozen |= w.enemies[0].ail.frozen > 0.0;
+    }
+    assert!(frozen, "the pack around freezes");
+    assert_eq!(w.enemies[1].hp, 90, "not yet the far one");
+    assert!(w.ult_active() > 0.0, "the gauge shows it running");
+    assert_eq!(w.skill_fields.len(), 1);
+    assert!((w.skill_fields[0].secs - BLIZZARD.secs).abs() < 1e-5);
+    // 걸어서 먼 적에게 — 눈보라가 따라온다.
+    for _ in 0..ticks(2.0) {
+        still_keep(&mut w);
+        w.step(
+            &Actions {
+                move_dir: vec2(0.0, 1.0),
+                ..Default::default()
+            },
+            &t,
+        );
+    }
+    assert!(w.player.pos.z < -3.0, "walked: {:?}", w.player.pos);
+    assert!(w.enemies[1].hp < 90, "it followed");
+    let mut w2 = World::new("test", 30.0);
+    wear_ult(&mut w2, Ult::Blizzard, 2);
+    w2.player.skill.gauge = 1.0;
+    w2.step(
+        &Actions {
+            ult: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    for _ in 0..30 {
+        w2.step(&Actions::default(), &t);
+    }
+    assert!((w2.skill_fields[0].secs - BLIZZARD.secs2).abs() < 1e-5);
+}
+
+/// 2026-11-24: 두 스킬 버튼을 한 틱 어긋나게 눌러도 큰 기술이 나간다 — 든 무기로 못 쓰는 칸(시동이 서지 않는 칸)이어도.
+/// 지팡이를 들고 결투 스킬 둘을 낀 채로는 함께 누름이 같은 틱이어야만 나갔다(개발 놀이터에서 큰 기술이 안 나갔다).
+#[test]
+fn the_great_skill_chord_reaches_across_a_tick_even_on_unfit_slots() {
+    let (mut w, t) = world();
+    wear_ult(&mut w, Ult::Upend, 1);
+    w.player.skill.rank = [0, 0];
+    w.player.skill.gauge = 1.0;
+    still(&mut w);
+    let ev = run(&mut w, &t, skill(0), 1);
+    assert!(!ev.iter().any(|e| matches!(e, Event::UltStart)));
+    let ev = run(&mut w, &t, skill(1), 1);
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::UltStart)),
+        "the second button a tick later still makes the chord"
+    );
+    // 창이 지나면 따로 누른 것이다.
+    let (mut w, t) = world();
+    wear_ult(&mut w, Ult::Upend, 1);
+    w.player.skill.rank = [0, 0];
+    w.player.skill.gauge = 1.0;
+    still(&mut w);
+    run(&mut w, &t, skill(0), 1);
+    run(&mut w, &t, Actions::default(), 60);
+    let ev = run(&mut w, &t, skill(1), 1);
+    assert!(!ev.iter().any(|e| matches!(e, Event::UltStart)));
+}
+
+// ---- 0272: 쇠뇌 판의 충격 갈래 둘 · 활 판의 큰 기술 ----
+
+/// 심지 볼트: 멀리 있는 앞의 적 하나에게 볼트를 박는다(쇠뇌의 것) — 잠시 뒤 터져 둘레를 치고 충격이 쌓인다(화약이 터진다 `Boom`,
+/// 종의 울림이 아니다). 벽 뒤의 적에게는 박지 않고, 앞이 비었으면 겨눈 쪽 벽 앞에서 터진다.
+#[test]
+fn fuse_bolt_lodges_in_a_far_foe_and_bursts_around_it() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Fuse, 1, Pick::A);
+    assert_eq!(w.player.weapon, crate::weapons::Id::Crossbow);
+    w.spawn_mob(vec3(0.0, 0.0, -8.0));
+    w.spawn_mob(vec3(1.8, 0.0, -8.5));
+    w.spawn_mob(vec3(0.0, 0.0, 12.0));
+    still(&mut w);
+    let mut ev = finish(&mut w, &t, 0);
+    assert!(w.enemies[0].hp < 90, "the bolt reaches 8 m");
+    assert_eq!(w.enemies[1].hp, 90, "not yet");
+    assert_eq!(w.skill_bursts.len(), 1, "the fuse burns");
+    for _ in 0..ticks(1.0) {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    assert!(ev.iter().any(|e| matches!(e, Event::Boom { .. })), "powder");
+    assert!(
+        !ev.iter().any(|e| matches!(e, Event::Toll { .. })),
+        "no bell"
+    );
+    assert!(w.enemies[1].hp < 90, "the blast reached the one beside it");
+    assert_eq!(w.enemies[2].hp, 90, "not the one behind");
+    let shock = crate::status::Kind::Shock.slot().unwrap();
+    assert!(
+        w.enemies[0].ail.stun > 0.0 || w.enemies[0].ail.gauge[shock] > 0.5,
+        "bolt and blast together shock it"
+    );
+    // 벽 뒤의 적: 박지 않는다 — 벽 앞에서 터지고 벽 너머는 다치지 않는다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Fuse, 1, Pick::A);
+    w.obstacles.push(Aabb {
+        min: vec3(-3.0, 0.0, -4.5),
+        max: vec3(3.0, 3.0, -3.5),
+    });
+    w.spawn_mob(vec3(0.0, 0.0, -7.5));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.enemies[0].hp, 90, "no bolt through the wall");
+    assert_eq!(w.skill_bursts.len(), 1);
+    assert!(w.skill_bursts[0].on().is_none() && w.skill_bursts[0].at.z > -3.5);
+    // 두 번 터짐(ㄱ — 3단).
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Fuse, 3, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -6.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_bursts.len(), 2, "two charges");
+}
+
+/// 화약 덫: 앞에 화약을 묻는다(쇠뇌의 것) — 적이 들어서야 터진다(한 번, 둘레의 적을 모두 치고 충격이 쌓인다). 뿌리는 솟지 않는다.
+/// 두 개(ㄱ)면 둘.
+#[test]
+fn powder_trap_waits_for_a_foe_then_blows_once() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Mine, 1, Pick::A);
+    assert_eq!(w.player.weapon, crate::weapons::Id::Crossbow);
+    w.spawn_mob(vec3(0.0, 0.0, -9.0));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 1, "buried");
+    assert!(w.skill_active(0) > 0.0, "the slot shows it waiting");
+    for _ in 0..ticks(1.0) {
+        still_keep(&mut w);
+        w.step(&Actions::default(), &t);
+    }
+    assert_eq!(w.enemies[0].hp, 90, "nobody stepped in yet");
+    let at = w.skill_fields[0].pos;
+    w.enemies[0].pos = vec3(at.x + 0.5, 0.0, at.z);
+    w.spawn_mob(vec3(at.x - 1.0, 0.0, at.z));
+    still(&mut w);
+    let mut ev = Vec::new();
+    for _ in 0..5 {
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    assert!(
+        w.enemies[0].hp <= 70 && w.enemies[1].hp <= 70,
+        "everyone around takes the blast"
+    );
+    assert!(w.enemies[0].ail.stun > 0.0, "one blast stuns a common foe");
+    assert!(w.skill_fields.is_empty(), "blown once");
+    assert!(ev.iter().any(|e| matches!(e, Event::Boom { .. })));
+    assert!(!ev.iter().any(|e| matches!(e, Event::RootSpike { .. })));
+    assert!(w.skill_spikes.is_empty(), "no roots");
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Mine, 3, Pick::A);
+    finish(&mut w, &t, 0);
+    assert_eq!(w.skill_fields.len(), 2);
+}
+
+/// 화살비(0272 — 활 판): 세계가 멈춘 뒤 겨눈 자리(락온·조준이 없으면 닿는 거리의 가장 가까운 적)에 화살이 내린다 — 그 둘레의 적이
+/// 거듭 다치고 뿌리가 쌓여 묶인다, 보스는 다치되 휘청이지 않는다. 놓인 마당이라 방랑자를 따라오지 않는다. 2단 = 길게, 3단 = 세게.
+#[test]
+fn arrow_rain_falls_where_it_is_aimed_and_binds_the_pack() {
+    use crate::skills::RAIN;
+    let rain = |rank: u8| {
+        let mut w = World::new("test", 30.0);
+        let t = Tuning::default();
+        w.set_weapon(crate::weapons::Id::Bow);
+        w.player.facing = PI;
+        wear_ult(&mut w, Ult::Rain, rank);
+        w.spawn_mob(vec3(0.0, 0.0, -8.0));
+        w.spawn_mob(vec3(2.5, 0.0, -9.0));
+        w.spawn_mob(vec3(0.0, 0.0, 9.0));
+        w.spawn_boss(vec3(-2.5, 0.0, -8.0));
+        for e in &mut w.enemies[..3] {
+            e.hp = 500;
+            e.max_hp = 500;
+        }
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= RAIN.freeze - 1e-4, "the world stops");
+        let at = w.player.skill.rain_at;
+        assert!(
+            (at - vec3(0.0, 0.0, -8.0)).length() < 0.1,
+            "it is set on the nearest foe in reach: {at:?}"
+        );
+        let (mut bound, mut boss_staggered) = (false, false);
+        for _ in 0..ticks(RAIN.secs_at(rank) + 1.5) {
+            still_keep(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+            bound |= w.enemies[0].ail.bound > 0.0;
+            boss_staggered |= matches!(w.enemies[3].state, EState::Stagger { .. });
+            if w.skill_fields.len() == 1 {
+                assert!(w.ult_active() > 0.0, "the gauge shows it running");
+                assert_eq!(w.skill_fields[0].pos, at, "it stays where it fell");
+            }
+        }
+        assert!(ev.iter().any(|e| matches!(e, Event::ArrowRain { .. })));
+        assert!(bound, "the pack under it is bound");
+        assert!(!boss_staggered, "a warden is never staggered by it");
+        assert!(w.enemies[3].hp < w.enemies[3].max_hp, "wardens too");
+        assert!(w.enemies[1].hp < 500, "everyone under it");
+        assert_eq!(w.enemies[2].hp, 500, "not the one behind");
+        assert!(w.skill_fields.is_empty(), "it ends");
+        assert_eq!(w.player.skill.gauge, 0.0);
+        500 - w.enemies[0].hp
+    };
+    let pulses = |secs: f32| (secs / RAIN.every + 1e-3).floor() as i32;
+    let one = rain(1);
+    assert_eq!(one, RAIN.damage * pulses(RAIN.secs), "rank 1: {one}");
+    let two = rain(2);
+    assert_eq!(two, RAIN.damage * pulses(RAIN.secs2), "rank 2: longer");
+    let three = rain(3);
+    assert_eq!(three, RAIN.damage3 * pulses(RAIN.secs2), "rank 3: harder");
+    // 조준이 있으면 그 쪽 앞 `ahead` m — 벽 너머로는 놓지 않는다.
+    let mut w = World::new("test", 30.0);
+    let t = Tuning::default();
+    w.set_weapon(crate::weapons::Id::Bow);
+    wear_ult(&mut w, Ult::Rain, 1);
+    w.obstacles.push(Aabb {
+        min: vec3(3.0, 0.0, -9.0),
+        max: vec3(4.0, 3.0, 9.0),
+    });
+    w.player.skill.gauge = 1.0;
+    w.step(
+        &Actions {
+            ult: true,
+            aim: vec2(1.0, 0.0),
+            ..Default::default()
+        },
+        &t,
+    );
+    let at = w.player.skill.rain_at;
+    assert!(at.x > 1.0 && at.x < 3.0, "this side of the wall: {at:?}");
+    assert!(at.length() < RAIN.ahead - 1.0, "short of the full reach");
+}
+
+// ---- 0272 2단계: 창 판의 셋 · 질풍 찌르기 ----
+
+/// 꿰뚫기: 바라보는 쪽 좁은 길(반 폭 0.7m)을 7m 내달리며 길 위의 적을 한 번씩 꿰뚫는다(20 — 물리, 창은 배가 없다) — 몸은 적을
+/// 뚫고 지나간다. 길 옆(1.5m)의 적은 그대로. 창을 들어야 쓴다(검으로는 빈 칸).
+#[test]
+fn skewer_drives_through_a_line_of_foes() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Skewer, 1, Pick::A);
+    assert_eq!(w.player.weapon, crate::weapons::Id::Spear);
+    for z in [-2.0, -4.0, -6.0] {
+        w.spawn_mob(vec3(0.0, 0.0, z));
+    }
+    w.spawn_mob(vec3(1.6, 0.0, -3.0));
+    still(&mut w);
+    let start = w.player.pos;
+    finish(&mut w, &t, 0);
+    let lost: Vec<i32> = w.enemies.iter().map(|e| 90 - e.hp).collect();
+    assert_eq!(lost, vec![20, 20, 20, 0]);
+    assert!(flat(w.player.pos, start) > 6.0, "through and beyond");
+    let mut s = World::new("test", 30.0);
+    s.set_skills(Loadout::from([Sk::Skewer, Sk::Whirl]));
+    assert!(!Sk::Skewer.def().fits(s.grip()), "the sword cannot");
+}
+
+/// 장대 휩쓸기: 자루를 한 바퀴(둘레 3.6m) 휘둘러 둘레의 적을 모두 치고(20) 멀리 밀어낸다 — 에워싸였을 때의 답. 보스는 다치되
+/// 휘청이지 않는다(맺음 5단의 휘청도 보스는 아니다).
+#[test]
+fn pole_sweep_strikes_all_around_and_throws_them_back() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Pole, 5, Pick::A);
+    let ring = [
+        vec3(2.0, 0.0, 0.0),
+        vec3(-2.0, 0.0, 0.0),
+        vec3(0.0, 0.0, 2.0),
+        vec3(0.0, 0.0, -2.0),
+    ];
+    for p in ring {
+        w.spawn_mob(p);
+    }
+    w.spawn_boss(vec3(1.6, 0.0, 1.6));
+    still(&mut w);
+    w.enemies[4].hp = 2000;
+    let mut boss_staggered = false;
+    let mut ev = w.step(&skill(0), &t);
+    for _ in 0..120 {
+        ev.extend(w.step(&Actions::default(), &t));
+        boss_staggered |= matches!(w.enemies[4].state, EState::Stagger { .. });
+        still_keep(&mut w);
+    }
+    for (i, p) in ring.iter().enumerate() {
+        assert!(w.enemies[i].hp < 90, "{i} hit");
+        assert!(
+            flat(w.enemies[i].pos, w.player.pos) > p.length() + 1.5,
+            "{i} thrown back"
+        );
+    }
+    assert!(w.enemies[4].hp < 2000, "the boss is hurt");
+    assert!(!boss_staggered, "but not staggered");
+}
+
+/// 못 박기: 좁고 깊게(3.6m · 24°) 한 번 찔러 뿌리를 가득 쌓는다 — 두 번 찌르기(ㄴ)면 잔재도 그 자리에 속박된다. 옆으로 비낀 적은
+/// 닿지 않는다.
+#[test]
+fn pinning_thrust_binds_the_foe_it_pierces() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Pin, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -2.2));
+    w.spawn_mob(vec3(-2.4, 0.0, -0.6));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert_eq!(90 - w.enemies[0].hp, 20);
+    let root = w.enemies[0].ail.gauge[1];
+    assert!(root >= 0.7, "a full dose of roots: {root}");
+    assert_eq!(w.enemies[1].hp, 90, "the side one is untouched");
+    // 두 번 찌르기(ㄴ): 잔재(뿌리에 덜 쌓인다)도 그 자리에 속박된다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Pin, 3, Pick::B);
+    w.spawn_mob(vec3(0.0, 0.0, -2.2));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert!(
+        w.enemies[0].ail.bound > 0.0,
+        "pinned: {:?}",
+        w.enemies[0].ail
+    );
+}
+
+/// 큰 기술 질풍 찌르기: 세계가 멈추고(0.3초) 앞 한 줄(5.5m · 반 폭 0.8m)을 여섯 번 찌른다 — 앞의 다섯은 10씩, 마지막은 40(합 90)에
+/// 출혈을 쌓고 잡몹을 밀어낸다. 보스도 다치고 자세가 깎이되 밀리지도 휘청이지도 않는다. 줄 밖·5.5m 너머는 그대로. 2단 7.5m,
+/// 3단 20씩 · 마지막 60(합 160).
+#[test]
+fn gale_of_thrusts_strikes_one_line_again_and_again_then_deep() {
+    let gale = |rank: u8| {
+        let mut w = World::new("test", 30.0);
+        let t = Tuning::default();
+        w.player.facing = PI;
+        w.set_weapon(crate::weapons::Id::Spear);
+        wear_ult(&mut w, Ult::Gale, rank);
+        for z in [-3.2, -4.9, -7.0] {
+            w.spawn_mob(vec3(0.0, 0.0, z));
+        }
+        w.spawn_mob(vec3(2.5, 0.0, -3.0));
+        w.spawn_boss(vec3(0.0, 0.0, -1.6));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        let boss_at = w.enemies[4].pos;
+        w.player.skill.gauge = 1.0;
+        w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= skills::GALE.freeze - 1e-4, "the world stops");
+        let mut ev = Vec::new();
+        let mut staggered = false;
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[4].state, EState::Stagger { .. });
+            still_keep(&mut w);
+        }
+        let thrusts = ev
+            .iter()
+            .filter(|e| matches!(e, Event::GaleThrust { .. }))
+            .count();
+        assert_eq!(thrusts, skills::GALE.thrusts as usize);
+        assert!(!staggered, "a boss is not staggered");
+        assert!(
+            flat(w.enemies[4].pos, boss_at) < 0.3,
+            "nor thrown: {:?} -> {:?} {:?}",
+            boss_at,
+            w.enemies[4].pos,
+            w.enemies[4].state
+        );
+        assert!(
+            w.enemies[0].ail.bleed > 0.0,
+            "the last thrust bleeds: {:?}",
+            w.enemies[0].ail
+        );
+        assert_eq!(w.player.skill.gauge, 0.0);
+        let lost: Vec<i32> = w.enemies.iter().map(|e| 900 - e.hp).collect();
+        lost
+    };
+    // 피해 = 찌름의 합(+ 마지막 찌름이 건 출혈이 움직이는 동안 조금 — 한 눈금 안).
+    let near = |got: &[i32], want: [i32; 4]| {
+        got.iter().zip(want).all(|(g, w)| {
+            if w == 0 {
+                *g == 0
+            } else {
+                (w..w + 10).contains(g)
+            }
+        })
+    };
+    let a = gale(1);
+    assert!(near(&a, [90, 90, 0, 0]), "{a:?}");
+    assert!(a[4] >= 90, "the boss too: {}", a[4]);
+    let b = gale(2);
+    assert!(near(&b, [90, 90, 90, 0]), "7.5 m: {b:?}");
+    let c = gale(3);
+    assert!(near(&c, [160, 160, 160, 0]), "{c:?}");
+}
+
+// ---- 0274 ②: 한손검 = 전투 기술(자루 치기 · 밀치기 · 재기) ----
+
+/// 자루 치기: 한손검으로만(방패를 들면 방패 트리) — 칼자루가 닿는 좁은 앞의 적이 충격에 가득 차 기절하고, 공격을 준비하던 적은 그 공격이
+/// 끊긴다(막아치기와 같은 꼴). 보스는 끊기지도 휘청이지도 않는다(자세만).
+#[test]
+fn pommel_strike_cuts_off_a_winding_foe_and_stuns_but_not_a_boss() {
+    let run = |boss: bool| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Pommel, 1, Pick::A);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Sword);
+        if boss {
+            w.spawn_boss(vec3(0.0, 0.0, -2.0));
+        } else {
+            w.spawn_mob(vec3(0.0, 0.0, -1.6));
+        }
+        // 옆(70° 부채꼴 밖)의 적은 닿지 않는다.
+        w.spawn_mob(vec3(1.8, 0.0, -0.6));
+        still(&mut w);
+        let en = &mut w.enemies[0];
+        en.facing = 0.0;
+        en.atk = Atk::Smash;
+        en.state = EState::Tele { t: 0.0 };
+        let mut ev = run(&mut w, &t, skill(0), 40);
+        let mut stunned = w.enemies[0].ail.stun > 0.0;
+        for _ in 0..20 {
+            ev.extend(w.step(&Actions::default(), &t));
+            stunned |= w.enemies[0].ail.stun > 0.0;
+        }
+        let cut = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Interrupt { .. }))
+            .count();
+        (w, cut, stunned)
+    };
+    let (w, cut, stunned) = run(false);
+    assert_eq!(cut, 1, "the winding foe is cut off");
+    assert!(stunned, "one blow fills a plain foe's shock");
+    assert!(w.enemies[0].hp < 90);
+    assert_eq!(w.enemies[1].hp, 90, "the narrow front only");
+    let (w, cut, _) = run(true);
+    assert_eq!(cut, 0, "a boss keeps its swing");
+    assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
+    // 방패를 들면 한손검의 전투 기술은 쉰다(방패 트리 — 0272 그대로).
+    let (mut w, _) = world();
+    wear(&mut w, Sk::Pommel, 1, Pick::A);
+    w.set_shield(Some(crate::shield::Id::Pilgrim));
+    assert_eq!(
+        w.player.skill.rank[0], 0,
+        "a sword-and-board grip has no pommel"
+    );
+}
+
+/// 밀치기: 앞을 밀어 차 적을 멀리(후려치기보다 멀리) 밀어낸다 — 피해는 작고 충격은 반만 쌓인다(한 번에 기절하지 않는다).
+/// 뒤의 적은 아니다. 벽에 박기(ㄱ)는 후려치기와 같은 덤.
+#[test]
+fn shove_drives_the_front_far_back_with_little_harm() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Shove, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -1.8));
+    w.spawn_mob(vec3(0.0, 0.0, 2.0));
+    still(&mut w);
+    let was = w.enemies[0].pos;
+    run(&mut w, &t, skill(0), 60);
+    let pushed = flat(w.enemies[0].pos, was);
+    assert!(pushed > 2.0, "shoved far: {pushed}");
+    assert!((70..90).contains(&w.enemies[0].hp), "{}", w.enemies[0].hp);
+    assert_eq!(w.enemies[1].hp, 90, "not the one behind");
+    assert!(
+        w.enemies[0].ail.stun == 0.0,
+        "half a shock does not stun at once"
+    );
+    // 후려치기(망치 — 같은 부채꼴 꼴)보다 멀리 민다.
+    let (mut h, _) = world();
+    wear(&mut h, Sk::Swat, 1, Pick::A);
+    h.spawn_mob(vec3(0.0, 0.0, -1.8));
+    still(&mut h);
+    let hw = h.enemies[0].pos;
+    run(&mut h, &t, skill(0), 60);
+    assert!(
+        pushed > flat(h.enemies[0].pos, hw),
+        "a shove makes more room"
+    );
+}
+
+/// 재기: 시동이 끝나는 순간 체력이 10 돈다(최대를 넘지 않는다) — 곁의 적은 피해 없이 밀려나며 흡수가 걸린다(보스는 거의 밀리지 않는다).
+/// 바닥에서(ㄴ)는 체력이 35% 아래면 곱절, 깊은 숨(ㄱ)은 기력도, 맺음은 밀쳐 낸 적이 휘청인다(체력은 더 돌지 않는다).
+/// 받는 피해는 건드리지 않는다.
+#[test]
+fn rally_mends_a_little_and_shoves_the_near_off_with_drain() {
+    let mend = |rank: u8, pick: Pick, hp: i32| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Rally, rank, pick);
+        w.spawn_mob(vec3(0.0, 0.0, -1.4));
+        w.spawn_mob(vec3(0.0, 0.0, 6.0));
+        still(&mut w);
+        w.player.hp = hp;
+        w.player.stamina = 10.0;
+        let was = w.enemies[0].pos;
+        let ev = run(&mut w, &t, skill(0), 50);
+        assert!(ev.iter().any(|e| matches!(e, Event::Mend { .. })));
+        (w, was)
+    };
+    let (w, was) = mend(1, Pick::A, 20);
+    assert_eq!(w.player.hp, 30, "ten back");
+    assert_eq!(w.enemies[0].hp, 90, "no harm");
+    assert!(flat(w.enemies[0].pos, was) > 1.0, "shoved off");
+    assert!(w.enemies[0].ail.drain > 0.0, "drain is on the near one");
+    assert_eq!(w.enemies[1].hp, 90);
+    assert_eq!(w.enemies[1].ail.drain, 0.0, "the far one is untouched");
+    let full = mend(1, Pick::A, 1000).0;
+    assert_eq!(full.player.hp, full.player.max_hp, "never above the top");
+    // 3레벨: 깊은 숨 ㄱ = 기력도, 바닥에서 ㄴ = 낮을 때 곱절.
+    let breath = mend(3, Pick::A, 20).0;
+    assert!(breath.player.stamina >= 10.0 + 20.0 - 1e-3);
+    let low = mend(3, Pick::B, 10).0;
+    assert_eq!(
+        low.player.hp,
+        10 + 2 * skills::scaled(HP_UNIT, skills::RANK2_DAMAGE)
+    );
+    // 35%(최대 50 — 17.5) 위면 그대로.
+    let high = mend(3, Pick::B, 30).0;
+    assert_eq!(
+        high.player.hp,
+        30 + skills::scaled(HP_UNIT, skills::RANK2_DAMAGE)
+    );
+    // 맺음: 체력은 5레벨의 배(13)만, 밀쳐 낸 잡몹이 휘청인다.
+    let (cap, _) = mend(5, Pick::A, 10);
+    assert_eq!(
+        cap.player.hp,
+        10 + skills::scaled(HP_UNIT, skills::RANK5_DAMAGE)
+    );
+    assert!(cap.enemies[0].alive());
+    // 보스는 넷의 하나만큼만 밀린다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Rally, 1, Pick::A);
+    w.spawn_boss(vec3(0.0, 0.0, -2.0));
+    still(&mut w);
+    let bw = w.enemies[0].pos;
+    run(&mut w, &t, skill(0), 50);
+    assert!(flat(w.enemies[0].pos, bw) < 0.6);
+}
+
+// ---- 0274 ③: 쌍단검 — 빠지며 베기 · 그림자 습격 ----
+
+/// 빠지며 베기: 앞 부채꼴(2.4 m · 90°)의 적을 한 번 베고 그 기세로 뒤로 3 m 물러난다(맞지 않게 되는 것은 아니다 — 거리만). 옆 · 뒤의
+/// 적은 베이지 않는다. 먼 걸음(ㄱ)이면 4.5 m, 벌어진 틈(ㄴ)이면 베인 잡몹이 한동안 더 다친다(보스는 아니다).
+#[test]
+fn slip_cuts_ahead_then_springs_back() {
+    let go = |pick: Pick, rank: u8| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Slip, rank, pick);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Daggers);
+        w.spawn_mob(vec3(0.0, 0.0, -1.6));
+        w.spawn_mob(vec3(3.0, 0.0, 0.5));
+        w.spawn_boss(vec3(0.6, 0.0, -1.9));
+        still(&mut w);
+        w.enemies[2].hp = 900;
+        w.enemies[2].max_hp = 900;
+        let ev = run(&mut w, &t, skill(0), 60);
+        (w, ev)
+    };
+    let (w, ev) = go(Pick::A, 1);
+    assert!(w.enemies[0].hp < 90, "the foe ahead is cut");
+    assert_eq!(w.enemies[1].hp, 90, "the one aside is not");
+    assert!(w.enemies[2].hp < 900, "a boss is cut too");
+    assert!(ev
+        .iter()
+        .any(|e| matches!(e, Event::Skill { id: Sk::Slip, .. })));
+    assert!(
+        (w.player.pos.z - 3.0).abs() < 0.35,
+        "sprang 3 m back: {:?}",
+        w.player.pos
+    );
+    let (w, _) = go(Pick::A, 3);
+    assert!(
+        (w.player.pos.z - 4.5).abs() < 0.4,
+        "long step: {:?}",
+        w.player.pos
+    );
+    let (w, _) = go(Pick::B, 3);
+    assert!(w.enemies[0].marks.frail > 0.0 && w.enemies[0].marks.frail_mult > 1.2);
+    assert_eq!(w.enemies[2].marks.frail, 0.0, "not a boss");
+    // 맞을 수 있다: 빠지는 동안 무적이 아니다.
+    assert!(!w.player.skill.ghost);
+}
+
+/// 빠지며 베기의 최종 효과: 이 스킬로 쓰러뜨리면 쿨타임의 반을 돌려받는다.
+#[test]
+fn slip_capstone_returns_half_the_cooldown_on_a_kill() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Slip, MAX_RANK, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -1.6));
+    still(&mut w);
+    w.enemies[0].hp = 1;
+    w.step(&skill(0), &t);
+    let full = w.player.skill.cd[Sk::Slip.index()];
+    run(&mut w, &t, Actions::default(), 20);
+    assert!(w.enemies[0].hp <= 0);
+    let cd = w.player.skill.cd[Sk::Slip.index()];
+    assert!(cd < full * 0.55, "half back on the kill: {cd} of {full}");
+}
+
+/// 그림자 습격: 세계가 멈춘 동안 닿는 거리 안의 한 적(가장 가까운)의 **등 뒤**로 숨어들어 그 적을 본다 — 찌름 넷이 모두 그 적에게
+/// 들어가고(곁의 다른 적은 아니다), 등 뒤라 급소가 얹혀 같은 찌름의 앞보다 세다. 마지막 찌름은 출혈. 보스는 다치되 휘청이지 않는다.
+/// 적이 없으면 제자리.
+#[test]
+fn ambush_slips_behind_one_foe_and_stabs_its_back() {
+    use crate::skills::{Ult, AMBUSH};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Daggers);
+        wear_ult(&mut w, Ult::Ambush, 1);
+        if boss {
+            w.spawn_boss(vec3(0.0, 0.0, -5.0));
+        } else {
+            w.spawn_mob(vec3(0.0, 0.0, -5.0));
+        }
+        w.spawn_mob(vec3(4.0, 0.0, -9.0));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+            // 방랑자 쪽(+z)을 본다 — 숨어든 자리는 그 등 뒤(-z).
+            e.facing = 0.0;
+        }
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= AMBUSH.freeze - 1e-4, "the world stops");
+        let mut staggered = false;
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            still_keep(&mut w);
+            for e in &mut w.enemies {
+                e.facing = 0.0;
+            }
+        }
+        (w, ev, staggered)
+    };
+    let (w, ev, staggered) = go(false);
+    assert!(ev.iter().any(|e| matches!(e, Event::Blink { .. })));
+    assert!(w.player.pos.z < -5.4, "behind the foe: {:?}", w.player.pos);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, Event::AmbushStab { .. }))
+            .count(),
+        AMBUSH.stabs as usize
+    );
+    let (light, deep) = AMBUSH.damage_at(1);
+    let front = 3 * light + deep;
+    let lost = 900 - w.enemies[0].hp;
+    assert!(
+        lost as f32 > front as f32 * 1.3,
+        "the sneak attack: {lost} vs {front} from the front"
+    );
+    assert_eq!(w.enemies[1].hp, 900, "only the one");
+    assert!(w.enemies[0].ail.bleed > 0.0, "the last stab bleeds");
+    assert!(staggered, "a mob reels");
+    let (w, _, staggered) = go(true);
+    assert!(w.enemies[0].hp < 900, "a boss is cut");
+    assert!(!staggered, "a boss is not staggered");
+    // 아무도 없으면 제자리에서 앞을 찌른다.
+    let (mut w, t) = world();
+    w.set_weapon(crate::weapons::Id::Daggers);
+    wear_ult(&mut w, Ult::Ambush, 1);
+    w.player.skill.gauge = 1.0;
+    let ev = run(
+        &mut w,
+        &t,
+        Actions {
+            ult: true,
+            ..Default::default()
+        },
+        120,
+    );
+    assert!(!ev.iter().any(|e| matches!(e, Event::Blink { .. })));
+    assert!(flat(w.player.pos, Vec3::ZERO) < 0.1);
+}
+
+/// 그림자 습격의 자리: 적의 등 뒤가 벽(장애물)이면 그 곁(옆 · 이쪽)으로 — 벽 속으로 숨어들지 않는다.
+#[test]
+fn ambush_does_not_slip_into_a_wall() {
+    use crate::skills::Ult;
+    let (mut w, t) = world();
+    w.set_weapon(crate::weapons::Id::Daggers);
+    wear_ult(&mut w, Ult::Ambush, 1);
+    w.spawn_mob(vec3(0.0, 0.0, -5.0));
+    still(&mut w);
+    w.enemies[0].facing = 0.0;
+    w.obstacles.push(crate::world::Aabb {
+        min: vec3(-3.0, 0.0, -8.0),
+        max: vec3(3.0, 3.0, -5.6),
+    });
+    w.player.skill.gauge = 1.0;
+    w.step(
+        &Actions {
+            ult: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    let p = w.player.pos;
+    assert!(p.z > -5.6, "not in the wall: {p:?}");
+    assert!(flat(p, vec3(0.0, 0.0, -5.0)) < 1.6, "beside the foe: {p:?}");
+}
+
+/// 칼바람(0274 ④): 세계가 멈춘 뒤 제자리에서 휩쓸기 다섯이 둘레(`TEMPEST.radius`)의 적을 모두 벤다 — 둘레 밖은 아니다. 마지막 휩쓸기는
+/// 잔불(화상)을 크게 쌓고 잡몹을 밀어 휘청이게 한다. 휘도는 동안과 그 뒤 `steady`초는 맞아도 휘청이지 않는다(받는 피해는 그대로).
+/// 보스는 다치되 휘청이지 않는다.
+#[test]
+fn tempest_spins_and_cuts_all_around_without_flinching() {
+    use crate::skills::{Ult, TEMPEST};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Greatsword);
+        wear_ult(&mut w, Ult::Tempest, 1);
+        for (k, at) in [
+            vec3(0.0, 0.0, -2.0),
+            vec3(2.0, 0.0, 0.0),
+            vec3(0.0, 0.0, 2.0),
+            vec3(-2.0, 0.0, 0.0),
+            vec3(0.0, 0.0, -9.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if boss && k == 0 {
+                w.spawn_boss(at);
+            } else {
+                w.spawn_mob(at);
+            }
+        }
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= TEMPEST.freeze - 1e-4, "the world stops");
+        assert!(w.player.skill.steady > 0.0, "steady from the start");
+        let mut staggered = false;
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            still_keep(&mut w);
+        }
+        (w, ev, staggered)
+    };
+    let (w, ev, staggered) = go(false);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, Event::TempestSweep { .. }))
+            .count(),
+        TEMPEST.sweeps as usize
+    );
+    let (light, deep) = TEMPEST.damage_at(1);
+    for i in 0..4 {
+        assert!(
+            900 - w.enemies[i].hp >= 4 * light + deep,
+            "foe {i} cut by every sweep: {}",
+            900 - w.enemies[i].hp
+        );
+        assert!(w.enemies[i].ail.burn > 0, "foe {i} burns");
+    }
+    assert_eq!(w.enemies[4].hp, 900, "out of reach");
+    assert!(staggered, "a mob reels on the last sweep");
+    let (w, _, staggered) = go(true);
+    assert!(w.enemies[0].hp < 900, "a boss is cut");
+    assert!(!staggered, "a boss is not staggered");
+    // 휘청이지 않는 몸: 앞의 잡몹이 내려치면 피해는 그대로 받고 휘청(맞음 상태)은 없다.
+    let t = Tuning::default();
+    let hurt = |steady: bool| {
+        let mut w = crate::world::World::new("test", 20.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.2));
+        let en = &mut w.enemies[0];
+        en.facing = 0.0;
+        en.atk = crate::enemy::Atk::Smash;
+        en.state = EState::Tele { t: en.tele_dur() };
+        w.player.facing = PI;
+        if steady {
+            w.player.skill.steady = TEMPEST.steady;
+        }
+        let hp0 = w.player.hp;
+        let mut flinched = false;
+        for _ in 0..40 {
+            w.step(&Actions::default(), &t);
+            flinched |= matches!(w.player.state, PState::Hurt { .. });
+        }
+        (hp0 - w.player.hp, flinched)
+    };
+    let (plain, steady) = (hurt(false), hurt(true));
+    assert!(plain.0 > 0 && plain.1, "an ordinary blow staggers");
+    assert_eq!(steady.0, plain.0, "the same damage");
+    assert!(!steady.1, "no flinch while steady");
+}
+
+/// 0274 ⑤ 걸어 당기기: 앞 부채꼴(3.2 m · 150°)의 적을 베며 몸 앞으로 끌어온다(넘어서 끌지 않는다 — 몸 앞 `PULL_STOP`) · 뿌리를 쌓는다 ·
+/// 등 뒤의 적은 아니다 · 문지기는 다치되 끌리지 않는다(무겁다).
+#[test]
+fn hook_and_drag_cuts_the_fan_and_pulls_foes_to_the_feet_but_not_a_warden() {
+    use crate::weapons::PULL_STOP;
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Reap, 1, Pick::A);
+        let at = vec3(0.0, 0.0, -2.9);
+        if boss {
+            w.spawn_boss(at);
+        } else {
+            w.spawn_mob(at);
+        }
+        // 등 뒤의 적(앞의 적보다 멀다 — 겨누는 쪽은 가장 가까운 적).
+        w.spawn_mob(vec3(0.0, 0.0, 3.1));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        let ev = w.step(&skill(0), &t);
+        let mut ev = ev;
+        for _ in 0..60 {
+            still_keep(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        (w, ev, at)
+    };
+    let (w, ev, at) = go(false);
+    assert!(ev
+        .iter()
+        .any(|e| matches!(e, Event::Skill { id: Sk::Reap, .. })));
+    let en = &w.enemies[0];
+    assert!(en.hp < 900, "cut");
+    let gap = flat(en.pos, w.player.pos);
+    let feet = crate::world::PLAYER_RADIUS + en.radius + PULL_STOP;
+    assert!(
+        gap < flat(at, Vec3::ZERO) - 0.6 && (gap - feet).abs() < 0.2,
+        "dragged to the feet: {gap:.2} (feet {feet:.2})"
+    );
+    assert!(en.ail.gauge[crate::status::Kind::Root.slot().unwrap()] > 0.0);
+    assert_eq!(w.enemies[1].hp, 900, "not behind");
+    let (w, _, at) = go(true);
+    assert!(w.enemies[0].hp < 900, "a warden is cut");
+    assert!(
+        (w.enemies[0].pos - at).length() < 0.1,
+        "a warden is not dragged: {:?}",
+        w.enemies[0].pos
+    );
+}
+
+/// 0274 ⑤ 생기 거두기: 몸 둘레(2.6 m)의 적을 모두 베고 거둔 적마다 체력 `heal` — 넷까지(받는 피해는 줄지 않는다, 되찾을 뿐) · 흡수를
+/// 건다. 둘레 밖의 적은 아니다.
+#[test]
+fn reap_life_cuts_all_around_and_heals_for_each_foe_up_to_four() {
+    use crate::skills::Form;
+    let Form::Reap { heal, most, .. } = Sk::Harvest.def().form else {
+        panic!("reap life is a reap")
+    };
+    for n in [1usize, 2, 6] {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Harvest, 1, Pick::A);
+        for k in 0..n {
+            let a = k as f32 / n as f32 * std::f32::consts::TAU;
+            w.spawn_mob(vec3(a.sin_d() * 1.6, 0.0, a.cos_d() * 1.6));
+        }
+        w.spawn_mob(vec3(0.0, 0.0, -6.0));
+        still(&mut w);
+        w.player.hp = 10;
+        let mut ev = w.step(&skill(0), &t);
+        for _ in 0..60 {
+            still_keep(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        let want = heal * n.min(most as usize) as i32;
+        // 거둔 그 틱에 흡수가 걸린 적을 쳤으니 한 모금(낫의 되살아나는 숨 — 한 틱에 한 번)이 더 들 수 있다.
+        let sip = (crate::tuning::DRAIN_HP as f32 * crate::weapons::ART_SAP).round() as i32;
+        let gain = w.player.hp - 10;
+        assert!(
+            gain >= want && gain <= want + sip,
+            "{n} foes: +{gain} (want {want})"
+        );
+        assert!(ev.iter().any(|e| matches!(e, Event::Mend { .. })));
+        for e in &w.enemies[..n] {
+            assert!(e.hp < 90 && e.ail.drain > 0.0, "reaped and drained");
+        }
+        assert_eq!(w.enemies[n].hp, 90, "out of reach");
+    }
+}
+
+/// 0274 ⑤ 깨어나는 숲(낫 판의 궁극기): 세계가 멈춘 뒤 고리 셋이 차례로 바깥으로 솟는다 — 가까운 적은 고리마다 찔려(뿌리 둘 = 속박)
+/// 마지막 고리까지, 바깥 고리의 적은 마지막 고리만, 밖의 적은 아니다. 마지막 고리에 닿은 적마다 체력(많아야 `heal_most`). 문지기는
+/// 다치되 휘청이지 않는다.
+#[test]
+fn waking_grove_raises_three_rings_that_bind_the_near_and_heal_for_each_foe_reached() {
+    use crate::skills::{Ult, GROVE};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Scythe);
+        wear_ult(&mut w, Ult::Grove, 1);
+        for (k, at) in [
+            vec3(0.0, 0.0, -1.5),
+            vec3(3.0, 0.0, 0.0),
+            vec3(0.0, 0.0, 4.1),
+            vec3(0.0, 0.0, -9.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if boss && k == 0 {
+                w.spawn_boss(at);
+            } else {
+                w.spawn_mob(at);
+            }
+        }
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        w.player.hp = 10;
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= GROVE.freeze - 1e-4, "the world stops");
+        let (mut staggered, mut bound) = (false, false);
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            bound |= w.enemies[0].ail.bound > 0.0;
+            still_keep(&mut w);
+        }
+        (w, ev, staggered, bound)
+    };
+    let (w, ev, _, bound) = go(false);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, Event::GrovePulse { .. }))
+            .count(),
+        GROVE.pulses() as usize
+    );
+    let hurt = |i: usize| 900 - w.enemies[i].hp;
+    let (light, deep) = (GROVE.damage, GROVE.last_at(1));
+    assert!(
+        hurt(0) >= 2 * light + deep,
+        "near: every ring ({})",
+        hurt(0)
+    );
+    assert!(bound, "two rings of roots bind the near one");
+    assert!(
+        hurt(1) >= light + deep && hurt(1) < 2 * light + deep,
+        "middle: two rings ({})",
+        hurt(1)
+    );
+    assert!(
+        hurt(2) >= deep && hurt(2) < light + deep,
+        "outer: the last ring ({})",
+        hurt(2)
+    );
+    assert_eq!(w.enemies[3].hp, 900, "out of reach");
+    // 마지막 고리에 닿은 셋 — 체력 4씩(많아야 20), 흡수 · 속박을 친 틱마다 한 모금이 더 들 수 있다.
+    let want = (GROVE.heal_each * 3).min(GROVE.heal_most);
+    let sip = (crate::tuning::DRAIN_HP as f32 * crate::weapons::ART_SAP).round() as i32;
+    let gain = w.player.hp - 10;
+    assert!(
+        gain >= want && gain <= want + 2 * sip,
+        "+{gain} (want {want})"
+    );
+    let (w, _, staggered, _) = go(true);
+    assert!(w.enemies[0].hp < 900, "a warden is hurt");
+    assert!(!staggered, "a warden is not staggered");
+}
+
+/// 0274 ⑥ 저주 새기기: 앞 8 m 안의 한 적(가장 가까운)에게 저주를 새긴다 — 균열이 가득 차고(금) 표가 남는다, 등 뒤 · 곁의 다른 적은 아니다.
+/// 그 적이 표를 지닌 채 쓰러지면 둘레(`spread`)의 가장 가까운 표 없는 적에게 옮는다(금을 다시 가득 — `Event::HexJump`), 둘레 밖으로는
+/// 옮지 않는다. 두 갈래(ㄴ)면 가까운 둘에게, 최종 효과면 쓰러진 자리가 울린다(울림의 터짐).
+#[test]
+fn etch_a_curse_marks_one_foe_and_passes_on_when_it_falls() {
+    use crate::skills::Form;
+    let Form::Hex { spread, secs, .. } = Sk::Hex.def().form else {
+        panic!("etch a curse is a hex")
+    };
+    let go = |rank: u8, pick: Pick| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Hex, rank, pick);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Wand);
+        // 앞의 표적 · 그 곁(옮을 곳 둘 — 가까운 것부터) · 둘레 밖 · 등 뒤.
+        for at in [
+            vec3(0.0, 0.0, -4.0),
+            vec3(1.8, 0.0, -4.0),
+            vec3(-2.6, 0.0, -4.0),
+            vec3(0.0, 0.0, -4.0 - spread * 1.6 - 2.0),
+            vec3(0.0, 0.0, 5.5),
+        ] {
+            w.spawn_mob(at);
+        }
+        still(&mut w);
+        let mut ev = w.step(&skill(0), &t);
+        for _ in 0..40 {
+            still_keep(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        (w, t, ev)
+    };
+    let (mut w, t, ev) = go(1, Pick::A);
+    assert!(ev.iter().any(|e| matches!(e, Event::Hexed { .. })));
+    let marked: Vec<bool> = w.enemies.iter().map(|e| e.marks.hex > 0.0).collect();
+    assert_eq!(marked, [true, false, false, false, false], "one foe");
+    assert!(w.enemies[0].marks.hex <= secs);
+    assert!(
+        w.enemies[0].hp < 90 && w.enemies[0].ail.rift > 0.0,
+        "cracked"
+    );
+    // 쓰러진다 — 가장 가까운 곁의 적(1.8 m)에게 옮는다.
+    w.enemies[0].hp = 0;
+    w.enemies[0].state = EState::Dead;
+    let ev = w.step(&Actions::default(), &t);
+    assert!(ev.iter().any(|e| matches!(e, Event::HexJump { .. })));
+    let marked: Vec<bool> = w.enemies.iter().map(|e| e.marks.hex > 0.0).collect();
+    assert_eq!(
+        marked,
+        [false, true, false, false, false],
+        "passed to the nearest"
+    );
+    assert!(w.enemies[1].ail.rift > 0.0, "and cracked it");
+    // 두 갈래(3단 ㄴ): 가까운 둘에게.
+    let (mut w, t, _) = go(3, Pick::B);
+    w.enemies[0].hp = 0;
+    w.enemies[0].state = EState::Dead;
+    w.step(&Actions::default(), &t);
+    let marked: Vec<bool> = w.enemies.iter().map(|e| e.marks.hex > 0.0).collect();
+    assert_eq!(marked, [false, true, true, false, false], "forked");
+    // 최종 효과(5단): 쓰러진 자리가 울린다.
+    let (mut w, t, _) = go(5, Pick::A);
+    w.enemies[0].hp = 0;
+    w.enemies[0].state = EState::Dead;
+    let before = w.enemies[1].hp;
+    let mut ev = Vec::new();
+    for _ in 0..5 {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    assert!(
+        w.enemies[1].hp < before,
+        "the fallen spot tolls ({} → {})",
+        before,
+        w.enemies[1].hp
+    );
+}
+
+/// 0274 ⑥ 시드는 그늘: 겨눈 쪽 앞에 그늘이 4초 남아 그 안의 적을 거듭 친다(1초마다) — 균열이 쌓여 금이 간다. 그늘 밖의 적은 아니다.
+#[test]
+fn a_withering_shade_strikes_again_and_again_and_cracks_the_foes_inside() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Blight, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -4.5));
+    w.spawn_mob(vec3(0.0, 0.0, -12.0));
+    still(&mut w);
+    let mut ev = w.step(&skill(0), &t);
+    let mut cracked = false;
+    for _ in 0..300 {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+        cracked |= w.enemies[0].ail.rift > 0.0;
+    }
+    let pulses = ev
+        .iter()
+        .filter(|e| matches!(e, Event::FieldPulse { .. }))
+        .count();
+    assert!(pulses >= 3, "again and again: {pulses}");
+    assert!(w.enemies[0].hp <= 90 - 3 * 10, "{}", w.enemies[0].hp);
+    assert!(cracked, "the shade cracks");
+    assert_eq!(w.enemies[1].hp, 90, "out of the shade");
+}
+
+/// 0274 ⑥ 치른 값(완드 판의 궁극기): 세계가 멈춘 뒤 두 박 — 번지는 저주(둘레의 적 모두에게 금)와 `gap`초 뒤 터지는 울림(큰 피해 · 울림
+/// 가득). 금이 간 뒤라 터지는 울림이 금의 배로 더 다친다(완드를 든 손이면 더). 둘레 밖은 아니다. 문지기는 다치되 휘청이지 않는다.
+#[test]
+fn the_price_paid_cracks_everyone_around_then_tolls_harder_for_it() {
+    use crate::skills::{Ult, PRICE};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Wand);
+        wear_ult(&mut w, Ult::Price, 1);
+        for (k, at) in [
+            vec3(0.0, 0.0, -2.0),
+            vec3(3.5, 0.0, 0.0),
+            vec3(0.0, 0.0, -9.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if boss && k == 0 {
+                w.spawn_boss(at);
+            } else {
+                w.spawn_mob(at);
+            }
+        }
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= PRICE.freeze - 1e-4, "the world stops");
+        let (mut staggered, mut cracked) = (false, false);
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            cracked |= w.enemies[1].ail.rift > 0.0;
+            still_keep(&mut w);
+        }
+        (w, ev, staggered, cracked)
+    };
+    let (w, ev, _, cracked) = go(false);
+    let pulses: Vec<bool> = ev
+        .iter()
+        .filter_map(|e| match e {
+            Event::PricePulse { last, .. } => Some(*last),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pulses, [false, true], "a curse, then the toll");
+    assert!(cracked, "everyone around is cracked");
+    let hurt = |i: usize| 900 - w.enemies[i].hp;
+    let plain = PRICE.curse + PRICE.toll_at(1);
+    assert!(
+        hurt(1) > plain,
+        "the toll lands harder on the crack ({} > {plain})",
+        hurt(1)
+    );
+    assert_eq!(w.enemies[2].hp, 900, "out of reach");
+    let (w, _, staggered, _) = go(true);
+    assert!(w.enemies[0].hp < 900, "a warden is hurt");
+    assert!(!staggered, "a warden is not staggered");
+}
+
+/// 0278 R14: 바닥에 놓는 모양(`Form::info().leaves` — R16 — 불티 · 눈발 · 그늘 · 덫)의 스킬은 놓은 바로 뒤 칸의 남은 몫(`skill_active`)이
+/// 0보다 크다 — 이름 목록이던 때 시드는 그늘(`Blight`)이 빠져 늘 0이었다. 놓지 않는 스킬은 0.
+#[test]
+fn every_skill_that_leaves_a_field_reports_its_remaining_share() {
+    let mut placers = 0;
+    for id in skills::IDS {
+        let (mut w, t) = world();
+        wear(&mut w, id, 1, Pick::A);
+        let mut landed = false;
+        for k in 0..120 {
+            let a = if k == 0 { skill(0) } else { Actions::default() };
+            let ev = w.step(&a, &t);
+            if ev
+                .iter()
+                .any(|e| matches!(e, Event::Skill { id: i, .. } if *i == id))
+            {
+                landed = true;
+                break;
+            }
+        }
+        assert!(landed, "{id:?} never landed");
+        let left = w.skill_active(0);
+        if matches!(
+            id.def().form.info().leaves,
+            skills::Leaves::Ground | skills::Leaves::Snare
+        ) {
+            placers += 1;
+            assert!(left > 0.0, "{id:?} placed something but reports {left}");
+        } else if id != Sk::Echo {
+            assert_eq!(left, 0.0, "{id:?} places nothing");
+        }
+        // 0278 R16: 서술자(`Form::info().leaves`)는 표가 아니라 월드가 말한다 — 놓는다고 적힌 모양만 바닥에 무엇을 둔다.
+        assert_eq!(
+            !w.skill_fields.is_empty(),
+            matches!(
+                id.def().form.info().leaves,
+                skills::Leaves::Ground | skills::Leaves::Snare
+            ),
+            "{id:?}: info().leaves vs what lies on the ground"
+        );
+    }
+    assert_eq!(placers, 5, "embers · snow · snare · mine · blight");
+}
+
+/// 더 다치는 표지(0158 `frail`)는 여러 스킬이 건다 — 끌어모으기 · 부채꼴의 맺음(`Cap::Frail`), 막아치기 · 빠지며 베기의 드러난 틈
+/// (`Twist::Expose`). 규칙은 하나(0278 R20에서 고정): **남은 초는 긴 쪽이 남고**(다른 표지 — 엉킴 · 묶임 · 오금 · 저주 — 와 같다),
+/// 배는 마지막에 건 것. 옛 부채꼴 · 끌어모으기는 초를 덮어써 더 긴 표지를 줄였다.
+#[test]
+fn a_frail_mark_keeps_the_longer_time() {
+    use crate::skills::Pick;
+    for id in [Sk::Shove, Sk::Gather, Sk::Pommel, Sk::Slip] {
+        let (mut w, t) = world();
+        w.spawn_mob(vec3(0.0, 0.0, -1.3));
+        still(&mut w);
+        let pick = if matches!(id, Sk::Pommel | Sk::Slip) {
+            Pick::B
+        } else {
+            Pick::A
+        };
+        wear(&mut w, id, skills::MAX_RANK, pick);
+        // 막아치기의 드러난 틈은 공격을 준비하던 적에게만.
+        if id == Sk::Pommel {
+            let en = &mut w.enemies[0];
+            en.facing = 0.0;
+            en.atk = Atk::Smash;
+            en.state = EState::Tele { t: 0.0 };
+        }
+        w.enemies[0].marks.frail = 5.0;
+        w.enemies[0].marks.frail_mult = 1.05;
+        run(&mut w, &t, skill(0), 40);
+        let m = w.enemies[0].marks;
+        assert!(
+            m.frail > 4.0,
+            "{id:?}: the longer mark was cut to {}",
+            m.frail
+        );
+        assert!(
+            m.frail_mult > 1.1,
+            "{id:?}: the latest multiplier: {}",
+            m.frail_mult
+        );
+    }
 }

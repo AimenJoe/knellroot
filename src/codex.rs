@@ -29,7 +29,7 @@ pub struct Entry {
 }
 
 /// 표 순서 = 도감 순서(만나는 차례).
-pub static ENTRIES: [Entry; 11] = [
+pub static ENTRIES: [Entry; 12] = [
     Entry {
         kind: Kind::Husk,
         place: |s| s.cx_place_both,
@@ -59,6 +59,17 @@ pub static ENTRIES: [Entry; 11] = [
             (Obs::Seen, |s| s.cx_warden_1),
             (Obs::Seen, |s| s.cx_warden_2),
             (Obs::Guess, |s| s.cx_warden_g),
+            (Obs::Roused, |s| s.cx_roused),
+        ],
+    },
+    // 고요한 사슴(0270 D — 성소의 필드 보스): 문지기 다음(같은 지역, 길에서 벗어난 터).
+    Entry {
+        kind: Kind::Stag,
+        place: |s| s.cx_place_stag,
+        lines: &[
+            (Obs::Seen, |s| s.cx_stag_1),
+            (Obs::Seen, |s| s.cx_stag_2),
+            (Obs::Guess, |s| s.cx_stag_g),
             (Obs::Roused, |s| s.cx_roused),
         ],
     },
@@ -157,6 +168,7 @@ pub fn kind_key(k: Kind) -> &'static str {
         Kind::Overseer => "overseer",
         Kind::Repeater => "repeater",
         Kind::Packbearer => "packbearer",
+        Kind::Stag => "stag",
     }
 }
 
@@ -204,6 +216,7 @@ pub fn charm_place(id: crate::charms::Id) -> Tr {
         C::Cloth => |s| s.cx_charm_cloth,
         C::Jar => |s| s.cx_charm_jar,
         C::BellShard => |s| s.cx_charm_bellshard,
+        C::StillBell => |s| s.cx_charm_stillbell,
     }
 }
 

@@ -4,8 +4,6 @@
 //   켜진다: 화로 창의 Select(Tab) = 그 창의 장비 탭 → E = 가방, 또는 성장 탭에서 E 둘).
 //   화면마다 스크린숏, 개발판 F4 넘침 검사(`[ui-check]` 줄이 있으면 실패).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/items.js dist shots
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -13,19 +11,10 @@ const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8143;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 const BASE = 'v=1\nembers=300\nclears=1\nrun.rest=0\nrun.gate=1\nweapon=sword\nmigrated.v04=1\nweapons=sword,hammer\ncharm.owned=ear\ncharm.worn=ear,,\n';
 const ITEMS = BASE + 'item.0=w.sword|p||0\nitem.1=w.sword|r|dmg.1+swift.1|0\nitem.2=w.hammer|s|heavy.1|0\nitem.3=c.ear|s|hp.1|0\nitem.next=4\ngear.main=0\n';
-
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 async function open(browser, seed, tag) {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2 });
@@ -39,7 +28,8 @@ async function open(browser, seed, tag) {
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) bad.push(String(e)); });
   const shot = (name, clip) => page.screenshot({ path: path.join(OUT, `items-${tag}-${name}.png`), clip });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
-  const { press, until, flip } = sceneKit(page, 90);
+  const { press, until, flip, openTab } = sceneKit(page, 90);
+  await sceneKit.cheap(page);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 60000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
@@ -52,9 +42,7 @@ async function open(browser, seed, tag) {
   await press('F4');
   await press('Enter'); await until('Slots', '이어하기 → 슬롯 창');
   await press('Enter'); await until('Play', '슬롯 → 판'); await page.waitForTimeout(1500);
-  // 큰 창에서 E를 n번(탭이 넘어갈 때마다 기다린다).
-  const tabs = async (n, want, what) => { for (let i = 0; i < n; i++) await flip('KeyE', `${what} — E ${i + 1}`); await until(want, what); };
-  return { page, shot, press, until, flip, tabs, bad, record: () => page.evaluate((k) => localStorage.getItem(k), KEY) };
+  return { page, shot, press, until, flip, openTab, bad, record: () => page.evaluate((k) => localStorage.getItem(k), KEY) };
 }
 
 // 껐다 켠다(같은 기록으로 이어하기).
@@ -71,8 +59,8 @@ async function again(g) {
 
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   const errors = [];
   {
     // 아이템이 든 기록: 장비 탭(Tab — 주무기 칸) → 후보(확인) → 여벌(드문 검, 바탕의 줄 바로 아래) → 낀다.
@@ -113,7 +101,7 @@ async function again(g) {
     // 지킨다 → 기록에 item.lock, 풀고 → 내려놓는다 → 가방에서 빠지고 발치에 떨어진다 → 닫고 주우면(점프 버튼) 다시 든다.
     const g = await open(browser, ITEMS, 'tab');
     await g.press('Escape'); await g.until('Equip { host: Pause', '멈춤 = 장비 탭');
-    await g.tabs(1, 'Bag { host: Pause', '가방 탭');
+    await g.openTab('Bag { host: Pause', '가방 탭');
     await g.shot('1-bag');
     await g.press('ArrowRight'); await g.page.waitForTimeout(200);
     await g.shot('2-worn-sword');
@@ -149,7 +137,7 @@ async function again(g) {
     r = await g.record();
     if (!/item\.4=w\.sword\|r\|dmg\.1\+swift\.1\|0\n/.test(r)) errors.push(`the sword was not picked back up: ${JSON.stringify(r)}`);
     if (/ground\./.test(r)) errors.push(`a picked-up item still lies on the ground: ${JSON.stringify(r)}`);
-    await g.tabs(1, 'Bag { host: Pause', '가방 탭(다시)');
+    await g.openTab('Bag { host: Pause', '가방 탭(다시)');
     await g.shot('12-bag-again'); // 다시 켠 판의 멈춤은 장비 탭에서 열린다 → E = 가방 — 주운 것은 새 것(민트 점)
     errors.push(...g.bad);
     await g.page.context().close();
@@ -167,7 +155,7 @@ async function again(g) {
       await g.press('ArrowDown', 2); await g.press('Enter'); await g.page.waitForTimeout(300);
     };
     await g.press('Escape'); await g.until('Equip { host: Pause', '멈춤 = 장비 탭');
-    await g.tabs(1, 'Bag { host: Pause', '가방 탭');
+    await g.openTab('Bag { host: Pause', '가방 탭');
     await g.shot('1-over-the-cap'); // 한도를 넘은 가방(31): 줄이 하나 늘고 칸이 작아진다
     await down();
     await g.shot('2-full');
@@ -185,7 +173,7 @@ async function again(g) {
     // 화로의 가방(0263 — 화로 창에서 Select(Tab) = 그 창의 장비 탭 → E = 가방)에서 여벌 하나를 잔불로
     // (주무기로 · 지킨다 · 내려놓는다 · 잔불로) → 자리가 났다 → 닫고(화로 창 → 싸움) 줍는다.
     await g.press('Tab'); await g.until('Equip { host: Hearth', '화로에서 Select = 화로 창의 장비 탭');
-    await g.tabs(1, 'Bag { host: Hearth', '화로의 가방 탭');
+    await g.openTab('Bag { host: Hearth', '화로의 가방 탭');
     await g.press('Enter'); await g.until('BagAct', '칸 → 할 일');
     await g.press('ArrowDown', 3); await g.press('Enter'); await g.until('Ask(Salvage', '잔불로 → 묻는 창');
     await g.press('ArrowLeft'); await g.press('Enter'); await g.until('Bag {', '바꾼다 → 가방 탭'); await g.page.waitForTimeout(200);
@@ -206,7 +194,7 @@ async function again(g) {
     // 그리고 "여벌 정리": 맨 아랫줄 아래의 단추 — 지키지 않는 여벌을 한꺼번에.
     const g = await open(browser, ITEMS + 'item.4=w.hammer|p||0\nitem.5=c.ear|p||0\nitem.next=6\n', 'hearth');
     await g.press('KeyF'); await g.until('Status { host: Hearth', '화로에서 쉬기 = 성장 탭');
-    await g.tabs(2, 'Bag { host: Hearth', '성장 → 장비 → 가방 탭(화로)'); await g.page.waitForTimeout(200);
+    await g.openTab('Bag { host: Hearth', '성장 → 장비 → 가방 탭(화로)'); await g.page.waitForTimeout(200);
     await g.shot('1-bag');
     await g.press('Enter'); await g.until('BagAct', '칸 → 할 일');
     await g.shot('2-acts');

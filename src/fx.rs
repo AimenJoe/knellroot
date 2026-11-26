@@ -3,6 +3,7 @@
 //!
 //! 원칙(KB `game-feel-particles-and-light` + 0141): 타격은 겹으로(번쩍임 1~2프레임 → 불똥 → 남는 먼지), 한 이펙트는 2~3색,
 //! 타격은 짧고 밝게·몸짓(먼지)은 흙빛으로 낮게, 꾸밈은 많으면 건너뛰고 타격은 건너뛰지 않는다, 빨강은 쓰지 않는다(위험 예고 전용).
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::enemy::{Atk, Blow, EState};
@@ -95,6 +96,17 @@ pub enum MarkKind {
     Slash { dir: Vec3, len: f32, half: f32 },
 }
 
+/// 남는 빛이 어디에 붙나(0278 R21 — `mark_with`의 bool 둘 `follow` · `hold`; 셋째 짝 "버티되 따르지 않음"은 없다).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Stick {
+    /// 놓인 자리에 남는다.
+    Ground,
+    /// 방랑자를 따라간다(몸에 두른 것).
+    Body,
+    /// 몸을 따라가되 버티는 동안에만(버팀이 끊기면 지운다).
+    Bracing,
+}
+
 /// 남는 빛 하나. `delay` 뒤에 나타나 `life` 동안 산다. `follow` = 방랑자를 따라간다(몸에 두른 것),
 /// `hold` = 버티는 동안에만(버팀이 끊기면 지운다).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -137,18 +149,44 @@ pub fn field_mote(i: usize, time: f32) -> (Vec3, f32) {
     let a = h(3) * std::f32::consts::TAU;
     // 넓이에 고르게(√) — 가장자리까지.
     let r = h(4).sqrt() * 0.96;
-    let sway = (time * (2.0 + 2.0 * h(5)) + h(6) * 6.0).sin() * 0.05 * ph;
+    let sway = (time * (2.0 + 2.0 * h(5)) + h(6) * 6.0).sin_d() * 0.05 * ph;
     let pos = vec3(
-        a.sin() * r + sway,
+        a.sin_d() * r + sway,
         0.08 + (0.7 + 0.9 * h(7)) * ph,
-        a.cos() * r,
+        a.cos_d() * r,
     );
     let k = (ph / 0.12).min(1.0) * ((1.0 - ph) / 0.35).min(1.0);
     (pos, k)
 }
+/// 화살비의 화살(0272 — 상태 없음, 불티와 같은 꼴): 화살 `i`가 시각 `time`에 있는 자리(반지름 1의 원판 안 — 렌더가 반지름을
+/// 곱한다, y = 남은 높이의 몫 1 → 0)와 진하기. 저마다의 박자로 위에서 곧게 내리꽂히고, 땅에 닿으면 다음 화살이 다른 박자로 온다.
+pub fn rain_arrow(i: usize, time: f32) -> (Vec3, f32) {
+    let h = |n: u32| {
+        let mut x = (i as u32).wrapping_mul(40_503_581) ^ n.wrapping_mul(2_654_435_761) ^ 0x51ed;
+        x ^= x >> 13;
+        x = x.wrapping_mul(0x5bd1_e995);
+        x ^= x >> 15;
+        (x & 0xffff) as f32 / 65535.0
+    };
+    let period = 0.32 + 0.22 * h(1);
+    let t = (time + h(2) * period) / period;
+    let (round, ph) = (t.floor() as u32, t.fract());
+    // 내릴 때마다 자리가 바뀐다(같은 자리에만 꽂히면 무늬로 읽힌다).
+    let j = |n: u32| h(n.wrapping_add(round.wrapping_mul(7)));
+    let a = j(3) * std::f32::consts::TAU;
+    let r = j(4).sqrt() * 0.94;
+    let pos = vec3(a.sin_d() * r, 1.0 - ph, a.cos_d() * r);
+    (pos, (ph / 0.15).min(1.0))
+}
+/// 화살비에 한꺼번에 보이는 화살의 수.
+pub const RAIN_ARROWS: usize = 16;
+
 /// 불티 하나의 수(반지름 4m 기준 — 렌더가 넓이에 맞춰 늘린다, 상한 `FIELD_MOTES_MAX`).
 pub const FIELD_MOTES: usize = 44;
 pub const FIELD_MOTES_MAX: usize = 72;
+
+/// 분노의 불씨(0277)가 보이기 시작하는 분노(0..1 — 적 둘에 에워싸이면 0.5).
+const FURY_MOTES_FROM: f32 = 0.5;
 
 /// 퍼지는 고리의 앞머리에서 틱마다 튀는 돌 부스러기 수(0269).
 const WAVE_CHIPS: usize = 3;
@@ -168,7 +206,20 @@ const LAVENDER: Color = Color::new(0.82, 0.74, 1.0, 1.0);
 const MINT: Color = Color::new(0.66, 1.0, 0.86, 1.0);
 /// 균열의 하늘빛(0223 V2 — 패링의 `COOL`보다 짙다: 금 간 적의 표지와 같은 빛).
 const SKY: Color = Color::new(0.50, 0.80, 1.0, 1.0);
+// 0270 B 새 타입의 빛(`status::INK`와 같은 값): 충격 레몬 · 서리 얼음 · 흡수 풀빛.
+const SHOCK: Color = Color::new(1.0, 0.96, 0.45, 1.0);
+const ICE: Color = Color::new(0.55, 0.95, 1.0, 1.0);
+const LIFE: Color = Color::new(0.55, 0.95, 0.45, 1.0);
 const HEAL: Color = Color::new(1.0, 0.86, 0.56, 1.0);
+/// 급소의 번쩍임(0277 — 쌍단검): 날 끝의 서늘한 은빛(살짝 연보라) — 평타의 따뜻한 흰빛 · 패링의 하늘빛 `COOL` · 치명타의 금과 갈린다.
+const SNEAK: Color = Color::new(0.88, 0.86, 1.0, 1.0);
+/// 분노의 불씨(0277 — 대검): 달군 쇠의 주황 → 식은 흙빛 금. 몰아치기의 `GOLD`보다 붉게, 빨강(예고)은 아니게(초록 0.5 넘게).
+const FURY: Color = Color::new(1.0, 0.58, 0.26, 1.0);
+const FURY_COOL: Color = Color::new(0.86, 0.70, 0.52, 1.0);
+const FURY_HOT: Color = Color::new(1.0, 0.78, 0.45, 1.0);
+/// 걸어 당김의 덩굴(0277 — 낫): 흙빛 뿌리 + 연한 새순(렌더 `pull_vines`와 같은 빛).
+const VINE: Color = Color::new(0.58, 0.44, 0.30, 1.0);
+const SPROUT: Color = Color::new(0.70, 0.92, 0.58, 1.0);
 /// 먼지 = 바닥 석판보다 한 단 밝은 남보라 — 바닥과 같은 빛이면(처음 0.50·0.48·0.62) 깔리는 게 아니라 안 보였다.
 const DUST: Color = Color::new(0.63, 0.61, 0.74, 0.72);
 /// 쓰러진 적에게서 풀려나는 재(바랜 잿빛 라벤더, 0037)와 뿌리의 보라.
@@ -215,6 +266,8 @@ pub struct Fx {
     enemy_was: Vec<(bool, f32)>,
     run_dist: f32,
     last_pos: Option<Vec3>,
+    /// 분노의 불씨를 낸 뒤 흐른 시간(0277).
+    fury_t: f32,
 }
 
 impl Fx {
@@ -244,10 +297,9 @@ impl Fx {
     }
 
     fn mark(&mut self, pos: Vec3, kind: MarkKind, life: f32, color: Color) {
-        self.mark_with(pos, kind, life, color, 0.0, false, false);
+        self.mark_with(pos, kind, life, color, 0.0, Stick::Ground);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn mark_with(
         &mut self,
         pos: Vec3,
@@ -255,9 +307,13 @@ impl Fx {
         life: f32,
         color: Color,
         delay: f32,
-        follow: bool,
-        hold: bool,
+        stick: Stick,
     ) {
+        let (follow, hold) = match stick {
+            Stick::Ground => (false, false),
+            Stick::Body => (true, false),
+            Stick::Bracing => (true, true),
+        };
         if self.marks.len() >= MARK_CAP {
             self.marks.remove(0);
         }
@@ -278,7 +334,7 @@ impl Fx {
         let turn = self.r() * std::f32::consts::TAU;
         for i in 0..n {
             let a = turn + i as f32 / n as f32 * std::f32::consts::TAU + self.rs() * 0.25;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let rr = r * (0.55 + 0.45 * self.r());
             let life = 0.22 + 0.08 * self.r();
             let h = 0.3 + 0.6 * self.r();
@@ -312,7 +368,7 @@ impl Fx {
         let turn = self.r() * std::f32::consts::TAU;
         for i in 0..n {
             let a = turn + i as f32 / n as f32 * std::f32::consts::TAU + self.rs() * 0.15;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let sp = speed * (0.7 + 0.6 * self.r());
             let l = life * (0.7 + 0.5 * self.r());
             let up = 0.5 + 1.5 * self.r();
@@ -393,13 +449,13 @@ impl Fx {
         for i in 0..n {
             let flat = if around {
                 let a = self.r() * std::f32::consts::TAU;
-                vec3(a.sin(), 0.0, a.cos())
+                vec3(a.sin_d(), 0.0, a.cos_d())
             } else {
                 // 맞은 쪽보다 옆으로(칼이 지나가는 쪽 — 베인 피는 날을 따라 튄다): 곧장 뒤로 튀면 카메라(방랑자 뒤)에서
                 // 맞은 몸에 가려 안 보였다(헤드리스 화면). 좌우 번갈아 30~80°.
                 let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
                 let a = (30.0 + 50.0 * self.r()).to_radians();
-                (dir * a.cos() + side * (sign * a.sin())).normalize_or(dir)
+                (dir * a.cos_d() + side * (sign * a.sin_d())).normalize_or(dir)
             };
             let glob = i % 3 == 0;
             let sp = speed * (0.5 + 0.7 * self.r()) * if glob { 0.75 } else { 1.0 };
@@ -523,7 +579,7 @@ impl Fx {
         let turn = self.r() * std::f32::consts::TAU;
         for i in 0..n {
             let a = turn + i as f32 / n as f32 * std::f32::consts::TAU + self.rs() * 0.2;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let s = size * (0.8 + 0.5 * self.r());
             let vel = d * speed * (0.7 + 0.5 * self.r()) + Vec3::Y * (0.3 + 0.5 * self.r());
             let life = 0.42 + 0.2 * self.r();
@@ -568,17 +624,17 @@ impl Fx {
     /// 튀어 오르는 돌 부스러기 `n`개: `g`(바닥)에서 `dir` 쪽 `arc_deg`°(360 = 사방) 안, 반지름 `range`의 25~95% 자리에서.
     fn chips(&mut self, g: Vec3, dir: Vec3, range: f32, arc_deg: f32, n: usize) {
         let half = (arc_deg * 0.4).to_radians();
-        let yaw = dir.x.atan2(dir.z);
+        let yaw = dir.x.atan2_d(dir.z);
         for _ in 0..n {
             let a = yaw + self.rs() * half;
             let rr = range * (0.25 + 0.7 * self.r());
-            let p = g + vec3(a.sin() * rr, 0.1, a.cos() * rr);
+            let p = g + vec3(a.sin_d() * rr, 0.1, a.cos_d() * rr);
             let up = 4.0 + 3.5 * self.r();
             let life = 0.45 + 0.2 * self.r();
             let size = 0.1 + 0.08 * self.r();
             self.push(Part {
                 pos: p,
-                vel: vec3(a.sin() * 1.5, up, a.cos() * 1.5),
+                vel: vec3(a.sin_d() * 1.5, up, a.cos_d() * 1.5),
                 age: 0.0,
                 life,
                 size: (size, size * 0.7),
@@ -641,248 +697,28 @@ impl Fx {
         // 맞은 쪽 = 플레이어에서 그 자리로(수평) — 불똥이 "밀어낸 쪽"으로 튄다.
         let from_player = |at: Vec3| vec3(at.x - pp.x, 0.0, at.z - pp.z).normalize_or(Vec3::Z);
         match *e {
-            // 평타: 번쩍임 한 번 — 불똥은 월드의 `sparks`(같은 스윙 = 같은 무늬)가 낸다.
-            // + 맞은 쪽으로 뿌리 진액이 튄다(0182 — 번쩍임은 맨 뒤: 같은 틱의 마지막 입자).
-            Event::Hit { at } => {
-                let d = from_player(at);
-                // 멀리 튀는 방울 + 맞은 자리 곁에 쏟아지는 덩이("퍽" — 멀리 가는 것만으로는 불티처럼 읽혔다).
-                self.sap(at, d, 10, 4.2, 3.6);
-                self.sap(at, d, 4, 1.4, 1.6);
-                self.star(at, 0.95, 0.07, WHITE_HOT);
-            }
-            // 치명타: 더 크고 금빛, 금 알갱이가 사방으로.
-            Event::Crit { at } => {
-                self.sap(at, from_player(at), 6, 5.0, 3.8);
-                self.star(at, 1.7, 0.11, GOLD);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    9,
-                    5.5,
-                    Shape::Dot,
-                    0.10,
-                    0.34,
-                    9.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-            }
-            // 강타: 큰 번쩍임 + 돌 부스러기 + 발밑 먼지.
-            Event::Smash { at } => {
-                let d = from_player(at);
-                self.sap(at, d, 10, 6.0, 3.4);
-                self.star(at, 1.5, 0.10, WHITE_HOT);
-                self.spray(
-                    at,
-                    d + Vec3::Y * 0.6,
-                    0.55,
-                    7,
-                    5.0,
-                    Shape::Dot,
-                    0.11,
-                    0.45,
-                    14.0,
-                    STONE,
-                    STONE,
-                );
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.dust_ring(g, 0.3, 6, 2.2, 0.5, DUST);
-            }
-            // 패링: 차가운 흰빛 별 + 사방으로 빠른 빛줄("쨍").
-            Event::Parry { at } => {
-                self.star(at, 1.9, 0.12, COOL);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    12,
-                    9.5,
-                    Shape::Streak,
-                    0.07,
-                    0.20,
-                    4.0,
-                    WHITE_HOT,
-                    COOL,
-                );
-            }
-            // 튕김(등딱지): 작은 쇳빛 별 + 플레이어 쪽으로 되튀는 쇳빛 줄.
-            Event::Deflect { at } => {
-                let back = -from_player(at);
-                self.star(at, 0.9, 0.08, STEEL);
-                self.spray(
-                    at,
-                    back + Vec3::Y * 0.4,
-                    0.45,
-                    6,
-                    6.5,
-                    Shape::Streak,
-                    0.06,
-                    0.18,
-                    8.0,
-                    WHITE_HOT,
-                    STEEL,
-                );
-            }
-            // 방패가 받았다(0223): 작은 쇳빛 별 + 방패에서 옆으로 튀는 짧은 불똥 — 패링(차가운 큰 별)보다 작고 둔하게.
-            Event::Guard { at } => {
-                self.star(at, 0.7, 0.07, STEEL);
-                self.spray(
-                    at,
-                    from_player(at) + Vec3::Y * 0.3,
-                    0.9,
-                    5,
-                    4.5,
-                    Shape::Streak,
-                    0.05,
-                    0.16,
-                    8.0,
-                    WHITE_HOT,
-                    STEEL,
-                );
-            }
-            // 막기가 깨졌다(0223): 큰 쇳빛 별 + 사방으로 흩어지는 불똥 — 방패가 튕겨 나간 느낌.
-            Event::GuardBreak { at } => {
-                self.star(at, 1.5, 0.12, STEEL);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    10,
-                    6.0,
-                    Shape::Streak,
-                    0.06,
-                    0.3,
-                    9.0,
-                    WHITE_HOT,
-                    STEEL,
-                );
-            }
-            // 자세 깨짐: 금빛 별 + 머리 높이에서 옆으로 퍼지는 금 알갱이.
-            Event::Break { at } => {
-                self.star(at, 1.6, 0.12, GOLD);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    8,
-                    4.5,
-                    Shape::Dot,
-                    0.09,
-                    0.4,
-                    5.0,
-                    GOLD,
-                    AMBER,
-                );
-            }
-            // 등짐꾼의 짐이 깨짐(0216 W2): 돌 부스러기가 사방으로 + 먼지 — 금빛 자세 깨짐(같은 틱) 위에 돌의 덩이를 더한다.
-            Event::LoadBreak { at } => {
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.4,
-                    10,
-                    5.0,
-                    Shape::Dot,
-                    0.14,
-                    0.6,
-                    9.0,
-                    STONE,
-                    DUST,
-                );
-                self.rise(at, 0.6, 6, Shape::Puff, (0.4, 0.8), 0.7, DUST, DUST, true);
-            }
-            // 쓰러짐: 바랜 재가 풀려 오르고(0037 — 침식 = 색을 잃은 것), 뿌리의 보라 알갱이가 흩어진다.
-            Event::EnemyDown { at } => {
-                let c = at + Vec3::Y * 0.5;
-                // 마지막 한 번은 사방으로 터진다(0182).
-                self.sap(c, Vec3::ZERO, 12, 3.0, 4.2);
-                self.rise(c, 0.45, 6, Shape::Puff, (0.35, 0.75), 0.7, ASH, ASH, false);
-                self.rise(c, 0.4, 7, Shape::Dot, (0.09, 0.05), 0.8, ROOT, ROOT, false);
-            }
-            // 내려찍기·여진: 둘레로 먼지 고리 + 튀는 돌 부스러기.
-            Event::Plunge { at } | Event::Aftershock { at } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.dust_ring(g, 0.5, 10, 3.6, 0.6, DUST);
-                self.spray(
-                    g + Vec3::Y * 0.1,
-                    Vec3::Y,
-                    0.8,
-                    6,
-                    4.5,
-                    Shape::Dot,
-                    0.10,
-                    0.45,
-                    13.0,
-                    STONE,
-                    STONE,
-                );
-            }
-            // 벽에 부딪힌 적: 먼지 + 부스러기.
-            Event::Slam { at } => {
-                self.star(at, 1.0, 0.08, WHITE_HOT);
-                self.dust_ring(vec3(at.x, w.ground_y(at), at.z), 0.2, 5, 1.8, 0.5, DUST);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    0.9,
-                    5,
-                    3.5,
-                    Shape::Dot,
-                    0.10,
-                    0.4,
-                    13.0,
-                    STONE,
-                    STONE,
-                );
-            }
-            // 폭발: 큰 따뜻한 번쩍임 + 사방 불티 + 피어오르는 연기 + 바닥 먼지.
-            Event::Boom { at } => {
-                let c = at + Vec3::Y * 0.4;
-                self.star(c, 2.6, 0.13, WHITE_HOT);
-                self.spray(
-                    c,
-                    Vec3::Y,
-                    1.0,
-                    14,
-                    8.0,
-                    Shape::Streak,
-                    0.08,
-                    0.38,
-                    11.0,
-                    WHITE_HOT,
-                    AMBER,
-                );
-                self.rise(c, 0.6, 6, Shape::Puff, (0.5, 1.2), 0.8, SMOKE, SMOKE, false);
-                self.dust_ring(vec3(at.x, w.ground_y(at), at.z), 0.6, 8, 3.0, 0.6, DUST);
-            }
-            // 등잔: 따뜻한 빛 알갱이가 몸 둘레에서 떠오른다.
-            Event::Gulp { at } => {
-                self.rise(
-                    at - Vec3::Y * 0.7,
-                    0.4,
-                    9,
-                    Shape::Dot,
-                    (0.08, 0.04),
-                    0.8,
-                    HEAL,
-                    WHITE_HOT,
-                    false,
-                );
-            }
+            Event::Hit { at } => self.ev_hit(at, &from_player),
+            Event::Sneak { at } => self.ev_sneak(at, &from_player),
+            Event::Crit { at } => self.ev_crit(at, &from_player),
+            Event::Smash { at } => self.ev_smash(at, &from_player, w),
+            Event::Parry { at } => self.ev_parry(at),
+            Event::Deflect { at } => self.ev_deflect(at, &from_player),
+            Event::Guard { at } => self.ev_guard(at, &from_player),
+            Event::GuardBreak { at } => self.ev_guard_break(at),
+            Event::Break { at } => self.ev_break(at),
+            Event::LoadBreak { at } => self.ev_load_break(at),
+            Event::EnemyDown { at } => self.ev_enemy_down(at),
+            Event::Plunge { at } | Event::Aftershock { at } => self.ev_plunge(at, w),
+            Event::Slam { at } => self.ev_slam(at, w),
+            Event::Boom { at } => self.ev_boom(at, w),
+            Event::Gulp { at } => self.ev_gulp(at),
             Event::EnemyStrike {
                 at,
                 dir,
                 blow,
                 boss,
             } => self.enemy_blow(at, dir, blow, boss, w),
-            // 막아치기가 준비하던 공격을 끊었다(0214): 흰 별 + 금빛 고리 + 바깥으로 튀는 줄.
-            Event::Interrupt { at } => {
-                self.star(at, 1.6, 0.12, WHITE_HOT);
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.mark(g, MarkKind::Ring { r0: 0.3, r1: 1.3 }, 0.22, GOLD);
-                self.ring_sparks(at, 0.4, 8, 6.5, 0.2, WHITE_HOT, GOLD);
-            }
+            Event::Interrupt { at } => self.ev_interrupt(at, w),
             _ => return false,
         }
         true
@@ -897,289 +733,29 @@ impl Fx {
         let n = |k: f32| (k * s).round() as usize;
         let g = vec3(at.x, w.ground_y(at), at.z);
         match blow {
-            // 둘레 내려치기: 몸 둘레 사방으로 충격파 + 금 + 돌.
-            Blow::Around { r } => {
-                // 별은 몸 앞(바라보는 쪽 — 방랑자 쪽)에: 몸 가운데면 몸에 가렸다(헤드리스 화면).
-                self.star(
-                    g + dir * (r * 0.55) + Vec3::Y * 0.5,
-                    2.0 * s,
-                    0.12,
-                    WHITE_HOT,
-                );
-                let shock = MarkKind::Shock {
-                    dir,
-                    r0: 0.4,
-                    r1: r,
-                    arc_deg: 360.0,
-                };
-                self.mark(g, shock, BLOW_SHOCK_LIFE, QUAKE);
-                let cracks = MarkKind::Cracks {
-                    dir,
-                    r: r * 0.85,
-                    n: n(6.0) as u8,
-                    arc_deg: 360.0,
-                };
-                self.mark(g, cracks, 0.8, RIFT_ROOT);
-                self.chips(g, dir, r, 360.0, n(9.0));
-                self.dust_ring(g, r * 0.5, n(10.0), 3.5, 0.55, DUST);
-            }
-            // 앞 부채꼴: 부채꼴을 가로질러 달리는 충격파 + 그 안의 금 + 돌(방랑자의 땅울림과 같은 꼴, 빛만 적의 것).
-            Blow::Cone { r, arc } => {
-                let c = g + dir * (r * 0.45);
-                self.star(c + Vec3::Y * 0.4, 2.0 * s, 0.12, WHITE_HOT);
-                let shock = MarkKind::Shock {
-                    dir,
-                    r0: 0.5,
-                    r1: r,
-                    arc_deg: arc,
-                };
-                self.mark(g, shock, BLOW_SHOCK_LIFE, QUAKE);
-                let cracks = MarkKind::Cracks {
-                    dir,
-                    r: r * 0.9,
-                    n: n(4.0) as u8,
-                    arc_deg: arc * 0.8,
-                };
-                self.mark(g, cracks, 0.8, RIFT_ROOT);
-                self.chips(g, dir, r, arc, n(9.0));
-                self.dust_ring(c, 0.6, n(9.0), 3.6, 0.6, DUST);
-            }
-            // 한 자리가 터진다(꼬투리·떨어진 종): 그 자리에서 위로 솟는 빛줄 + 원판 끝까지 퍼지는 고리 + 사방의 금.
-            Blow::Spot { r } => {
-                self.star(g + Vec3::Y * 0.5, 2.2 * s, 0.13, WHITE_HOT);
-                self.mark(g, MarkKind::Ring { r0: 0.3, r1: r }, 0.3, QUAKE);
-                let cracks = MarkKind::Cracks {
-                    dir,
-                    r: r * 0.9,
-                    n: n(6.0) as u8,
-                    arc_deg: 360.0,
-                };
-                self.mark(g, cracks, 0.8, RIFT_ROOT);
-                self.spray(
-                    g + Vec3::Y * 0.2,
-                    Vec3::Y,
-                    0.45,
-                    n(10.0),
-                    6.5,
-                    Shape::Streak,
-                    0.08,
-                    0.35,
-                    9.0,
-                    WHITE_HOT,
-                    QUAKE,
-                );
-                self.chips(g, dir, r, 360.0, n(8.0));
-                self.dust_ring(g, r * 0.6, n(10.0), 3.2, 0.55, DUST);
-            }
-            // 돌진이 닿은·멈춘 자리: 가슴 높이 별 + 가던 쪽으로 터지는 빛줄 + 앞쪽 충격파 호 + 앞으로 밀리는 먼지.
-            Blow::Ram => {
-                let c = g + Vec3::Y * 0.8;
-                self.star(c, 1.8 * s, 0.11, WHITE_HOT);
-                self.spray(
-                    c,
-                    dir,
-                    0.55,
-                    n(10.0),
-                    7.0,
-                    Shape::Streak,
-                    0.08,
-                    0.3,
-                    6.0,
-                    WHITE_HOT,
-                    QUAKE,
-                );
-                let shock = MarkKind::Shock {
-                    dir,
-                    r0: 0.3,
-                    r1: 1.8 * s,
-                    arc_deg: 110.0,
-                };
-                self.mark(g - dir * 0.3, shock, 0.22, QUAKE);
-                self.dust_kick(g, dir, n(5.0), 0.5);
-            }
-            // 땅을 친 고리의 시작: 친 자리의 큰 쿵 + 짧은 고리 + 사방으로 뻗는 금(앞머리는 렌더·`watch`).
-            Blow::Quake { r } => {
-                self.star(g + Vec3::Y * 0.6, 2.4 * s, 0.13, WHITE_HOT);
-                self.mark(g, MarkKind::Ring { r0: 0.5, r1: 3.0 }, 0.3, QUAKE);
-                let cracks = MarkKind::Cracks {
-                    dir,
-                    r: r.min(4.0),
-                    n: n(7.0) as u8,
-                    arc_deg: 360.0,
-                };
-                self.mark(g, cracks, 1.0, RIFT_ROOT);
-                self.chips(g, dir, 2.5, 360.0, n(10.0));
-                self.dust_ring(g, 0.8, n(12.0), 4.5, 0.7, DUST);
-            }
-            // 뿌리 기둥 줄의 시작: 몸 앞의 쿵 + 줄을 따라 뻗는 금(기둥은 렌더).
-            Blow::Line { len } => {
-                let c = g + dir * 1.2;
-                self.star(c + Vec3::Y * 0.4, 1.8 * s, 0.12, WHITE_HOT);
-                let cracks = MarkKind::Cracks {
-                    dir,
-                    r: len,
-                    n: 2,
-                    arc_deg: 8.0,
-                };
-                self.mark(g, cracks, 1.0, RIFT_ROOT);
-                self.chips(c, dir, 1.6, 50.0, n(7.0));
-                self.dust_kick(c, dir, n(6.0), 0.55);
-            }
-            // 갈고리가 손을 떠난다: 손의 번쩍임 + 날아가는 쪽 빛줄(사슬은 렌더).
-            Blow::Hook { .. } => {
-                let hand = g + Vec3::Y * 1.3 + dir * 0.8;
-                self.star(hand, 1.1 * s, 0.08, WHITE_HOT);
-                self.spray(
-                    hand,
-                    dir,
-                    0.2,
-                    n(6.0),
-                    7.0,
-                    Shape::Streak,
-                    0.06,
-                    0.2,
-                    0.0,
-                    WHITE_HOT,
-                    STEEL,
-                );
-            }
-            // 종 조각을 던졌다: 손의 번쩍임 + 던진 쪽 빛줄(조각은 월드의 탄).
-            Blow::Volley => {
-                let hand = g + Vec3::Y * 1.3 + dir * 0.7;
-                self.star(hand, 1.3 * s, 0.09, WHITE_HOT);
-                self.spray(
-                    hand,
-                    dir,
-                    0.4,
-                    n(8.0),
-                    6.5,
-                    Shape::Streak,
-                    0.07,
-                    0.22,
-                    2.0,
-                    WHITE_HOT,
-                    STEEL,
-                );
-            }
+            Blow::Around { r } => self.blow_around(r, dir, g, s, &n),
+            Blow::Cone { r, arc } => self.blow_cone(r, arc, dir, g, s, &n),
+            Blow::Spot { r } => self.blow_spot(r, dir, g, s, &n),
+            Blow::Ram => self.blow_ram(dir, g, s, &n),
+            Blow::Quake { r } => self.blow_quake(r, dir, g, s, &n),
+            Blow::Line { len } => self.blow_line(len, dir, g, s, &n),
+            Blow::Hook { .. } => self.blow_hook(dir, g, s, &n),
+            Blow::Volley => self.blow_volley(dir, g, s, &n),
         }
     }
 
     /// 사건 묶음: 피해 타입(0223 V2 — 걸림·화상·울림·터짐)·솟은 뿌리·회복. 이 묶음의 사건이면 참(0251 R11 — `on_events`의 match를 나눴다).
     fn on_ail(&mut self, e: &Event, w: &World) -> bool {
         match *e {
-            // 타입 게이지가 가득 찼다(0223 V2): 타입마다 제 빛·제 꼴 — 화상은 솟는 불티, 묶임은 조여드는 민트 고리,
-            // 금은 하늘빛 별과 튀는 줄(울림·터짐은 제 사건).
-            Event::Ail { at, kind } => {
-                use crate::status::Kind;
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                match kind {
-                    Kind::Ember => {
-                        self.star(at, 1.2, 0.12, AMBER);
-                        self.rise(
-                            at - Vec3::Y * 0.4,
-                            0.4,
-                            8,
-                            Shape::Dot,
-                            (0.1, 0.03),
-                            0.5,
-                            WHITE_HOT,
-                            AMBER,
-                            false,
-                        );
-                    }
-                    Kind::Root => {
-                        self.mark(g, MarkKind::Ring { r0: 1.5, r1: 0.5 }, 0.25, MINT);
-                        self.ring_sparks(g + Vec3::Y * 0.2, 0.9, 8, -3.0, 0.22, WHITE_HOT, MINT);
-                    }
-                    Kind::Rift => {
-                        self.star(at, 1.7, 0.13, SKY);
-                        self.ring_sparks(at, 0.2, 7, 7.5, 0.2, WHITE_HOT, SKY);
-                    }
-                    Kind::Knell | Kind::Physical => {}
-                }
-            }
-            // 화상이 탔다: 몸에서 솟는 불티 몇(꾸밈 — 많으면 건너뛴다).
-            Event::Burn { at } => {
-                self.rise(
-                    at - Vec3::Y * 0.3,
-                    0.35,
-                    5,
-                    Shape::Dot,
-                    (0.09, 0.02),
-                    0.45,
-                    AMBER,
-                    AMBER,
-                    true,
-                );
-            }
-            // 울렸다: 쇳빛 고리 둘이 닿는 거리까지 번지고 한가운데 별.
-            Event::Toll { at, radius } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.star(g + Vec3::Y * 1.0, 1.5, 0.12, WHITE_HOT);
-                for (i, col) in [WHITE_HOT, STEEL].into_iter().enumerate() {
-                    self.mark_with(
-                        g,
-                        MarkKind::Ring {
-                            r0: 0.4,
-                            r1: radius,
-                        },
-                        0.3,
-                        col,
-                        0.08 * i as f32,
-                        false,
-                        false,
-                    );
-                }
-                self.ring_sparks(g + Vec3::Y * 0.9, 0.5, 8, 8.0, 0.2, WHITE_HOT, STEEL);
-            }
-            // 화상 중에 묶여 터졌다: 큰 호박빛 별 + 번지는 고리 + 사방의 불티 + 바닥 먼지.
-            Event::AilBurst { at, radius } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.star(g + Vec3::Y * 0.8, 2.4, 0.13, WHITE_HOT);
-                self.mark(
-                    g,
-                    MarkKind::Ring {
-                        r0: 0.4,
-                        r1: radius,
-                    },
-                    0.26,
-                    AMBER,
-                );
-                self.ring_sparks(g + Vec3::Y * 0.7, 0.3, 12, 9.0, 0.24, WHITE_HOT, AMBER);
-                self.dust_ring(g, 0.5, 8, 3.2, 0.5, DUST);
-            }
-            // 뿌리 하나가 솟았다(0214): 흙이 튀고 먼지가 핀다(뿌리 자체는 렌더가 `skill_spikes`로).
-            Event::RootSpike { at } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.dust_ring(g, 0.3, 6, 2.6, 0.45, DUST);
-                self.spray(
-                    g + Vec3::Y * 0.2,
-                    Vec3::Y,
-                    0.6,
-                    4,
-                    4.5,
-                    Shape::Dot,
-                    0.08,
-                    0.4,
-                    14.0,
-                    STONE,
-                    STONE,
-                );
-            }
-            // 되찾는 생기(0214): 등잔보다 작게 — 패링으로 되찾은 한 눈금.
-            Event::Mend { at } => {
-                self.rise(
-                    at - Vec3::Y * 0.6,
-                    0.3,
-                    5,
-                    Shape::Dot,
-                    (0.07, 0.035),
-                    0.6,
-                    HEAL,
-                    WHITE_HOT,
-                    false,
-                );
-            }
+            Event::Ail { at, kind } => self.ev_ail(at, kind, w),
+            Event::Bleed { at, dir } => self.ev_bleed(at, dir),
+            Event::Shatter { at } => self.ev_shatter(at, w),
+            Event::Drain { from } => self.ev_drain(from, w),
+            Event::Burn { at } => self.ev_burn(at),
+            Event::Toll { at, radius } => self.ev_toll(at, radius, w),
+            Event::AilBurst { at, radius } => self.ev_ail_burst(at, radius, w),
+            Event::RootSpike { at } => self.ev_root_spike(at, w),
+            Event::Mend { at } => self.ev_mend(at),
             _ => return false,
         }
         true
@@ -1189,347 +765,78 @@ impl Fx {
     fn on_skill_event(&mut self, e: &Event, w: &World) -> bool {
         let pp = w.player.pos;
         match *e {
-            // 마법 탄 발사: 손끝의 작은 라벤더 번쩍임.
-            Event::Cast { at } => {
-                self.star(at, 0.8, 0.07, LAVENDER);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    4,
-                    2.5,
-                    Shape::Dot,
-                    0.07,
-                    0.25,
-                    2.0,
-                    WHITE_HOT,
-                    LAVENDER,
-                );
-            }
-            // 딱 맞춰 떼기: 금 알갱이가 사방으로.
-            Event::Perfect { at } => {
-                self.star(at, 1.2, 0.09, GOLD);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    8,
-                    5.0,
-                    Shape::Dot,
-                    0.08,
-                    0.35,
-                    5.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-            }
+            Event::Cast {
+                at,
+                look:
+                    crate::weapons::Look::Axe
+                    | crate::weapons::Look::Javelin
+                    | crate::weapons::Look::Knife,
+            } => self.ev_cast_thrown(at, w),
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Quake,
+            } => self.ev_cast_quake(at, pp, w),
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Curse,
+            } => self.ev_cast_curse(at, w),
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Seed,
+            } => self.ev_cast_seed(at),
+            Event::Throw => self.ev_throw(pp, w),
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Stone,
+            } => self.ev_cast_stone(at, w),
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Light,
+            } => self.ev_cast_light(at),
+            Event::Smite { at, radius } => self.ev_smite(at, radius),
+            Event::Sprout { at, radius } => self.ev_sprout(at, radius),
+            Event::JavelinBack { at } => self.ev_javelin_back(at),
+            Event::Prayer { at, radius } => self.ev_prayer(at, radius, w),
+            Event::SnareSet { at } => self.ev_snare_set(at),
+            Event::SnareSnap { at } => self.ev_snare_snap(at),
+            Event::ShieldBounce { at } => self.ev_shield_bounce(at, w),
+            Event::Rush { at, dir, power } => self.ev_rush(at, dir, power, w),
+            Event::Cast { at, .. } => self.ev_cast_magic(at),
+            Event::Perfect { at } => self.ev_perfect(at),
             // 스킬(0151 → 0158 G2 — 금·민트·흰빛, 빨강 없음). 스킬마다 다른 서명: 한가운데 번쩍임 + 빛줄 + 먼지에
             // 바닥에 남는 빛(`marks`)이 그 스킬의 꼴을 그린다.
             Event::SkillStart { id } => self.on_skill_start(id, w),
             Event::Skill { id, at, dir } => self.on_skill(id, at, dir, w),
-            // 모인 자리(0158 G1, 끌어모으기 ㄱ): 모인 점에서 터지는 민트빛 별 + 바깥으로 퍼지는 고리와 먼지 + 위로 튀는 빛줄.
-            Event::SkillBurst { at } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.star(g + Vec3::Y * 0.7, 2.0, 0.12, MINT);
-                self.mark(g, MarkKind::Ring { r0: 0.4, r1: 2.5 }, 0.3, MINT);
-                self.dust_ring(g, 0.5, 10, 4.2, 0.55, DUST);
-                self.spray(
-                    g + Vec3::Y * 0.5,
-                    Vec3::Y,
-                    1.0,
-                    8,
-                    6.0,
-                    Shape::Streak,
-                    0.07,
-                    0.25,
-                    4.0,
-                    WHITE_HOT,
-                    MINT,
-                );
-            }
-            // 버팀이 한 대를 받아냈다: 맞은 자리의 흰 별 + 사방으로 튕기는 금빛 줄(받아낼수록 많이) + 몸 둘레로 번지는 고리.
-            Event::Soak { at, n } => {
-                self.star(at, 1.3, 0.1, WHITE_HOT);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    5 + 3 * n as usize,
-                    7.5,
-                    Shape::Streak,
-                    0.07,
-                    0.22,
-                    6.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.mark(g, MarkKind::Ring { r0: 0.5, r1: 1.4 }, 0.2, GOLD);
-            }
-            // 되울림이 퍼졌다: 종처럼 번지는 고리 셋(가운데에서 닿는 거리까지) + 민트빛 줄.
-            Event::EchoRing { at, radius } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.star(g + Vec3::Y * 1.0, 1.8, 0.12, WHITE_HOT);
-                for (i, col) in [WHITE_HOT, MINT, MINT].into_iter().enumerate() {
-                    self.mark_with(
-                        g,
-                        MarkKind::Ring {
-                            r0: 0.6,
-                            r1: radius,
-                        },
-                        0.34,
-                        col,
-                        0.07 * i as f32,
-                        false,
-                        false,
-                    );
-                }
-                self.ring_sparks(g + Vec3::Y * 0.9, 0.8, 12, 9.0, 0.24, WHITE_HOT, MINT);
-            }
-            // 던진 것이 끝에서 되돌았다: 금빛 별 + 둘레로 튀는 줄.
-            Event::ThrowTurn { at } => {
-                self.star(at, 1.3, 0.1, GOLD);
-                self.ring_sparks(at - Vec3::Y * 0.2, 0.15, 8, 5.0, 0.2, WHITE_HOT, GOLD);
-            }
-            // 박힌 자리: 큰 별 + 둘레로 퍼지는 고리 둘 + 사방의 금빛 줄 + 바닥 먼지.
-            Event::ThrowBoom { at, radius } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.star(g + Vec3::Y * 0.7, 2.6, 0.13, WHITE_HOT);
-                self.mark(
-                    g,
-                    MarkKind::Ring {
-                        r0: 0.3,
-                        r1: radius,
-                    },
-                    0.28,
-                    GOLD,
-                );
-                self.mark_with(
-                    g,
-                    MarkKind::Ring {
-                        r0: 0.2,
-                        r1: radius * 0.7,
-                    },
-                    0.3,
-                    WHITE_HOT,
-                    0.05,
-                    false,
-                    false,
-                );
-                self.spray(
-                    g + Vec3::Y * 0.5,
-                    Vec3::Y,
-                    1.0,
-                    14,
-                    8.5,
-                    Shape::Streak,
-                    0.08,
-                    0.34,
-                    9.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-                self.dust_ring(g, 0.6, 9, 3.4, 0.6, DUST);
-            }
-            // 손에 돌아왔다: 손 높이의 작은 금빛 별.
-            Event::ThrowBack { at } => {
-                self.star(at, 0.9, 0.08, GOLD);
-                self.spray(
-                    at,
-                    Vec3::Y,
-                    1.0,
-                    4,
-                    3.0,
-                    Shape::Dot,
-                    0.07,
-                    0.22,
-                    4.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-            }
-            // 불티의 타: 가장자리에서 가운데로 훑는 호박빛 고리 + 솟는 불티.
-            Event::FieldPulse { at, radius } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.mark(
-                    g,
-                    MarkKind::Ring {
-                        r0: radius,
-                        r1: radius * 0.25,
-                    },
-                    0.3,
-                    AMBER,
-                );
-                for _ in 0..12 {
-                    let a = self.r() * std::f32::consts::TAU;
-                    let rr = radius * self.r().sqrt();
-                    let p = g + vec3(a.sin() * rr, 0.1, a.cos() * rr);
-                    let life = 0.45 + 0.3 * self.r();
-                    let up = 2.2 + 1.6 * self.r();
-                    self.push(Part {
-                        pos: p,
-                        vel: vec3(0.0, up, 0.0),
-                        age: 0.0,
-                        life,
-                        size: (0.1, 0.04),
-                        color: (GOLD, fade(AMBER)),
-                        gravity: -0.5,
-                        drag: 1.5,
-                        shape: Shape::Dot,
-                        decor: false,
-                    });
-                }
-            }
-            // 몰아치기가 시작됐다: 금빛 큰 별 + 위로 솟는 줄 + 발밑에서 퍼지는 고리 둘.
-            Event::Flurry { at } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.star(g + Vec3::Y * 1.0, 2.6, 0.14, GOLD);
-                self.spray(
-                    g + Vec3::Y * 0.4,
-                    Vec3::Y,
-                    0.45,
-                    16,
-                    9.0,
-                    Shape::Streak,
-                    0.08,
-                    0.4,
-                    4.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-                self.mark(g, MarkKind::Ring { r0: 0.4, r1: 2.6 }, 0.3, GOLD);
-                self.mark_with(
-                    g,
-                    MarkKind::Ring { r0: 0.3, r1: 1.8 },
-                    0.32,
-                    WHITE_HOT,
-                    0.08,
-                    false,
-                    false,
-                );
-            }
-            // 몰아치기 동안의 평타: 휘두를 때마다 바라보는 쪽으로 금빛 줄이 흩어진다.
-            Event::Swing if w.player.skill.flurry_left > 0.0 => {
-                let f = w.player.facing_dir();
-                self.spray(
-                    pp + Vec3::Y * 1.0 + f * 0.8,
-                    f + Vec3::Y * 0.2,
-                    0.5,
-                    5,
-                    7.0,
-                    Shape::Streak,
-                    0.06,
-                    0.18,
-                    3.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-            }
-            // 한 줄기: 길을 가르는 빛의 면(흰 속 + 금빛 겉, 길게 남는다) + 선 자리의 큰 별 + 길을 따라 늦게 터지는 불똥.
-            Event::LineCut { at, dir, len, half } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                self.mark(g, MarkKind::Slash { dir, len, half }, 0.75, GOLD);
-                self.star(g + Vec3::Y * 1.0 + dir * 0.8, 3.0, 0.14, WHITE_HOT);
-                self.dust_kick(g, -dir, 5, 0.6);
-                let side = vec3(dir.z, 0.0, -dir.x);
-                let n = (len / 1.1).ceil() as usize;
-                for i in 0..n {
-                    let along = (i as f32 + 0.5) / n as f32 * len;
-                    let delay = 0.03 + along / len * 0.2;
-                    for sgn in [-1.0f32, 1.0] {
-                        let life = 0.3 + 0.15 * self.r();
-                        let part = Part {
-                            pos: g + dir * along + Vec3::Y * 0.3,
-                            vel: side * sgn * (2.5 + 2.5 * self.r())
-                                + Vec3::Y * (3.0 + 3.0 * self.r()),
-                            age: 0.0,
-                            life,
-                            size: (0.09, 0.04),
-                            color: (WHITE_HOT, fade(GOLD)),
-                            gravity: 9.0,
-                            drag: 2.0,
-                            shape: Shape::Streak,
-                            decor: false,
-                        };
-                        self.later.push((delay, part));
-                    }
-                }
-            }
-            // 큰 기술의 시동(끼운 것마다): 쟁반 뒤집기는 발밑으로 모이는 금빛, 몰아치기는 솟는 금빛, 한 줄기는 흰 별.
-            Event::UltStart => {
-                let g = vec3(pp.x, w.ground_y(pp), pp.z);
-                match w.player.skill.ult {
-                    crate::skills::Ult::Upend => {
-                        self.star(pp + Vec3::Y * 0.4, 1.4, 0.3, GOLD);
-                        self.dust_ring(g, 2.6, 12, -2.6, 0.45, DUST);
-                        self.mark(g, MarkKind::Ring { r0: 2.8, r1: 0.4 }, 0.3, GOLD);
-                    }
-                    crate::skills::Ult::Flurry => {
-                        self.star(pp + Vec3::Y * 1.0, 1.2, 0.2, GOLD);
-                        self.implode(g, 2.2, 10, GOLD);
-                    }
-                    crate::skills::Ult::Line => {
-                        self.star(pp + Vec3::Y * 1.1, 1.6, 0.3, WHITE_HOT);
-                        self.implode(g, 2.4, 12, WHITE_HOT);
-                    }
-                }
-            }
-            // 쟁반 뒤집기: 가장 큰 별 + 두 겹 먼지 고리 + 사방의 금빛 줄 — 사방으로 뻗는 땅의 금과 테두리의 먼지 벽(0158 G2).
-            Event::Ult { at } => {
-                let g = vec3(at.x, w.ground_y(at), at.z);
-                let r = crate::skills::UPEND.radius;
-                self.star(g + Vec3::Y * 0.8, 3.2, 0.15, GOLD);
-                self.dust_ring(g, 1.0, 14, 7.5, 0.9, DUST);
-                self.dust_ring(g, 2.5, 14, 5.0, 0.7, DUST);
-                self.spray(
-                    g + Vec3::Y * 0.5,
-                    Vec3::Y,
-                    1.0,
-                    18,
-                    11.0,
-                    Shape::Streak,
-                    0.09,
-                    0.4,
-                    5.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-                self.mark(
-                    g,
-                    MarkKind::Cracks {
-                        dir: Vec3::Z,
-                        r: r * 0.85,
-                        n: 11,
-                        arc_deg: 360.0,
-                    },
-                    1.1,
-                    GOLD,
-                );
-                self.mark(g, MarkKind::Ring { r0: 1.0, r1: r }, 0.4, GOLD);
-                // 테두리의 먼지 벽: 둘레를 따라 솟는 큰 먼지(꾸밈이 아니다 — 쟁반의 끝이 어디인지 보여 준다).
-                let turn = self.r() * std::f32::consts::TAU;
-                for i in 0..20 {
-                    let a = turn + i as f32 / 20.0 * std::f32::consts::TAU;
-                    let d = vec3(a.sin(), 0.0, a.cos());
-                    let life = 0.7 + 0.3 * self.r();
-                    let up = 1.6 + 1.4 * self.r();
-                    self.later.push((
-                        0.16,
-                        Part {
-                            pos: g + d * (r - 0.4) + Vec3::Y * 0.2,
-                            vel: d * 1.2 + Vec3::Y * up,
-                            age: 0.0,
-                            life,
-                            size: (0.7, 1.7),
-                            color: (DUST, fade(DUST)),
-                            gravity: 0.0,
-                            drag: 2.2,
-                            shape: Shape::Puff,
-                            decor: false,
-                        },
-                    ));
-                }
-            }
+            Event::SkillBurst { at } => self.ev_skill_burst(at, w),
+            Event::Soak { at, n } => self.ev_soak(at, n, w),
+            Event::EchoRing { at, radius } => self.ev_echo_ring(at, radius, w),
+            Event::ThrowTurn { at } => self.ev_throw_turn(at),
+            Event::ThrowBoom { at, radius } => self.ev_throw_boom(at, radius, w),
+            Event::ThrowBack { at } => self.ev_throw_back(at),
+            Event::FieldPulse { at, radius, kind } => self.ev_field_pulse(at, radius, kind, w),
+            Event::Flurry { at } => self.ev_flurry(at, w),
+            Event::Swing if w.player.skill.flurry_left > 0.0 => self.ev_flurry_swing(pp, w),
+            Event::GaleThrust {
+                at,
+                dir,
+                len,
+                half,
+                last,
+            } => self.ev_gale_thrust(at, dir, len, half, last, w),
+            Event::TempestSweep { at, radius, last } => self.ev_tempest_sweep(at, radius, last, w),
+            Event::PricePulse { at, radius, last } => self.ev_price_pulse(at, radius, last, w),
+            Event::Hexed { at } => self.ev_hexed(at),
+            Event::HexJump { from, to } => self.ev_hex_jump(from, to),
+            Event::DeathKnell { at } => self.ev_death_knell(at, w),
+            Event::GrovePulse { at, radius, last } => self.ev_grove_pulse(at, radius, last, w),
+            Event::Blink { from, to } => self.ev_blink(from, to, w),
+            Event::AmbushStab { at, dir, last } => self.ev_ambush_stab(at, dir, last, w),
+            Event::LineCut { at, dir, len, half } => self.ev_line_cut(at, dir, len, half, w),
+            Event::UltStart => self.ev_ult_start(pp, w),
+            Event::GreatBell { at, radius } => self.ev_great_bell(at, radius, w),
+            Event::ArrowRain { from, at, radius } => self.ev_arrow_rain(from, at, radius, w),
+            Event::Blizzard { at, radius } => self.ev_blizzard(at, radius, w),
+            Event::Ult { at } => self.ev_ult(at, w),
             _ => return false,
         }
         true
@@ -1561,6 +868,65 @@ impl Fx {
                 );
                 self.dust_ring(vec3(at.x, w.ground_y(at), at.z), 1.2, 12, 4.5, 0.8, DUST);
             }
+            // 교체 공격(0272 1b): 발밑에서 조여드는 금빛 고리(등의 것이 손으로 온다) + 손 높이의 금빛 별 + 치는 쪽으로 뻗는 빛줄.
+            // 다 모임(별 하나) · 딱 맞춰 떼기(사방의 알갱이) · 패링(차가운 빛)과 갈린다 — 고리가 **안으로** 오고 빛줄이 한쪽으로 간다.
+            Event::SwapStrike { at, dir, .. } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                let hand = at + Vec3::Y * (w.player.air + 1.0);
+                self.mark(g, MarkKind::Ring { r0: 1.6, r1: 0.5 }, 0.24, GOLD);
+                self.star(hand + dir * 0.4, 1.1, 0.10, GOLD);
+                self.spray(
+                    hand,
+                    dir,
+                    0.35,
+                    7,
+                    8.0,
+                    Shape::Streak,
+                    0.07,
+                    0.18,
+                    3.0,
+                    WHITE_HOT,
+                    GOLD,
+                );
+            }
+            // 분노가 가득(0277 — 대검): 머리 위로 몰아쉬는 숨(불씨 빛줄이 위로 솟는다) + 발밑에서 밖으로 번지는 주황 고리 — 그 뒤는
+            // 분노가 남는 동안의 불씨(`watch`).
+            Event::FuryFull { at } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.mark(g, MarkKind::Ring { r0: 0.4, r1: 1.5 }, 0.32, FURY);
+                self.spray(
+                    at + Vec3::Y * 1.1,
+                    Vec3::Y,
+                    0.45,
+                    9,
+                    5.0,
+                    Shape::Streak,
+                    0.08,
+                    0.32,
+                    -1.0,
+                    WHITE_HOT,
+                    FURY,
+                );
+            }
+            // 걸어 당김(0277 — 낫): 끌려오는 적의 발밑에서 흙과 새순 부스러기가 방랑자 쪽으로 쓸린다(덩굴 자체는 렌더 `pull_vines`).
+            Event::Pull { at } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                let toward = vec3(pp.x - at.x, 0.0, pp.z - at.z).normalize_or(Vec3::Z);
+                self.dust_kick(g, toward, 3, 0.4);
+                self.spray(
+                    g + Vec3::Y * 0.2,
+                    toward + Vec3::Y * 0.5,
+                    0.5,
+                    5,
+                    3.5,
+                    Shape::Dot,
+                    0.08,
+                    0.35,
+                    9.0,
+                    SPROUT,
+                    VINE,
+                );
+            }
             // 맞음: 가슴 높이의 흰 별 + 옅은 라벤더 알갱이(빨강은 쓰지 않는다 — 화면의 붉은 테는 HUD의 몫).
             Event::PlayerHurt => {
                 let c = pp + Vec3::Y * 0.9;
@@ -1590,8 +956,11 @@ impl Fx {
         let pp = w.player.pos;
         let g = vec3(pp.x, w.ground_y(pp), pp.z);
         let d = w.skill_eff(id);
-        match (id, d.skill.form) {
-            (Sk::Brace, Form::Brace { hold, radius, .. }) => {
+        match id {
+            Sk::Brace => {
+                let Form::Brace { hold, radius, .. } = d.skill.form else {
+                    return;
+                };
                 // 반짝이며 조여드는 고리 둘(버티는 동안 몸을 따라간다 — 끊기면 지운다).
                 for (delay, col) in [(0.0, GOLD), (hold * 0.5, WHITE_HOT)] {
                     self.mark_with(
@@ -1603,270 +972,89 @@ impl Fx {
                         d.skill.startup + hold - delay,
                         col,
                         delay,
-                        true,
-                        true,
+                        Stick::Bracing,
                     );
                 }
                 self.dust_ring(g, 0.4, 6, 1.6, 0.45, DUST);
             }
-            (Sk::Echo, _) => self.implode(g, 1.8, 8, MINT),
-            (Sk::Embers, _) => self.implode(g, 1.6, 8, AMBER),
-            (Sk::Gather, Form::Pull { .. }) => {}
-            _ => {}
+            Sk::Echo => self.implode(g, 1.8, 8, MINT),
+            Sk::Embers => self.implode(g, 1.6, 8, AMBER),
+            // 나머지는 시동의 조짐이 없다 — 판정의 서명(`on_skill`)만(와일드카드 없이, 0278 R14).
+            Sk::Whirl
+            | Sk::Cut
+            | Sk::Gather
+            | Sk::Quake
+            | Sk::Throw
+            | Sk::Swallow
+            | Sk::Bash
+            | Sk::Roots
+            | Sk::Stitch
+            | Sk::Ram
+            | Sk::Toll
+            | Sk::Swat
+            | Sk::Ripple
+            | Sk::Snow
+            | Sk::Flare
+            | Sk::Snare
+            | Sk::Fuse
+            | Sk::Mine
+            | Sk::Skewer
+            | Sk::Pole
+            | Sk::Pin
+            | Sk::Pommel
+            | Sk::Shove
+            | Sk::Rally
+            | Sk::Slip
+            | Sk::Sunder
+            | Sk::Sear
+            | Sk::Reap
+            | Sk::Harvest
+            | Sk::Hex
+            | Sk::Blight => {}
         }
     }
 
     /// 스킬의 판정이 나간 순간(0151 → 0158 G2): 스킬마다의 서명.
     fn on_skill(&mut self, id: crate::skills::Id, at: Vec3, dir: Vec3, w: &World) {
-        use crate::skills::{Form, Id as Sk};
+        use crate::skills::Id as Sk;
         let g = vec3(at.x, w.ground_y(at), at.z);
         let d = w.skill_eff(id);
-        match (id, d.skill.form) {
-            // 휘돌이: 바퀴마다 닿는 거리까지 번지는 금빛 고리 + 둘레에서 바깥으로 튀는 빛줄 + 먼지 고리.
-            (Sk::Whirl, Form::Ring { radius, gap, .. }) => {
-                self.mark_with(
-                    g,
-                    MarkKind::Ring {
-                        r0: radius * 0.45,
-                        r1: radius,
-                    },
-                    gap,
-                    GOLD,
-                    0.0,
-                    true,
-                    false,
-                );
-                self.ring_sparks(
-                    g + Vec3::Y * 0.9,
-                    radius * 0.8,
-                    14,
-                    7.5,
-                    0.22,
-                    WHITE_HOT,
-                    GOLD,
-                );
-                self.dust_ring(g, radius * 0.55, 12, 5.0, 0.55, DUST);
-            }
-            // 가로지르기: 떠난 자리의 잔상(큰 민트 별) + 길 전체에 오래 남는 빛 띠 + 뒤로 차이는 먼지.
-            (Sk::Cut, Form::Lane { dist, half, .. }) => {
-                self.star(g + Vec3::Y * 0.9, 1.9, 0.12, MINT);
-                self.star(g + Vec3::Y * 0.9, 1.0, 0.09, WHITE_HOT);
-                self.mark(
-                    g,
-                    MarkKind::Streak {
-                        dir,
-                        len: dist,
-                        half,
-                    },
-                    0.55,
-                    MINT,
-                );
-                self.dust_kick(g, -dir, 5, 0.5);
-            }
-            // 끌어모으기: 모이는 점으로 빨려드는 빛줄 + 조여드는 고리 + 한가운데의 작은 민트빛 터짐.
-            (Sk::Gather, Form::Pull { range, .. }) => {
-                self.mark(
-                    g,
-                    MarkKind::Converge {
-                        r: range * 0.75,
-                        n: 12,
-                    },
-                    0.3,
-                    MINT,
-                );
-                self.mark(
-                    g,
-                    MarkKind::Ring {
-                        r0: range * 0.5,
-                        r1: 0.3,
-                    },
-                    0.28,
-                    MINT,
-                );
-                self.implode(g, range * 0.6, 14, MINT);
-                self.star(g + Vec3::Y * 0.6, 1.5, 0.14, MINT);
-                self.dust_ring(g, 2.4, 10, -3.2, 0.5, DUST);
-            }
-            // 땅울림: 찍은 자리의 별 + 부채꼴을 가로질러 달리는 충격파 + 갈라지는 땅 + 튀어 오르는 돌과 먼지.
-            (Sk::Quake, Form::Cone { range, arc_deg, .. }) => {
-                let c = g + dir * 1.2;
-                self.star(c + Vec3::Y * 0.3, 2.2, 0.13, WHITE_HOT);
-                self.mark(
-                    g,
-                    MarkKind::Shock {
-                        dir,
-                        r0: 0.8,
-                        r1: range,
-                        arc_deg,
-                    },
-                    0.26,
-                    GOLD,
-                );
-                self.mark(
-                    g,
-                    MarkKind::Cracks {
-                        dir,
-                        r: range * 0.92,
-                        n: 5,
-                        arc_deg: arc_deg * 0.8,
-                    },
-                    0.9,
-                    GOLD,
-                );
-                self.dust_ring(c, 0.8, 12, 4.4, 0.7, DUST);
-                // 돌 부스러기: 부채꼴 안 여러 자리에서 튀어 오른다.
-                self.chips(g, dir, range, arc_deg, 12);
-            }
-            // 버팀의 터뜨림: 흰 큰 별 + 닿는 거리까지 터지는 고리 둘 + 받아낸 만큼 많아지는 금빛 줄 + 먼지.
-            (Sk::Brace, Form::Brace { radius, .. }) => {
-                let n = w.player.skill.brace_soaked as usize;
-                self.star(g + Vec3::Y * 0.8, 2.0 + 0.4 * n as f32, 0.13, WHITE_HOT);
-                self.mark(
-                    g,
-                    MarkKind::Ring {
-                        r0: 0.5,
-                        r1: radius,
-                    },
-                    0.24,
-                    WHITE_HOT,
-                );
-                self.mark_with(
-                    g,
-                    MarkKind::Ring {
-                        r0: 0.3,
-                        r1: radius,
-                    },
-                    0.3,
-                    GOLD,
-                    0.05,
-                    false,
-                    false,
-                );
-                self.ring_sparks(
-                    g + Vec3::Y * 0.7,
-                    0.6,
-                    10 + 5 * n,
-                    9.0 + 1.5 * n as f32,
-                    0.26,
-                    WHITE_HOT,
-                    GOLD,
-                );
-                self.dust_ring(g, 0.8, 10, 4.5, 0.6, DUST);
-            }
-            // 되울림을 둘렀다: 가운데에서 번지는 잔물결 셋(작게 — 닿는 거리의 반까지) + 가슴 높이의 민트빛 별.
-            (Sk::Echo, Form::Echo { radius, .. }) => {
-                self.star(g + Vec3::Y * 1.1, 1.4, 0.13, MINT);
-                for i in 0..3 {
-                    self.mark_with(
-                        g,
-                        MarkKind::Ring {
-                            r0: 0.3,
-                            r1: radius * 0.55,
-                        },
-                        0.4,
-                        if i == 0 { WHITE_HOT } else { MINT },
-                        0.09 * i as f32,
-                        true,
-                        false,
-                    );
-                }
-            }
-            // 던지기: 손을 떠나는 순간의 흰 별 + 던진 쪽으로 튀는 금빛 줄.
-            (Sk::Throw, _) => {
-                let hand = g + Vec3::Y * 1.0 + dir * 0.6;
-                self.star(hand, 1.2, 0.09, WHITE_HOT);
-                self.spray(
-                    hand,
-                    dir,
-                    0.3,
-                    6,
-                    8.0,
-                    Shape::Streak,
-                    0.07,
-                    0.18,
-                    2.0,
-                    WHITE_HOT,
-                    GOLD,
-                );
-                self.dust_kick(g, -dir, 3, 0.4);
-            }
-            // 잔불 흩기: 가운데에서 가장자리로 번지는 호박빛 고리 + 사방으로 흩어지는 불티.
-            (Sk::Embers, Form::Field { radius, .. }) => {
-                self.star(g + Vec3::Y * 0.6, 1.5, 0.12, GOLD);
-                self.mark(
-                    g,
-                    MarkKind::Ring {
-                        r0: 0.4,
-                        r1: radius,
-                    },
-                    0.3,
-                    AMBER,
-                );
-                for _ in 0..22 {
-                    let a = self.r() * std::f32::consts::TAU;
-                    let sp = radius * (1.4 + 1.6 * self.r());
-                    let life = 0.5 + 0.3 * self.r();
-                    let up = 1.5 + 2.5 * self.r();
-                    self.push(Part {
-                        pos: g + Vec3::Y * 0.7,
-                        vel: vec3(a.sin() * sp, up, a.cos() * sp),
-                        age: 0.0,
-                        life,
-                        size: (0.11, 0.05),
-                        color: (GOLD, fade(AMBER)),
-                        gravity: 5.0,
-                        drag: 3.0,
-                        shape: Shape::Dot,
-                        decor: false,
-                    });
-                }
-            }
-            // 제비걸음(0214): 걸음마다 떠나는 자리의 흰 별 + 뛰어드는 쪽으로 짧은 금빛 띠 + 차이는 먼지.
-            (Sk::Swallow, Form::Hop { .. }) => {
-                self.star(g + Vec3::Y * 0.9, 1.2, 0.09, WHITE_HOT);
-                self.mark(
-                    g,
-                    MarkKind::Streak {
-                        dir,
-                        len: 2.2,
-                        half: 0.45,
-                    },
-                    0.35,
-                    GOLD,
-                );
-                self.dust_kick(g, -dir, 3, 0.4);
-            }
-            // 막아치기(0214): 내민 자리의 흰 별 + 짧은 부채꼴 충격파(민트) — 끊긴 적은 따로(`Interrupt`).
-            (Sk::Bash, Form::Bash { range, arc_deg, .. }) => {
-                self.star(g + dir * 0.9 + Vec3::Y * 0.9, 1.6, 0.1, WHITE_HOT);
-                self.mark(
-                    g,
-                    MarkKind::Shock {
-                        dir,
-                        r0: 0.5,
-                        r1: range,
-                        arc_deg,
-                    },
-                    0.2,
-                    MINT,
-                );
-            }
-            // 뿌리 솟기(0214): 뿌리가 솟을 길을 따라 먼저 달리는 땅의 금(호박빛) — 뿌리와 흙은 하나씩(`RootSpike`).
-            (Sk::Roots, Form::Erupt { len, .. }) => {
-                self.mark(
-                    g,
-                    MarkKind::Cracks {
-                        dir,
-                        r: len,
-                        n: 2,
-                        arc_deg: 8.0,
-                    },
-                    0.8,
-                    AMBER,
-                );
-                self.star(g + dir * 0.8 + Vec3::Y * 0.3, 1.3, 0.1, AMBER);
-            }
-            _ => {}
+        // 스킬마다 한 갈래(와일드카드 없이 — 0278 R14), 몸은 `fx/skills.rs`의 `fx_<스킬>`(R25a): 모양은 그 스킬의 것이라 그 안에서 풀어 쓴다.
+        match id {
+            Sk::Whirl => self.fx_whirl(g, d),
+            Sk::Cut => self.fx_cut(dir, g, d),
+            Sk::Gather => self.fx_gather(g, d),
+            Sk::Quake => self.fx_quake(dir, g, d),
+            Sk::Brace => self.fx_brace(g, d, w),
+            Sk::Echo => self.fx_echo(g, d),
+            Sk::Throw => self.fx_throw(dir, g),
+            Sk::Embers => self.fx_embers(g, d),
+            Sk::Swallow => self.fx_swallow(dir, g, d),
+            Sk::Bash => self.fx_bash(dir, g, d),
+            Sk::Stitch => self.fx_stitch(dir, g, d),
+            Sk::Ram => self.fx_ram(dir, g, d),
+            Sk::Toll => self.fx_toll(dir, g, d),
+            Sk::Hex => self.fx_hex(dir, g, d),
+            Sk::Blight => self.fx_blight(g, d),
+            Sk::Snow => self.fx_snow(g, d),
+            Sk::Flare => self.fx_flare(dir, g, d),
+            Sk::Sunder => self.fx_sunder(dir, g, d),
+            Sk::Sear => self.fx_sear(dir, g, d),
+            Sk::Snare => self.fx_snare(g, d),
+            Sk::Fuse => self.fx_fuse(dir, g, d),
+            Sk::Mine => self.fx_mine(g, d),
+            Sk::Skewer => self.fx_skewer(dir, g, d),
+            Sk::Pole => self.fx_pole(dir, g, d),
+            Sk::Pin => self.fx_pin(dir, g, d),
+            Sk::Swat => self.fx_swat(dir, g, d),
+            Sk::Ripple => self.fx_ripple(g, d),
+            Sk::Roots => self.fx_roots(dir, g, d),
+            Sk::Pommel => self.fx_pommel(dir, g, d),
+            Sk::Shove => self.fx_shove(dir, g, d),
+            Sk::Slip => self.fx_slip(dir, g, d),
+            Sk::Reap => self.fx_reap(dir, g, d),
+            Sk::Harvest => self.fx_harvest(g, d),
+            Sk::Rally => self.fx_rally(g, d),
         }
     }
 
@@ -1917,7 +1105,7 @@ impl Fx {
         }
         // 던진 무기의 꼬리: 날아가는 동안 틱마다 지나온 자리에 금빛 줄(굽은 길이 남는다).
         for b in &w.skill_blades {
-            let side = vec3(b.dir.z, 0.0, -b.dir.x) * (b.age * 31.0).sin();
+            let side = vec3(b.dir.z, 0.0, -b.dir.x) * (b.age * 31.0).sin_d();
             let vel = -b.dir * 2.0 + side * 2.5;
             let part = Part {
                 pos: b.pos + side * 0.35,
@@ -1943,7 +1131,7 @@ impl Fx {
                 let up = 1.6 + 1.2 * self.r();
                 let h = 0.2 + 0.8 * self.r();
                 self.push(Part {
-                    pos: feet + vec3(a.sin() * rr, h, a.cos() * rr),
+                    pos: feet + vec3(a.sin_d() * rr, h, a.cos_d() * rr),
                     vel: vec3(0.0, up, 0.0),
                     age: 0.0,
                     life: 0.45,
@@ -1955,6 +1143,40 @@ impl Fx {
                     decor: false,
                 });
             }
+        }
+        // 분노(0277 — 대검): 차오른 만큼 몸에서 불씨가 솟는다 — 반쯤(0.5)부터 보이고, 가득이면 0.06초마다 하나(가득 = 흰 속의 주황, 그
+        // 밑은 식은 흙빛 금). 몰아치기의 금빛 알갱이(아래에서 고르게)와 달리 어깨 높이에서 위로 빠르게 · 옆으로 흔들리며 — 숨 쉬는 열기.
+        let fury = w.fury();
+        if fury >= FURY_MOTES_FROM {
+            self.fury_t += dt;
+            let every = 0.045 + 0.15 * (1.0 - fury) / (1.0 - FURY_MOTES_FROM);
+            if self.fury_t >= every {
+                self.fury_t = 0.0;
+                let a = self.r() * std::f32::consts::TAU;
+                let rr = 0.25 + 0.2 * self.r();
+                let h = 0.6 + 0.6 * self.r();
+                let full = fury >= 1.0;
+                let side = vec3(a.cos_d(), 0.0, -a.sin_d()) * (self.rs() * 0.6);
+                let up = 2.2 + 1.4 * self.r();
+                self.push(Part {
+                    pos: feet + vec3(a.sin_d() * rr, h, a.cos_d() * rr),
+                    vel: vec3(0.0, up, 0.0) + side,
+                    age: 0.0,
+                    life: 0.45,
+                    size: (if full { 0.17 } else { 0.13 }, 0.04),
+                    color: if full {
+                        (FURY_HOT, fade(FURY))
+                    } else {
+                        (FURY, fade(FURY_COOL))
+                    },
+                    gravity: -1.0,
+                    drag: 1.2,
+                    shape: Shape::Dot,
+                    decor: false,
+                });
+            }
+        } else {
+            self.fury_t = 0.0;
         }
         // 적: 돌진하는 동안 발밑 먼지(0.09초마다). 공격이 풀린 순간의 타격은 `Event::EnemyStrike`(0269)가 낸다.
         self.enemy_was.resize(w.enemies.len(), (false, 0.0));
@@ -1985,7 +1207,7 @@ impl Fx {
         for front in en.wave_fronts() {
             for _ in 0..WAVE_CHIPS {
                 let a = self.r() * std::f32::consts::TAU;
-                let d = vec3(a.sin(), 0.0, a.cos());
+                let d = vec3(a.sin_d(), 0.0, a.cos_d());
                 let at = cg + d * front;
                 let at = vec3(at.x, w.ground_y(at) + 0.08, at.z);
                 let size = 0.09 + 0.07 * self.r();
@@ -2074,11 +1296,11 @@ pub fn brazier_ember(k: usize, i: usize, time: f32) -> (Vec3, f32) {
     let ph = ((time + h(2) * period) / period).fract();
     let a = h(3) * std::f32::consts::TAU;
     let r = 0.05 + 0.16 * h(4);
-    let sway = (time * (1.5 + 2.0 * h(5)) + h(6) * 6.0).sin() * 0.10 * ph;
+    let sway = (time * (1.5 + 2.0 * h(5)) + h(6) * 6.0).sin_d() * 0.10 * ph;
     let pos = vec3(
-        a.sin() * r + sway,
+        a.sin_d() * r + sway,
         0.15 + (0.9 + 0.7 * h(7)) * ph,
-        a.cos() * r,
+        a.cos_d() * r,
     );
     // 떠오르자마자 밝고, 위로 갈수록 식는다(끝 30%에서 사라짐).
     let k = (ph / 0.1).min(1.0) * ((1.0 - ph) / 0.3).min(1.0);
@@ -2086,6 +1308,13 @@ pub fn brazier_ember(k: usize, i: usize, time: f32) -> (Vec3, f32) {
 }
 /// 화로 하나의 불티 수.
 pub const BRAZIER_EMBERS: usize = 5;
+
+mod ail;
+mod skill_events;
+mod skills;
+mod strike;
+#[cfg(test)]
+mod traces;
 
 #[cfg(test)]
 mod tests {
@@ -2136,7 +1365,11 @@ mod tests {
             Event::ThrowTurn { at },
             Event::ThrowBoom { at, radius: 2.5 },
             Event::ThrowBack { at },
-            Event::FieldPulse { at, radius: 4.0 },
+            Event::FieldPulse {
+                at,
+                radius: 4.0,
+                kind: crate::status::Kind::Ember,
+            },
             Event::Ail {
                 at,
                 kind: crate::status::Kind::Ember,
@@ -2149,6 +1382,26 @@ mod tests {
                 at,
                 kind: crate::status::Kind::Rift,
             },
+            // 0270 B: 새 타입 넷의 걸림과 그 일(샘·깨짐·돌아옴).
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Shock,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Sharp,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Frost,
+            },
+            Event::Ail {
+                at,
+                kind: crate::status::Kind::Drain,
+            },
+            Event::Bleed { at, dir },
+            Event::Shatter { at },
+            Event::Drain { from: at },
             Event::Burn { at },
             Event::Toll { at, radius: 4.0 },
             Event::AilBurst { at, radius: 2.5 },
@@ -2161,6 +1414,77 @@ mod tests {
             },
             Event::UltStart,
             Event::Ult { at },
+            // 0270 C3: 큰 기술 둘.
+            Event::GreatBell { at, radius: 8.0 },
+            Event::Blizzard { at, radius: 6.0 },
+            // 0272: 활 판의 큰 기술.
+            Event::ArrowRain {
+                from: Vec3::ZERO,
+                at,
+                radius: 4.5,
+            },
+            // 0272 2단계: 창 판의 큰 기술.
+            Event::GaleThrust {
+                at,
+                dir,
+                len: 5.5,
+                half: 0.8,
+                last: true,
+            },
+            // 0274 ③: 쌍단검 판의 큰 기술.
+            Event::Blink {
+                from: at - dir * 4.0,
+                to: at,
+            },
+            Event::AmbushStab {
+                at,
+                dir,
+                last: false,
+            },
+            // 0274 ⑥: 완드 판의 큰 기술 · 저주의 표 · 죽음의 울림.
+            Event::PricePulse {
+                at,
+                radius: 5.0,
+                last: false,
+            },
+            Event::PricePulse {
+                at,
+                radius: 5.0,
+                last: true,
+            },
+            Event::Hexed { at },
+            Event::HexJump {
+                from: at,
+                to: at + dir * 3.0,
+            },
+            Event::DeathKnell { at },
+            // 0274 ⑤: 낫 판의 큰 기술.
+            Event::GrovePulse {
+                at,
+                radius: 2.2,
+                last: false,
+            },
+            Event::GrovePulse {
+                at,
+                radius: 4.6,
+                last: true,
+            },
+            // 0274 ④: 대검 판의 큰 기술.
+            Event::TempestSweep {
+                at,
+                radius: 3.0,
+                last: false,
+            },
+            Event::TempestSweep {
+                at,
+                radius: 3.0,
+                last: true,
+            },
+            Event::AmbushStab {
+                at,
+                dir,
+                last: true,
+            },
         ]);
         ev
     }
@@ -2333,11 +1657,62 @@ mod tests {
             Event::Slam { at },
             Event::Boom { at },
             Event::Gulp { at },
-            Event::Cast { at },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Magic,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Axe,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Light,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Quake,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Javelin,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Stone,
+            },
+            Event::Smite { at, radius: 1.4 },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Seed,
+            },
+            Event::Sprout { at, radius: 1.6 },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Curse,
+            },
+            Event::JavelinBack { at },
+            Event::Prayer { at, radius: 3.0 },
+            Event::SnareSet { at },
+            Event::SnareSnap { at },
+            Event::ShieldBounce { at },
+            Event::Rush {
+                at,
+                dir: Vec3::Z,
+                power: 0.6,
+            },
             Event::Perfect { at },
             Event::Charged,
             Event::Rouse { at },
             Event::PlayerHurt,
+            Event::SwapStrike {
+                at,
+                dir: Vec3::Z,
+                to: crate::weapons::Id::Hammer,
+            },
+            Event::Sneak { at },
+            Event::FuryFull { at },
+            Event::Pull { at },
         ];
         let red = |c: Color| c.r > 0.75 && c.g < 0.45 && c.b < 0.45;
         for e in all
@@ -2537,6 +1912,60 @@ mod tests {
         );
     }
 
+    /// 0278 R12: 일부러 이펙트가 없는 사건(갈래의 이름) — 소리 · HUD · 카메라만 쓰거나 다른 사건이 그림을 맡는다.
+    const NO_FX: &[&str] = &[
+        "Swing",
+        "LockOn",
+        "LockOff",
+        "LockLost",
+        "Turn",
+        "CartGo",
+        "CartWarn",
+        "Release",
+        "Ember",
+        "WeaponSwap",
+        "FlaskDenied",
+        "CastDenied",
+        "StaminaDenied",
+        "Beat",
+        "SkillDenied",
+    ];
+
+    /// 0278 R12 사건 덮개(이펙트): 모든 사건은 묶음 하나가 맡거나 `NO_FX`에 있다 — 그리고 `NO_FX`의 것은 정말 어느 묶음에도 없다.
+    #[test]
+    fn every_event_has_one_fx_group_or_none_on_purpose() {
+        let w = world();
+        let mut bad = Vec::new();
+        for e in Event::samples() {
+            let name = e.variant();
+            let mut fx = Fx::default();
+            let n = [
+                fx.on_strike(&e, &w),
+                fx.on_ail(&e, &w),
+                fx.on_skill_event(&e, &w),
+                fx.on_body(&e, &w),
+            ]
+            .iter()
+            .filter(|b| **b)
+            .count();
+            let none = NO_FX.contains(&name.as_str());
+            if (n == 1) == none || n > 1 {
+                bad.push(format!("{name}: {n} groups, listed no-fx {none}"));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "give these one fx group or list them in NO_FX:\n{}",
+            bad.join("\n")
+        );
+        for n in NO_FX {
+            assert!(
+                Event::samples().iter().any(|e| e.variant() == *n),
+                "{n} is no event"
+            );
+        }
+    }
+
     /// 0251 R11: `on_events`를 묶음 넷으로 나눴다 — 어느 사건도 두 묶음에 들지 않고, 그림을 내는 사건은 한 묶음이 맡는다.
     #[test]
     fn every_event_belongs_to_at_most_one_group() {
@@ -2569,7 +1998,53 @@ mod tests {
             Event::AilBurst { at, radius: 2.0 },
             Event::RootSpike { at },
             Event::Mend { at },
-            Event::Cast { at },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Magic,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Axe,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Light,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Quake,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Javelin,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Stone,
+            },
+            Event::Smite { at, radius: 1.4 },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Seed,
+            },
+            Event::Sprout { at, radius: 1.6 },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Curse,
+            },
+            Event::Sneak { at },
+            Event::FuryFull { at },
+            Event::Pull { at },
+            Event::JavelinBack { at },
+            Event::Prayer { at, radius: 3.0 },
+            Event::SnareSet { at },
+            Event::SnareSnap { at },
+            Event::ShieldBounce { at },
+            Event::Rush {
+                at,
+                dir: Vec3::Z,
+                power: 0.6,
+            },
             Event::Perfect { at },
             Event::UltStart,
             Event::Ult { at },
@@ -2668,5 +2143,69 @@ mod tests {
                 fronts[0]
             );
         }
+    }
+
+    /// 0277: 급소는 평타와 다른 번쩍임이다 — 별의 빛이 서늘한 은빛(평타는 따뜻한 흰빛)이고, 직각으로 엇갈리는 빛줄 넷이 함께 나간다.
+    /// 같은 틱의 평타 번쩍임 위에 얹혀도(사건 둘) 갈려 읽힌다.
+    #[test]
+    fn a_sneak_hit_glints_cold_and_crossed_apart_from_a_plain_hit() {
+        let w = world();
+        let at = vec3(0.0, 1.0, 2.0);
+        let look = |e: Event| {
+            let mut fx = Fx::default();
+            fx.on_events(&[e], &w);
+            fx.parts
+        };
+        let hit = look(Event::Hit { at });
+        let sneak = look(Event::Sneak { at });
+        let star = |ps: &[Part]| *ps.iter().find(|p| p.shape == Shape::Star).unwrap();
+        let (h, k) = (star(&hit), star(&sneak));
+        assert!(
+            k.color.0.b > k.color.0.r && h.color.0.r > h.color.0.b,
+            "cold glint vs warm flash"
+        );
+        assert!(k.size.0 > h.size.0 && k.life <= 0.15);
+        let streaks: Vec<&Part> = sneak.iter().filter(|p| p.shape == Shape::Streak).collect();
+        assert!(
+            sneak.iter().any(|p| p.shape == Shape::Dot && p.life > 0.3),
+            "a lingering glitter"
+        );
+        assert_eq!(streaks.len(), 4, "an X of four streaks");
+        // 엇갈림: 위로 둘 · 아래로 둘, 맞은 쪽(z)으로는 가지 않는다.
+        assert_eq!(streaks.iter().filter(|p| p.vel.y > 0.0).count(), 2);
+        assert!(streaks.iter().all(|p| p.vel.z.abs() < 1e-3));
+    }
+
+    /// 0277: 분노의 불씨는 분노만큼 — 분노가 없는 종류(검) · 둘레가 빈 대검에는 없고, 넷에 에워싸인 대검은 1초에 열 남짓이 솟는다.
+    #[test]
+    fn fury_embers_rise_only_while_the_greatsword_is_furious() {
+        let count = |weapon: crate::weapons::Id, foes: usize| {
+            let mut w = world();
+            w.set_weapon(weapon);
+            for i in 0..foes {
+                let a = i as f32 * std::f32::consts::FRAC_PI_2;
+                let at = w.player.pos + vec3(a.sin_d(), 0.0, a.cos_d()) * 1.5;
+                let k = w.spawn(crate::species::Kind::Husk, at);
+                w.enemies[k].state = EState::Recover { t: -1000.0 };
+            }
+            let mut fx = Fx::default();
+            let mut n = 0;
+            for _ in 0..60 {
+                fx.watch(&w, crate::tuning::TICK_DT);
+                n += fx
+                    .parts
+                    .iter()
+                    .filter(|p| p.age == 0.0 && p.shape == Shape::Dot)
+                    .count();
+                fx.tick(crate::tuning::TICK_DT);
+            }
+            n
+        };
+        use crate::weapons::Id;
+        assert_eq!(count(Id::Sword, 4), 0, "no fury, no embers");
+        assert_eq!(count(Id::Greatsword, 0), 0, "alone, calm");
+        let full = count(Id::Greatsword, 4);
+        assert!((10..=25).contains(&full), "{full} a second");
+        assert!(count(Id::Greatsword, 2) < full, "half fury burns slower");
     }
 }

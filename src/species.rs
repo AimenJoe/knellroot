@@ -26,6 +26,9 @@ pub enum Kind {
     Repeater,
     /// 등짐꾼(0208 — 작업층의 재활동체, 짐 진 몸): 짐을 앞세워 곧게 밀고 온다(띠 예고 — 레일 수레와 같은 꼴). 느리고 무겁다.
     Packbearer,
+    /// 고요한 사슴(0270 D — 성소의 필드 보스): 길에서 벗어난 터에 엎드려 기다린다. 뿔 쓸기·돌진·내려 딛기. 문지기가 아니다
+    /// (문·핵과 상관없다 — `field`).
+    Stag,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -52,6 +55,10 @@ pub enum Behavior {
     /// 떨어지면 갈고리 끌기(띠 — 받아친다)와 추 떨어뜨리기(원판 + 고리)를 번갈아. 2단계: 빨라지고 갱도 레일의 수레가 돈다(월드).
     /// 3단계(체력 넷에 하나): 사슬이 끊긴다 — 끈 없이 쫓으며 내려치기·돌진(수레는 멈춘다).
     Overseer,
+    /// 고요한 사슴(0270 D): 붙으면 뿔로 앞을 넓게 쓸고(부채꼴 — 받아친다), 떨어지면 땅을 긁다 곧게 돌진하고(띠 — 받아친다, 끝에
+    /// 틈이 길다), 셋째마다 뒷발로 일어섰다 내려 딛는다(`Atk::Stomp` — 몸 둘레 원판은 물러나고, 딛은 자리에서 방랑자 쪽으로 솟는
+    /// 뿌리 기둥 줄은 옆으로 비킨다). 2단계: 쉬는 틈이 짧고, 돌진을 돌아서 한 번 더 잇고, 뿌리 줄이 세 줄 부채꼴.
+    Stag,
 }
 
 /// 공격 박자 변주(0128, 사장 "정박에만 때리면 난이도가 확 내려간다"): 같은 공격을 다른 박자로.
@@ -116,11 +123,14 @@ pub struct Def {
     pub boss: bool,
     /// 쓰러지면 떨구는 잔불(0064 M1).
     pub embers: u32,
-    /// 타입 게이지가 쌓이는 배율(0223 V2 — 잔불·뿌리·울림·균열 순, `status::TYPED`): 0.5~1.5, 면역은 없다(시험).
+    /// 타입 게이지가 쌓이는 배율(0223 V2 → 0270 B — 잔불·뿌리·울림·균열·충격·날카로움·서리·흡수 순, `status::TYPED`): 0.5~1.5,
+    /// 면역은 없다(시험).
     /// 1이 아닌 칸은 도감이 한 줄로 알린다.
     pub ail: [f32; crate::status::N],
     /// 모델(`assets/models/<이름>.glb`).
     pub model: &'static str,
+    /// 필드 보스(0270 D): 문지기가 아니라 제 터에 엎드려 기다리는 보스 — 지역의 문지기 수에 들지 않는다. `boss`와 함께 선다.
+    pub field: bool,
 }
 
 pub static HUSK: Def = Def {
@@ -157,8 +167,9 @@ pub static HUSK: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 1,
-    ail: [1.5, 0.75, 1.0, 1.0],
+    ail: [1.5, 0.75, 1.0, 1.0, 1.0, 0.75, 1.25, 1.0],
     model: "root_husk",
+    field: false,
 };
 
 pub static THORN: Def = Def {
@@ -195,8 +206,9 @@ pub static THORN: Def = Def {
     behavior: Behavior::Charger,
     boss: false,
     embers: 2,
-    ail: [1.25, 0.5, 1.0, 1.0],
+    ail: [1.25, 0.5, 1.0, 1.0, 1.0, 1.5, 1.0, 1.0],
     model: "thorn_beast",
+    field: false,
 };
 
 pub static WARDEN: Def = Def {
@@ -233,8 +245,9 @@ pub static WARDEN: Def = Def {
     behavior: Behavior::Warden,
     boss: true,
     embers: 30,
-    ail: [1.25, 0.5, 1.0, 1.0],
+    ail: [1.25, 0.5, 1.0, 1.0, 1.0, 1.0, 0.75, 1.0],
     model: "gatekeeper",
+    field: false,
 };
 
 /// 등딱지짐승(0120, 막는 적 — 0069 "웅크린 것"): 앞 120°에서 온 평타·탄을 튕긴다(방랑자는 짧게 튀고 콤보가 끊긴다).
@@ -273,8 +286,9 @@ pub static SHELL: Def = Def {
     behavior: Behavior::Melee,
     boss: false,
     embers: 3,
-    ail: [0.5, 1.0, 1.25, 1.5],
+    ail: [0.5, 1.0, 1.25, 1.5, 1.5, 0.5, 1.0, 1.0],
     model: "shellback",
+    field: false,
 };
 
 /// 꼬투리(0120, 심는 적 — 0069 "씨앗"): 몸은 약하고 느리다. 9m 안이면 플레이어 자리에 원판을 심고(1.1초 — 끝 = 판정),
@@ -307,8 +321,9 @@ pub static POD: Def = Def {
     behavior: Behavior::Planter,
     boss: false,
     embers: 2,
-    ail: [1.5, 0.5, 1.0, 1.0],
+    ail: [1.5, 0.5, 1.0, 1.0, 1.0, 1.25, 1.5, 1.0],
     model: "pod",
+    field: false,
 };
 
 /// 깨진 종지기(0116 이름·3절 싸움 꼴, 0125): 둘째 문지기 — 거리·공간형. 마을의 깨진 종을 끌고 다닌다(종이 왜 깨졌는지는 말하지 않는다).
@@ -347,8 +362,9 @@ pub static BELLKEEPER: Def = Def {
     behavior: Behavior::Bellkeeper,
     boss: true,
     embers: 30,
-    ail: [1.0, 1.0, 0.5, 1.5],
+    ail: [1.0, 1.0, 0.5, 1.5, 0.5, 0.75, 1.25, 1.0],
     model: "bellkeeper",
+    field: false,
 };
 
 /// 이끼 덮인 문지기(0185 — 셋째 문지기, 잔뿌리의 정원 문턱 아래). 지역 생태의 큰 몸: 낮게 나아가 앞을 쓸고, 웅크려 정면을 흘리고
@@ -388,8 +404,9 @@ pub static MOSSWARD: Def = Def {
     behavior: Behavior::Mossward,
     boss: true,
     embers: 30,
-    ail: [0.5, 1.0, 1.0, 1.25],
+    ail: [0.5, 1.0, 1.0, 1.25, 1.25, 1.0, 1.0, 0.75],
     model: "mossward",
+    field: false,
 };
 
 /// 이끼먹이(0185 — 정상 피식자): 작고 둥근 몸, 공격·보상 없음(잔불 0). 맞으면 아프지만 싸우지 않고 달아난다.
@@ -421,8 +438,9 @@ pub static MOSSGRAZER: Def = Def {
     behavior: Behavior::Grazer,
     boss: false,
     embers: 0,
-    ail: [0.5, 1.0, 1.0, 1.0],
+    ail: [0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     model: "mossgrazer",
+    field: false,
 };
 
 /// 넷째 문지기(0208, 회색 박스 S4-1 — 모델은 0234에서 제 몸 `winchkeeper`). 체력 1200 → 1600(0216 W4 보스 모의 —
@@ -463,9 +481,10 @@ pub static OVERSEER: Def = Def {
     behavior: Behavior::Overseer,
     boss: true,
     embers: 30,
-    ail: [1.0, 0.75, 1.5, 1.0],
+    ail: [1.0, 0.75, 1.5, 1.0, 1.0, 1.25, 1.0, 1.0],
     // 0234: 제 몸(늙은 오소리 — 문지기의 두 발 동작 + 갈고리·추).
     model: "winchkeeper",
+    field: false,
 };
 
 /// 되풀이꾼(0208): 잔재의 몸에 같은 박자의 세 번 내려찍기. 모델은 그림이 나오기 전까지 잔재의 것.
@@ -490,7 +509,7 @@ pub static REPEATER: Def = Def {
     },
     embers: 2,
     // 같은 박자로 되풀이하는 몸 — 울림이 잘 든다.
-    ail: [1.0, 1.0, 1.5, 1.0],
+    ail: [1.0, 1.0, 1.5, 1.0, 1.0, 1.0, 0.75, 1.25],
     model: "repeater",
     ..HUSK
 };
@@ -518,12 +537,59 @@ pub static PACKBEARER: Def = Def {
         feint: 0.0,
     },
     embers: 3,
-    ail: [1.0, 0.75, 1.0, 1.5],
+    ail: [1.0, 0.75, 1.0, 1.5, 1.5, 1.0, 1.0, 1.0],
     model: "packbearer",
     ..THORN
 };
 
-pub static ALL: [&Def; 11] = [
+/// 고요한 사슴(0270 D — 성소의 필드 보스): 뿌리에 먹힌 큰 사슴, 뿔은 넓은 뿌리 왕관, 목의 종은 울리지 않는다. 성소 문지기(400)보다
+/// 한두 등급 위 — 체력은 보스 모의로(0270 "D 만든 것" — 한 대는 문지기와 같은 한 눈금): 성소에 갓 닿은 몸으로는 드물게,
+/// 둘째 지역을 마친 몸이면 해 볼 만하게. 타입: 달리는 몸이라 피가 잘 새고(날카로움 1.5) 마른 뿌리 뿔이 타고(잔불 1.25) 충격이 든다
+/// (1.25) / 이미 뿌리라 묶이지 않고(0.5) 고요해 울리지 않고(0.5) 오래 식은 몸이라 얼지 않는다(0.5).
+pub static STAG: Def = Def {
+    kind: Kind::Stag,
+    name: |s: &Strings| s.boss_stag,
+    hp: 1500,
+    radius: 1.1,
+    height: 2.4,
+    speed: 3.0,
+    // 뿔 쓸기: 넓은 부채꼴(뿔 폭 3.4m).
+    reach: 3.8,
+    tele: 0.9,
+    recover: 1.1,
+    arc: 160.0,
+    // 돌진: 땅을 긁고(0.9초) 곧게 — 터(18m) 안에서 한 번에 가로지르지 않을 만큼.
+    charge_range: 13.0,
+    charge_tele: 0.9,
+    charge_speed: 14.0,
+    charge_time: 0.7,
+    // 내려 딛기: 뒷발로 일어서는 예고(`rear` 동작 — 1.0초에 앞발이 닿는다). 고리는 쓰지 않는다(뿌리 줄은 `ROOTS_*`).
+    wave_tele: 1.1,
+    wave_radius: 0.0,
+    wave_speed: 0.0,
+    guard_arc: 0.0,
+    plant_range: 0.0,
+    plant_r: 0.0,
+    retreat: 0.0,
+    rings: 0,
+    shards: 0,
+    rhythm: Rhythm {
+        delay: 0.3,
+        fast: 0.15,
+        chain: 0.3,
+        gaps: &[0.5],
+        feint: 0.0,
+    },
+    behavior: Behavior::Stag,
+    boss: true,
+    // 다시 쓰러뜨릴 때의 잔불 — 처음에는 스테이지가 `FIELD_FIRST_EMBERS`를 더 흩는다(합이 문지기 30의 두 배 남짓).
+    embers: 20,
+    ail: [1.25, 0.5, 0.5, 1.0, 1.25, 1.5, 0.5, 1.0],
+    model: "hushed_stag",
+    field: true,
+};
+
+pub static ALL: [&Def; 12] = [
     &HUSK,
     &THORN,
     &WARDEN,
@@ -535,6 +601,7 @@ pub static ALL: [&Def; 11] = [
     &REPEATER,
     &PACKBEARER,
     &MOSSGRAZER,
+    &STAG,
 ];
 
 /// 종류의 줄(표 `ALL`에서 찾는다 — 새 종류 = `Kind` 한 줄 + 표 한 줄, 빠뜨리면 시험이 잡는다).
@@ -549,6 +616,27 @@ pub fn def(kind: Kind) -> &'static Def {
 mod tests {
     use super::*;
 
+    /// 0270 D: 고요한 사슴의 모델은 뿔 때문에 판정의 키(머리까지 2.4m)보다 훨씬 크다(뿔 끝 3.6m) — 도감 그림은 모델의 꼭대기에
+    /// 맞춘다(`render::items::TALL_MODEL`). 다른 종의 모델은 판정의 키와 거의 같다(보던 그림이 바뀌지 않는다).
+    #[test]
+    fn only_the_stags_model_towers_over_its_hit_height() {
+        for d in ALL {
+            let top = crate::models::bytes(d.model)
+                .and_then(|b| crate::model::Model::from_bytes(b).ok())
+                .and_then(|m| m.rest_top())
+                .unwrap_or_else(|| panic!("{:?}: no model {}", d.kind, d.model));
+            let tall = top > d.height * crate::render::items::TALL_MODEL;
+            assert_eq!(
+                tall,
+                d.kind == Kind::Stag,
+                "{:?}: {top} vs {}",
+                d.kind,
+                d.height
+            );
+        }
+        assert!((STAG.height - 2.4).abs() < 0.01);
+    }
+
     #[test]
     fn every_kind_has_one_row_with_sane_numbers() {
         for d in ALL {
@@ -560,6 +648,7 @@ mod tests {
                 | Behavior::Warden
                 | Behavior::Bellkeeper
                 | Behavior::Mossward
+                | Behavior::Stag
                 | Behavior::Overseer => {
                     assert!(d.reach > d.radius, "{:?}", d.kind);
                     assert!(d.charge_speed > 0.0 && d.charge_time > 0.0 && d.charge_tele > 0.0);
@@ -579,7 +668,18 @@ mod tests {
                 d.kind
             );
         }
-        // 문지기는 지역마다 하나(성소 문지기·깨진 종지기·이끼 덮인 문지기 0185).
-        assert_eq!(ALL.iter().filter(|d| d.boss).count(), crate::stage::REGIONS);
+        // 문지기는 지역마다 하나(성소 문지기·깨진 종지기·이끼 덮인 문지기 0185) — 필드 보스(0270 D)는 따로 센다: 보스이되
+        // 문지기가 아니고, 지역의 표(`StageDef::field`)에 선 것만큼.
+        let keepers = ALL.iter().filter(|d| d.boss && !d.field).count();
+        assert_eq!(keepers, crate::stage::REGIONS);
+        let fields = ALL.iter().filter(|d| d.field).count();
+        assert!(ALL.iter().filter(|d| d.field).all(|d| d.boss));
+        assert_eq!(
+            fields,
+            crate::stage::STAGES
+                .iter()
+                .filter(|s| s.field.is_some())
+                .count()
+        );
     }
 }

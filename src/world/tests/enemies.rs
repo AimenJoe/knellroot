@@ -646,3 +646,194 @@ fn a_swing_that_misses_still_tells_the_app_where_it_landed() {
     assert!(at.distance(w.enemies[0].pos) < 0.5);
     assert!(!ev.iter().any(|e| matches!(e, Event::PlayerHurt)));
 }
+
+/// 0270 D: 엎드린 필드 보스는 보이는 자리에서 가까이 오면 일어난다 — 멀리서는 엎드린 채(맞지도, 락온에 잡히지도 않는다).
+/// 일어서는 동안은 락온에 잡히고(0149) 아직 맞지 않는다. 다 서면 쫓는다.
+#[test]
+fn a_lying_field_boss_rises_when_the_wanderer_comes_close_in_sight() {
+    use crate::tuning::{FIELD_WAKE, FIELD_WAKE_R};
+    let t = Tuning::default();
+    let mut w = World::new("test", 60.0);
+    let home = vec3(0.0, 0.0, -20.0);
+    let b = w.spawn(Kind::Stag, home);
+    w.enemies[b].lie_in_wait(0.0);
+    for _ in 0..90 {
+        w.step(&Actions::default(), &t);
+    }
+    assert!(w.enemies[b].lying(), "far: still lying");
+    // 락온을 눌러도 잡히지 않는다.
+    w.step(
+        &Actions {
+            lock: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    assert!(w.lock.is_none(), "a sleeper is no lock-on target");
+    // 벽 너머로 가까이 가면(보이지 않는다) 일어나지 않는다.
+    w.player.pos = home + vec3(0.0, 0.0, FIELD_WAKE_R - 2.0);
+    w.player.prev = w.player.pos;
+    let mid = (home + w.player.pos) * 0.5;
+    let wall = Aabb {
+        min: mid + vec3(-6.0, 0.0, -0.4),
+        max: mid + vec3(6.0, 3.0, 0.4),
+    };
+    w.obstacles.push(wall);
+    for _ in 0..30 {
+        w.step(&Actions::default(), &t);
+    }
+    assert!(w.enemies[b].lying(), "behind a wall: unseen");
+    w.obstacles.clear();
+    for _ in 0..3 {
+        w.step(&Actions::default(), &t);
+    }
+    assert!(w.enemies[b].waking, "in sight and close: it stirs");
+    assert!(!w.enemies[b].active() && w.enemies[b].lockable());
+    w.step(
+        &Actions {
+            lock: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    assert_eq!(w.lock, Some(b), "locks on while it rises");
+    let hp = w.enemies[b].hp;
+    for _ in 0..(FIELD_WAKE / TICK_DT) as usize + 5 {
+        if w.enemies[b].waking {
+            assert_eq!(w.enemies[b].hp, hp, "not hurt while rising");
+        }
+        w.step(&Actions::default(), &t);
+    }
+    assert!(w.enemies[b].active() && !w.enemies[b].waking);
+}
+
+/// 0270 D "다가가거나 치면 일어난다": 멀리서 쏜 탄이 엎드린 몸에 닿으면 일어난다(피해는 없다 — 잠든 몸은 맞지 않는다).
+/// 터의 끈 밖에서 쏜 것으로는 일어나지 않는다(일어났다 곧 돌아가 눕기만 할 테니).
+#[test]
+fn a_lying_field_boss_rises_when_shot() {
+    use crate::tuning::{FIELD_LEASH, FIELD_WAKE_R};
+    let t = Tuning::default();
+    let shoot_from = |dist: f32| {
+        let mut w = World::new("test", 80.0);
+        w.set_weapon(weapons::Id::Crossbow);
+        let b = w.spawn(Kind::Stag, vec3(0.0, 0.0, -dist));
+        w.enemies[b].lie_in_wait(0.0);
+        let hp = w.enemies[b].hp;
+        // 앞(−z)을 보고 쏜다.
+        w.step(
+            &Actions {
+                cast: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let mut flew = false;
+        for _ in 0..240 {
+            flew |= !w.bolts.is_empty();
+            w.step(&Actions::default(), &t);
+            if w.enemies[b].waking {
+                break;
+            }
+        }
+        assert!(flew, "a bolt flew");
+        assert_eq!(w.enemies[b].hp, hp, "a sleeper takes no damage");
+        w.enemies[b].waking
+    };
+    let near = FIELD_WAKE_R + 5.0;
+    assert!(near < FIELD_LEASH);
+    assert!(shoot_from(near), "shot from inside its ground: it stirs");
+    assert!(!shoot_from(FIELD_LEASH + 4.0), "from outside: it sleeps on");
+}
+
+/// 0270 D: 방랑자가 터에서 멀리 달아나면(끈 밖) 필드 보스는 쫓지 않고 제자리로 돌아가 다시 엎드린다 — 체력 가득, 타입 게이지 지움.
+/// 끈 안에서는 제 터 어디로든 쫓아온다.
+#[test]
+fn a_field_boss_goes_home_and_lies_down_made_whole_when_the_wanderer_runs_far() {
+    use crate::tuning::FIELD_LEASH;
+    let t = Tuning::default();
+    let mut w = World::new("test", 80.0);
+    w.unhurt = true;
+    let home = vec3(0.0, 0.0, -8.0);
+    let b = w.spawn(Kind::Stag, home);
+    w.enemies[b].lie_in_wait(0.0);
+    let mut k = 0;
+    while !w.enemies[b].active() && k < 600 {
+        w.step(&Actions::default(), &t);
+        k += 1;
+    }
+    assert_eq!(w.enemies[b].state, EState::Chase, "woke and came on");
+    // 다친 채(2단계 전)로, 타입도 묻은 채로.
+    w.enemies[b].hp = w.enemies[b].max_hp * 3 / 4;
+    let who = crate::status::Who {
+        boss: true,
+        elite: false,
+        mult: w.enemies[b].def().ail,
+    };
+    w.enemies[b]
+        .ail
+        .build(crate::status::Kind::Sharp, 10.0, &who);
+    // 끈 안(터에서 12m): 쫓아온다 — 돌아가지 않는다.
+    w.player.pos = home + vec3(12.0, 0.0, 0.0);
+    w.player.prev = w.player.pos;
+    for _ in 0..120 {
+        w.step(&Actions::default(), &t);
+        assert_ne!(w.enemies[b].state, EState::Return, "inside its ground");
+    }
+    // 끈 밖으로 달아난다.
+    w.player.pos = home + vec3(FIELD_LEASH + 6.0, 0.0, 0.0);
+    w.player.prev = w.player.pos;
+    let mut returned = false;
+    for _ in 0..3000 {
+        w.step(&Actions::default(), &t);
+        returned |= w.enemies[b].state == EState::Return;
+        if w.enemies[b].lying() {
+            break;
+        }
+    }
+    let e = &w.enemies[b];
+    assert!(
+        returned && e.lying(),
+        "walked home and lay down: {:?}",
+        e.state
+    );
+    assert_eq!(e.hp, e.max_hp, "made whole");
+    assert_eq!(e.ail, crate::status::Ail::default(), "ailments cleared");
+    assert!(vec3(e.pos.x - home.x, 0.0, e.pos.z - home.z).length() <= 0.5);
+}
+
+/// 0270 D: 필드 보스의 한 대도 한 눈금이다(문지기와 같다 — 세기는 체력과 수로, 보스 모의) — 뿔 쓸기는 앞에서 받아칠 수 있고,
+/// 내려 딛기는 받아칠 수 없다.
+#[test]
+fn the_stags_sweep_can_be_parried_and_its_stomp_cannot() {
+    let t = Tuning::default();
+    let strike = |atk: Atk, parry: bool| {
+        let mut w = World::new("test", 30.0);
+        let b = w.spawn(Kind::Stag, vec3(0.0, 0.0, -2.2));
+        let en = &mut w.enemies[b];
+        en.steady = true;
+        en.facing = 0.0;
+        en.atk = atk;
+        en.state = EState::Tele { t: en.tele_dur() };
+        w.player.facing = std::f32::consts::PI;
+        let full = w.player.hp;
+        let mut ev = w.step(
+            &Actions {
+                parry,
+                ..Default::default()
+            },
+            &t,
+        );
+        // 예고가 끝난 다음 틱에 친다.
+        for _ in 0..3 {
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        (
+            full - w.player.hp,
+            ev.iter().any(|e| matches!(e, Event::Parry { .. })),
+        )
+    };
+    assert_eq!(strike(Atk::Slam, false), (HP_UNIT, false));
+    assert_eq!(strike(Atk::Slam, true), (0, true), "the sweep is parried");
+    let (lost, parried) = strike(Atk::Stomp, true);
+    assert!(lost == HP_UNIT && !parried, "the stomp is not");
+}

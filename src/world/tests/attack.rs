@@ -200,27 +200,40 @@ fn filling_the_poise_bar_breaks_the_enemy() {
     assert!(w.enemies[i].stance.broken > 0.0);
     let base = 20;
     let want = crate::tuning::scale_up(base, t[P::PoiseBreakDamage]);
-    assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), want);
-    assert!(hurt_by(&w.enemies[i], base, true, 0, &t) > want);
+    assert_eq!(
+        hurt_by(&w.enemies[i], base, false, 0, Knack::NONE, &t),
+        want
+    );
+    assert!(hurt_by(&w.enemies[i], base, true, 0, Knack::NONE, &t) > want);
     // 올림은 옛 눈금으로(0158 N0): 옛 1 → 2·2 → 3·3 → 5(4.5 올림)가 열 배 그대로 — 15·45가 아니다.
     assert_eq!(t[P::PoiseBreakDamage], 1.5);
     for (d, hurt) in [(10, 20), (20, 30), (30, 50), (40, 60), (50, 80)] {
-        assert_eq!(hurt_by(&w.enemies[i], d, false, 0, &t), hurt, "{d}");
+        assert_eq!(
+            hurt_by(&w.enemies[i], d, false, 0, Knack::NONE, &t),
+            hurt,
+            "{d}"
+        );
     }
     // 0127 깨진 종 조각: 열린 틈(깨짐·드러남)에만 +10 — 깨진 동안은 배율 앞에서 더한다.
     let open = crate::tuning::scale_up(base + 10, t[P::PoiseBreakDamage]);
     assert_eq!((want, open), (30, 50));
-    assert_eq!(hurt_by(&w.enemies[i], base, false, 10, &t), open);
-    w.enemies[i].stance.broken = 0.0;
-    assert_eq!(hurt_by(&w.enemies[i], base, false, 0, &t), base);
     assert_eq!(
-        hurt_by(&w.enemies[i], base, false, 10, &t),
+        hurt_by(&w.enemies[i], base, false, 10, Knack::NONE, &t),
+        open
+    );
+    w.enemies[i].stance.broken = 0.0;
+    assert_eq!(
+        hurt_by(&w.enemies[i], base, false, 0, Knack::NONE, &t),
+        base
+    );
+    assert_eq!(
+        hurt_by(&w.enemies[i], base, false, 10, Knack::NONE, &t),
         base,
         "closed: no bonus"
     );
     let crit = base + t[P::ParryCrit] as i32;
     assert_eq!(
-        hurt_by(&w.enemies[i], base, true, 10, &t),
+        hurt_by(&w.enemies[i], base, true, 10, Knack::NONE, &t),
         crit + 10,
         "exposed: bonus"
     );

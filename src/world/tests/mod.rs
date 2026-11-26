@@ -8,20 +8,45 @@ mod attack;
 mod basis_lock;
 mod block;
 mod bridges;
+mod daggers;
 mod deep_tree;
 mod dodge_stamina;
 mod enemies;
 mod flask;
+mod golden;
+mod greatsword;
 mod growth;
 mod heavy;
 mod hurt;
 mod jump_ledge;
+mod off_hand;
 mod parry;
+mod placed;
 mod ranged;
+mod scenario_golden;
+mod scythe;
+mod spear;
+mod swap_strike;
+mod toss;
 mod touch_aim;
 mod turn;
 mod veins;
+mod wand;
 mod weapon_swap;
+
+/// 높낮이 시험 마당(0043): 5×6칸(2m). 맨 윗줄(가장 -z)은 높이 `ledge`인 단, 나머지는 바닥 0.
+fn ledge_yard(ledge: f32) -> World {
+    use crate::ground::Cell::Flat;
+    let mut cells = vec![Flat(0.0); 5 * 6];
+    for c in cells.iter_mut().take(5) {
+        *c = Flat(ledge);
+    }
+    let mut w = World::new("test", 30.0);
+    w.ground = Some(Ground::new(5, 6, 2.0, cells));
+    w.view_yaw = Some(0.0);
+    w.player.pos = vec3(0.0, 0.0, 3.0);
+    w
+}
 
 fn world_with_boss() -> World {
     let mut w = World::new("test", 20.0);

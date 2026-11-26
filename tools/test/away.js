@@ -2,36 +2,26 @@
 //   1) 소리 컨텍스트가 멈추고(web/index.html — `window.knellAudioContexts`), 2) 게임은 멈춤 창을 연다(src/app/away.rs → `Equip { host: Pause` — 0261부터 멈춤의 새 판 첫 탭은 장비),
 //   3) 다시 보이면 소리가 돌아오고 멈춤 창은 그대로(손이 오기 전에 싸움이 흐르지 않는다).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/away.js dist shots
-const { chromium } = require('playwright');
 const sceneKit = require('./scene');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8143;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
-
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch(['--autoplay-policy=no-user-gesture-required']);
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   const fail = (msg) => { console.error('FAIL ' + msg); process.exitCode = 1; };
   const { until, press } = sceneKit(page, 60);
+  await sceneKit.cheap(page);
   await page.goto(`http://localhost:${PORT}/`);
   await until('Title', '타이틀', 60000);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });

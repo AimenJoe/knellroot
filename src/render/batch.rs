@@ -1,5 +1,6 @@
 //! 배치(P4·P5): 모델·굽힌 덩어리를 그리기 호출 한도 아래로 모아 보낸다 + 뒤집은 껍데기 외곽선.
 use super::*;
+use crate::det::Det;
 
 /// 외곽선 색(0037: 검정 대신 짙은 자두빛 — 부드러운 외곽선).
 const OUTLINE: Color = Color::new(0.13, 0.07, 0.16, 1.0);
@@ -261,7 +262,7 @@ impl Batch {
         if k.outline_px > 0.0 && tint.a > 0.99 {
             // 화면 1px = 그 거리에서 이만큼(m): 2·거리·tan(시야/2) / 내부 세로.
             let dist = k.eye.distance(at).max(0.5);
-            let w = k.outline_px * 2.0 * dist * (k.fovy * 0.5).tan() / k.rows;
+            let w = k.outline_px * 2.0 * dist * (k.fovy * 0.5).tan_d() / k.rows;
             // 껍데기는 모델과 정점·색인 수가 같다 — 넣기 전에 넘칠지 보고 먼저 보낸다.
             if !fits(self.outline.len(), self.outline_idx.len(), nv, ni) {
                 self.send_outline();

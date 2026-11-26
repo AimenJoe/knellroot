@@ -56,6 +56,7 @@ const FULL: Has = Has(&[
     "xbow_charge",
     "bow_shoot",
     "bow_draw",
+    "sk_throw",
     "cast",
     "attack",
 ]);
@@ -203,6 +204,45 @@ fn the_bow_uses_its_own_clips_and_falls_back_to_the_crossbows() {
     };
     assert_eq!(frame(&mut m, &mut w, &FULL).0, "bow_shoot");
     assert_eq!(frame(&mut m, &mut w, &old).0, "xbow_shoot");
+}
+
+/// 0274 ②b: 던지는 RB(손도끼 · 창 · 돌)는 머리 위로 던지는 동작 — 손을 떠나는 자리가 탄이 나가는 때(`cast.startup`)에 온다.
+/// 빛·마법은 손을 내미는 그대로. 활을 당기는 동작은 끝까지 당기는 시간(`cast.charge`)에 맞춰 늘어난다.
+#[test]
+fn thrown_rbs_throw_overhand_and_the_bow_draw_spans_the_full_draw() {
+    let t = Tuning::default();
+    let mut w = world();
+    let mut m = Memory::default();
+    let at_release = PState::Cast {
+        t: t[crate::tuning::P::CastStartup],
+        dir: w.player.facing_dir(),
+        fired: true,
+    };
+    for (id, want) in [
+        (crate::weapons::Id::Sword, "sk_throw"),
+        (crate::weapons::Id::Spear, "sk_throw"),
+        (crate::weapons::Id::Fists, "sk_throw"),
+        (crate::weapons::Id::Hammer, "cast"),
+        (crate::weapons::Id::Staff, "cast"),
+    ] {
+        w.player.weapon = id;
+        w.player.state = at_release;
+        let (name, at) = frame(&mut m, &mut w, &FULL);
+        assert_eq!(name, want, "{id:?}");
+        if want == "sk_throw" {
+            assert!((at - TOSS_RELEASE).abs() < 1e-4, "{id:?}: {at}");
+        }
+    }
+    w.player.weapon = crate::weapons::Id::Bow;
+    w.player.state = PState::CastCharge {
+        t: t[crate::tuning::P::CastCharge],
+    };
+    let (name, at) = frame(&mut m, &mut w, &FULL);
+    assert_eq!(name, "bow_draw");
+    assert!(
+        (at - BOW_DRAW_CLIP).abs() < 1e-4,
+        "fully drawn at the end of the clip: {at}"
+    );
 }
 
 /// 0199 → 0202: 튕긴 뒤 `PARRY_PUSH_FIRM` 안에는 걸어도 거두는 팔, 그 뒤 `PARRY_PUSH_CLIP`까지는 서 있을 때만.

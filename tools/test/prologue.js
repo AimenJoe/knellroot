@@ -8,31 +8,21 @@
 //   4) 다시 빈 기록: 숲 끝에서 장면을 멈춤 키로 건너뛰어도 성소에서 조작이 돌아온다.
 //   5) 옛 기록(키 없는 판, `v=1`)은 숲을 보지 않는다 — 이어하기가 성소에서(prologue=1로 읽힌다).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/prologue.js dist shots
-const { chromium } = require('playwright');
 const sceneKit = require('./scene');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8162;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
-
+let server = null;
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   const errors = [];
   const fail = (msg) => { console.error('FAIL ' + msg); errors.push(msg); };
 
@@ -166,4 +156,4 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e); process.exitCode = 1; server.close(); process.exit(1); });
+main().catch((e) => { console.error(e); process.exitCode = 1; if (server) server.close(); process.exit(1); });

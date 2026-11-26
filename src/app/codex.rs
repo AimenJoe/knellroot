@@ -6,6 +6,7 @@ use super::menu::Hit;
 use super::tabs::{Ln, PaneHead};
 use super::*;
 use crate::codex::{self, ENTRIES};
+use crate::det::Det;
 use crate::i18n::Tr;
 use flow::Host;
 
@@ -44,9 +45,14 @@ impl App {
     /// 위아래·굴리기·줄 누르기 = 고르기(고름은 보기만 — 할 일 없음).
     pub(super) fn tick_codex(&mut self, a: &Actions, host: Host, tab: usize) {
         let mut a = self.small_strip_input(a);
-        let before = self.cursor;
+        let before = self.menu.cursor;
         let u = self.ui.u(1.0);
-        tabs::turn_by_hand(&mut a, self.codex_view.rect, &mut self.codex_view.yaw, u);
+        tabs::turn_by_hand(
+            &mut a,
+            self.tab.codex_view.rect,
+            &mut self.tab.codex_view.yaw,
+            u,
+        );
         self.pane_scroll_lines(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
@@ -75,9 +81,9 @@ impl App {
         }
         let n = self.codex_len(tab);
         let picked = self.menu_pick(a, n);
-        if self.cursor != before {
-            self.scroll = 0.0;
-            self.codex_view = CodexView::default();
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
+            self.tab.codex_view = CodexView::default();
         }
         // 0265: 적힌·얻은 칸의 보상은 확인 = 받기(여정과 같다 — 멈춤에서도). 받을 것이 없는 줄의 확인은 아무 일도 없다(보기만).
         if let Some(i) = picked {
@@ -88,34 +94,12 @@ impl App {
         }
     }
 
-    /// 묶음의 줄 수.
     fn codex_len(&self, tab: usize) -> usize {
-        match tab {
-            FOES => ENTRIES.len(),
-            CHARMS | GARB | WEAPONS => self.codex_things(tab).len(),
-            _ => 0,
-        }
+        group_len(&self.progress, tab)
     }
 
-    /// 묶음 `tab`의 `i`째 칸의 보상(0265).
     fn codex_bounty(&self, tab: usize, i: usize) -> Bounty {
-        if tab == FOES {
-            let e = &ENTRIES[i.min(ENTRIES.len() - 1)];
-            return Bounty {
-                open: codex::seen(&self.progress.codex, e.kind),
-                key: codex::paid_key("foe", codex::kind_key(e.kind)),
-                embers: codex::FOE_EMBERS,
-                name: crate::species::def(e.kind).name,
-            };
-        }
-        let things = self.codex_things(tab);
-        let t = &things[i.min(things.len() - 1)];
-        Bounty {
-            open: t.owned,
-            key: t.paid.clone(),
-            embers: codex::THING_EMBERS,
-            name: t.name,
-        }
+        bounty_at(&self.progress, tab, i)
     }
 
     /// 기록 탭에 들어올 때(다른 탭·멈춤에서 — 기록 탭 안의 묶음 넘기기는 아니다) 받을 것이 있는 첫 묶음에서 연다(2026-11-23 사장
@@ -139,32 +123,26 @@ impl App {
     }
 
     fn codex_start(&self) -> usize {
-        if crate::journey::any_ready(&self.progress) {
-            return JOURNEY;
-        }
-        (FOES..GROUPS)
-            .find(|&t| self.codex_group_ready(t))
-            .unwrap_or(JOURNEY)
+        start_group(&self.progress)
     }
 
     /// 받을 도감 칸이 하나라도 있나(기록 탭 머리의 민트 점, 묶음 머리의 민트 글).
     pub(super) fn codex_ready(&self) -> bool {
-        (FOES..GROUPS).any(|t| self.codex_group_ready(t))
+        any_ready(&self.progress)
     }
 
     fn codex_group_ready(&self, tab: usize) -> bool {
-        tab != JOURNEY
-            && (0..self.codex_len(tab)).any(|i| self.codex_bounty(tab, i).ready(&self.progress))
+        group_ready(&self.progress, tab)
     }
 
     /// 받기: 기록에 적고(다시 받지 않는다) 잔불은 지금 지닌 것에. 바로 저장.
     fn take_bounty(&mut self, b: &Bounty) {
         self.progress.codex_paid.push(b.key.clone());
         self.progress.codex_paid.sort();
-        self.world.embers += b.embers;
-        self.progress.embers = self.world.embers;
+        self.world.earn(b.embers);
+        self.progress.embers = self.world.embers();
         self.snd(crate::sfx::Id::Chest);
-        self.toast = Some((
+        self.notice.toast = Some((
             fill(s().toast_codex_took, &[tr(b.name), &b.embers.to_string()]),
             TOAST_TIME,
         ));
@@ -208,7 +186,7 @@ impl App {
         // 0242(사장 설문 23-9 "짧은 이름의 버튼도 누르기 쉽게 최소 넓이"): 칸은 `GROUP_MIN_W` 이상, 글은 칸 가운데.
         let cws: Vec<f32> = tws.iter().map(|tw| tw.max(GROUP_MIN_W * u)).collect();
         let (at, view) = ui::strip_tabs(
-            &mut self.small_strip,
+            &mut self.tab.small_strip,
             &cws,
             x0 + arrow,
             x1 - arrow,
@@ -218,7 +196,7 @@ impl App {
             0.0,
             tab,
         );
-        let (more_l, more_r) = self.small_strip.more();
+        let (more_l, more_r) = self.tab.small_strip.more();
         let ink = |more: bool| if view.is_some() && more { INK } else { DIM };
         self.ui.text("◀", x0, ty, tk, ink(more_l));
         self.ui
@@ -256,7 +234,7 @@ impl App {
                     AMBER,
                 );
             }
-            self.hits.push((
+            self.menu.hits.push((
                 Rect::new(x - u * 5.0, w.origin.y, cw + u * 10.0, GROUP_H * u),
                 Hit::Cell(1, i),
             ));
@@ -284,7 +262,7 @@ impl App {
                 }
             })
             .collect();
-        let cursor = self.cursor.min(rows.len().saturating_sub(1));
+        let cursor = self.menu.cursor.min(rows.len().saturating_sub(1));
         self.draw_left_list(&w, &rows, GROUP_H);
         // 오른쪽: 고른 것.
         let t = get_time() as f32;
@@ -304,9 +282,9 @@ impl App {
             let ink = if seen { AMBER } else { INK };
             self.ui.text(&fit, p.x, p.y, tabs::K_NAME * k, ink);
             let pic = w.rect(tabs::RIGHT_X, PIC_TOP, tabs::RIGHT_W, PIC_H);
-            let spin = self.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin());
+            let spin = self.tab.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin_d());
             self.renderer.draw_creature(e.kind, pic, spin, t, !seen);
-            self.codex_view.rect = Some(pic);
+            self.tab.codex_view.rect = Some(pic);
             lines.extend(self.pane_wrap(&w, &fill(s.codex_place, &[tr(e.place)]), PLACE));
             lines.push(Ln::Gap);
             if seen {
@@ -354,11 +332,24 @@ impl App {
                 ITEM_PIC,
                 ITEM_PIC,
             );
-            self.codex_view.rect = None;
+            self.tab.codex_view.rect = None;
+            // 무기는 종류부터(0272 — "한손검 · 순례자의 검" + 그 종류의 주특성): 못 얻은 무기도 종류는 보인다(실루엣과 같은 몫).
+            if let crate::item_view::Item::Weapon(id) = d.item {
+                let name = if d.owned { tr(d.name) } else { s.codex_unknown };
+                if let Some((class, main, sub)) = super::equip::class_text(id, name) {
+                    lines.extend(self.pane_wrap(&w, &class, ui::INK));
+                    if d.owned {
+                        lines.extend(self.pane_wrap(&w, &main, ui::AMBER));
+                        // 보조특성(0272 1b): 보조무기 슬롯에 멨을 때의 것 — 한 단 흐리게.
+                        lines.extend(self.pane_wrap(&w, &sub, DIM));
+                    }
+                    lines.push(Ln::Gap);
+                }
+            }
             if d.owned {
                 if crate::item_view::has_view(d.item) {
-                    self.draw_pane_item_turned(d.item, icon, self.codex_view.yaw);
-                    self.codex_view.rect = Some(icon);
+                    self.draw_pane_item_turned(d.item, icon, self.tab.codex_view.yaw);
+                    self.tab.codex_view.rect = Some(icon);
                 }
                 lines.extend(self.pane_wrap(&w, tr(d.desc), DIM));
                 if let Some(flavor) = d.flavor {
@@ -377,9 +368,9 @@ impl App {
                         side,
                     );
                     let t = get_time() as f32;
-                    let spin = self.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin());
+                    let spin = self.tab.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin_d());
                     self.renderer.draw_item_shadow(d.item, dest, spin);
-                    self.codex_view.rect = Some(icon);
+                    self.tab.codex_view.rect = Some(icon);
                 } else {
                     self.ui.text_center(
                         "?",
@@ -454,99 +445,175 @@ struct Thing {
 }
 
 impl App {
-    /// 묶음 `tab`(장신구·덧옷·무기)의 물건들(표 순서).
     fn codex_things(&self, tab: usize) -> Vec<Thing> {
-        if tab == WEAPONS {
-            // 맨손은 도감의 무기가 아니다(0265 — 사장 "무기중에 맨손은 빠져야지": 얻는 것이 아니라 무기 칸을 비운 것).
-            return crate::weapons::IDS
-                .iter()
-                .filter(|&&id| id != crate::weapons::Id::Fists)
-                .map(|&id| {
-                    let (name, desc, place) = weapon_texts(id);
-                    let paid = codex::paid_key("weapon", id.key());
-                    Thing {
-                        // 팔거나 내려놓은 것도 도감에는 남는다(0266 — `codex_had`).
-                        owned: self.progress.weapons.contains(&id)
-                            || self.progress.codex_had.contains(&paid),
-                        paid,
-                        name,
-                        desc,
-                        flavor: None,
-                        place,
-                        item: crate::item_view::Item::Weapon(id),
-                    }
-                })
-                .collect();
-        }
-        if tab == CHARMS {
-            crate::charms::TABLE
-                .iter()
-                .map(|d| Thing {
-                    owned: self.progress.owned.contains(&d.id)
-                        || self
-                            .progress
-                            .codex_had
-                            .contains(&codex::paid_key("charm", d.key)),
-                    paid: codex::paid_key("charm", d.key),
-                    name: d.name,
-                    desc: d.desc,
-                    flavor: Some(d.flavor),
-                    place: codex::charm_place(d.id),
-                    item: crate::item_view::Item::Charm(d.id),
-                })
-                .collect()
-        } else {
-            let have = self.garbs();
-            crate::garb::TABLE
-                .iter()
-                .map(|d| Thing {
-                    owned: have.contains(&d.id),
-                    paid: codex::paid_key("garb", d.key),
-                    name: d.name,
-                    desc: d.desc,
-                    flavor: Some(d.flavor),
-                    place: d.place,
-                    item: crate::item_view::Item::Garb(d.id),
-                })
-                .collect()
-        }
+        things(&self.progress, tab)
     }
 }
 
-/// 무기의 이름·설명·나오는 곳(0191 — 상자 자리는 `stage/sanctuary.rs`의 `chest_loot` 차례).
-fn weapon_texts(id: crate::weapons::Id) -> (Tr, Tr, Tr) {
-    use crate::weapons::Id as W;
-    match id {
-        W::Sword => (
-            |s| s.weapon_sword,
-            |s| s.weapon_sword_d,
-            |s| s.cx_weapon_sword,
-        ),
-        W::Hammer => (
-            |s| s.weapon_hammer,
-            |s| s.weapon_hammer_d,
-            |s| s.cx_weapon_hammer,
-        ),
-        W::Staff => (
-            |s| s.weapon_staff,
-            |s| s.weapon_staff_d,
-            |s| s.cx_weapon_staff,
-        ),
-        W::Crossbow => (
-            |s| s.weapon_crossbow,
-            |s| s.weapon_crossbow_d,
-            |s| s.cx_weapon_crossbow,
-        ),
-        W::Fists => (
-            |s| s.weapon_fists,
-            |s| s.weapon_fists_d,
-            |s| s.cx_weapon_fists,
-        ),
-        W::Bow => (|s| s.weapon_bow, |s| s.weapon_bow_d, |s| s.cx_weapon_bow),
+/// 묶음 `tab`(장신구·덧옷·무기)의 물건들(표 순서 — 0278 R22: 기록만 받는 순수 함수, 시험이 붙는다).
+fn things(p: &crate::save::Progress, tab: usize) -> Vec<Thing> {
+    if tab == WEAPONS {
+        // 맨손은 도감의 무기가 아니다(0265 — 사장 "무기중에 맨손은 빠져야지": 얻는 것이 아니라 무기 칸을 비운 것).
+        return crate::weapons::IDS
+            .iter()
+            .filter(|&&id| id != crate::weapons::Id::Fists)
+            .map(|&id| {
+                let w = id.def();
+                let paid = codex::paid_key("weapon", id.key());
+                Thing {
+                    // 팔거나 내려놓은 것도 도감에는 남는다(0266 — `codex_had`).
+                    owned: p.weapons.contains(&id) || p.codex_had.contains(&paid),
+                    paid,
+                    name: w.name,
+                    desc: w.desc,
+                    flavor: None,
+                    place: w.place,
+                    item: crate::item_view::Item::Weapon(id),
+                }
+            })
+            .collect();
     }
+    if tab == CHARMS {
+        crate::charms::TABLE
+            .iter()
+            .map(|d| Thing {
+                owned: p.owned.contains(&d.id)
+                    || p.codex_had.contains(&codex::paid_key("charm", d.key)),
+                paid: codex::paid_key("charm", d.key),
+                name: d.name,
+                desc: d.desc,
+                flavor: Some(d.flavor),
+                place: codex::charm_place(d.id),
+                item: crate::item_view::Item::Charm(d.id),
+            })
+            .collect()
+    } else {
+        let have = crate::garb::owned(&p.finds);
+        crate::garb::TABLE
+            .iter()
+            .map(|d| Thing {
+                owned: have.contains(&d.id),
+                paid: codex::paid_key("garb", d.key),
+                name: d.name,
+                desc: d.desc,
+                flavor: Some(d.flavor),
+                place: d.place,
+                item: crate::item_view::Item::Garb(d.id),
+            })
+            .collect()
+    }
+}
+
+/// 묶음의 줄 수.
+fn group_len(p: &crate::save::Progress, tab: usize) -> usize {
+    match tab {
+        FOES => ENTRIES.len(),
+        CHARMS | GARB | WEAPONS => things(p, tab).len(),
+        _ => 0,
+    }
+}
+
+/// 묶음 `tab`의 `i`째 칸의 보상(0265).
+fn bounty_at(p: &crate::save::Progress, tab: usize, i: usize) -> Bounty {
+    if tab == FOES {
+        let e = &ENTRIES[i.min(ENTRIES.len() - 1)];
+        return Bounty {
+            open: codex::seen(&p.codex, e.kind),
+            key: codex::paid_key("foe", codex::kind_key(e.kind)),
+            embers: codex::FOE_EMBERS,
+            name: crate::species::def(e.kind).name,
+        };
+    }
+    let things = things(p, tab);
+    let t = &things[i.min(things.len() - 1)];
+    Bounty {
+        open: t.owned,
+        key: t.paid.clone(),
+        embers: codex::THING_EMBERS,
+        name: t.name,
+    }
+}
+
+/// 묶음에 받을 칸이 있나(여정은 아니다 — 그것은 `journey::any_ready`).
+fn group_ready(p: &crate::save::Progress, tab: usize) -> bool {
+    tab != JOURNEY && (0..group_len(p, tab)).any(|i| bounty_at(p, tab, i).ready(p))
+}
+
+/// 받을 도감 칸이 하나라도 있나.
+fn any_ready(p: &crate::save::Progress) -> bool {
+    (FOES..GROUPS).any(|t| group_ready(p, t))
+}
+
+/// 기록 탭에 들어올 때 여는 묶음: 받을 목표가 있으면 여정, 아니면 받을 칸이 있는 첫 묶음, 없으면 여정.
+fn start_group(p: &crate::save::Progress) -> usize {
+    if crate::journey::any_ready(p) {
+        return JOURNEY;
+    }
+    (FOES..GROUPS)
+        .find(|&t| group_ready(p, t))
+        .unwrap_or(JOURNEY)
 }
 
 /// 추측 줄·세계 안의 말: 관찰보다 옅고 푸르스름하게(0129 장비 창과 같은 결).
 const GUESS: Color = Color::new(0.55, 0.56, 0.62, 1.0);
 /// 나오는 곳: 옅은 호박빛(길 안내 색의 결).
 const PLACE: Color = Color::new(0.78, 0.66, 0.46, 1.0);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 0278 R22: 도감의 받을 칸은 기록만으로 센다 — 얻은(적힌) 칸이고 아직 안 받은 것, 받으면 빠지고, 팔고 내려놓아 가진 것에서
+    /// 빠져도 도감의 기억(`codex_had`)으로 남는다. 기록 탭은 받을 것이 있는 첫 묶음에서 연다(없으면 여정).
+    #[test]
+    fn codex_bounties_count_from_the_record_and_the_tab_opens_on_the_first_group_with_one() {
+        let mut p = crate::save::Progress::default();
+        for t in FOES..GROUPS {
+            assert!(!group_ready(&p, t), "group {t}");
+        }
+        assert!(!any_ready(&p));
+        assert_eq!(start_group(&p), JOURNEY);
+        assert_eq!(group_len(&p, FOES), ENTRIES.len());
+        assert_eq!(group_len(&p, CHARMS), crate::charms::TABLE.len());
+        assert_eq!(group_len(&p, GARB), crate::garb::TABLE.len());
+        assert_eq!(group_len(&p, WEAPONS), crate::weapons::IDS.len() - 1);
+        assert_eq!(group_len(&p, JOURNEY), 0);
+        let ready = |p: &crate::save::Progress, t: usize| {
+            (0..group_len(p, t))
+                .filter(|&i| bounty_at(p, t, i).ready(p))
+                .count()
+        };
+        // 장신구 하나를 얻었다: 장신구 묶음에 하나.
+        let charm = crate::charms::TABLE[1].id;
+        p.owned.push(charm);
+        assert_eq!(ready(&p, CHARMS), 1);
+        assert_eq!(start_group(&p), CHARMS);
+        // 적 하나를 적었다: 적 묶음이 먼저(차례).
+        let foe = ENTRIES[0].kind;
+        p.codex.push(codex::kind_key(foe).to_string());
+        assert_eq!(ready(&p, FOES), 1);
+        assert_eq!(start_group(&p), FOES);
+        // 받으면 빠진다.
+        let b = bounty_at(&p, FOES, 0);
+        assert_eq!(b.embers, codex::FOE_EMBERS);
+        p.codex_paid.push(b.key.clone());
+        assert_eq!(ready(&p, FOES), 0);
+        assert_eq!(start_group(&p), CHARMS);
+        // 팔아 가진 것에서 빠져도 기억으로 남는다(무기).
+        let at = |p: &crate::save::Progress| {
+            (0..group_len(p, WEAPONS))
+                .find(|&i| {
+                    things(p, WEAPONS)[i].item
+                        == crate::item_view::Item::Weapon(crate::weapons::Id::Hammer)
+                })
+                .unwrap()
+        };
+        let i = at(&p);
+        assert!(!bounty_at(&p, WEAPONS, i).open);
+        p.codex_had
+            .push(codex::paid_key("weapon", crate::weapons::Id::Hammer.key()));
+        assert!(bounty_at(&p, WEAPONS, i).ready(&p));
+        assert_eq!(bounty_at(&p, WEAPONS, i).embers, codex::THING_EMBERS);
+        assert!(any_ready(&p));
+    }
+}

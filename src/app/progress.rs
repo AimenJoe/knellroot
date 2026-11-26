@@ -18,9 +18,13 @@ impl App {
         }
         if let Some(at) = self.progress.run {
             // 지역 잇기(0118): 쉰 곳의 지역에서, 이 판에 이긴 문지기는 그대로.
-            self.down = at.down;
-            self.rest_at = Some(at);
-            if at.stage != self.stage || self.down > self.stage {
+            self.this_run.down = at.down;
+            self.this_run.fields_down = at.fields;
+            self.this_run.rest_at = Some(at);
+            if at.stage != self.this_run.stage
+                || self.this_run.down > self.this_run.stage
+                || self.this_run.fields_down != 0
+            {
                 self.enter_stage(at.stage);
             }
             self.run.resume(&mut self.world, at);
@@ -32,10 +36,10 @@ impl App {
 
     /// 쓰러졌는데 이 지역에서 쉰 적이 없다(0118): 이 판에 다른 곳에서 쉬었으면 그 지역·화로에서 다시 선다. 쉰 적이 없으면 거짓(끝).
     pub(super) fn respawn_elsewhere(&mut self) -> bool {
-        let Some(at) = self.rest_at else {
+        let Some(at) = self.this_run.rest_at else {
             return false;
         };
-        if at.stage != self.stage {
+        if at.stage != self.this_run.stage {
             self.enter_stage(at.stage);
         }
         self.run.resume(&mut self.world, at);
@@ -75,7 +79,7 @@ impl App {
         self.on_gates_and_elites();
         self.on_drops();
         self.on_core(out);
-        self.progress.embers = self.world.embers;
+        self.progress.embers = self.world.embers();
         self.journey_watch();
         self.note_ground();
         self.persist();
@@ -85,19 +89,20 @@ impl App {
     fn note_rest(&mut self, out: crate::stage::StageOut) {
         // 마지막으로 쉰 곳(0118): 이 지역에서 쉬었으면 그곳, 아니면 이 판에 앞서 쉰 곳 그대로(지역을 바꿔도 남는다).
         if let Some(at) = self.run.run_at() {
-            self.rest_at = Some(crate::save::RunAt {
-                stage: self.stage,
-                down: self.down,
+            self.this_run.rest_at = Some(crate::save::RunAt {
+                stage: self.this_run.stage,
+                down: self.this_run.down,
                 ..at
             });
         }
         if out == crate::stage::StageOut::CoreTaken {
-            self.down = self.down.max(self.stage + 1);
+            self.this_run.down = self.this_run.down.max(self.this_run.stage + 1);
         }
-        if let Some(at) = self.rest_at.as_mut() {
-            at.down = self.down;
+        if let Some(at) = self.this_run.rest_at.as_mut() {
+            at.down = self.this_run.down;
+            at.fields = self.this_run.fields_down;
         }
-        self.progress.run = self.rest_at;
+        self.progress.run = self.this_run.rest_at;
     }
 
     /// 상자를 열었다 · 바닥의 것을 주웠다(상자의 것).
@@ -121,7 +126,7 @@ impl App {
             } else {
                 self.progress
                     .chests
-                    .push(self.stage as u32 * crate::stage::CHESTS_PER_STAGE + i as u32);
+                    .push(self.this_run.stage as u32 * crate::stage::CHESTS_PER_STAGE + i as u32);
                 match self.run.def.chest_loot.get(i).copied() {
                     // 상자의 것은 등급·옵션을 굴린다(0223 V4c — 잡몹·상자의 급).
                     Some(Loot::Charm(id)) if !self.progress.owned.contains(&id) => {
@@ -130,14 +135,37 @@ impl App {
                     Some(Loot::Weapon(w)) if !self.progress.owns_weapon(w) => {
                         self.gain_weapon(w, Some((0, self.loot_seed(1, i))))
                     }
-                    _ => {
-                        self.world.embers += crate::stage::CHEST_EMBERS;
-                        let n = crate::stage::CHEST_EMBERS.to_string();
-                        self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
+                    // 숫돌(0274 ⑦): 숨은 물건의 숫돌과 같은 길로 기록에 — 상자는 한 번만 열리지만 같은 이름이 있으면 잔불.
+                    Some(Loot::Stone)
+                        if !self.progress.finds.contains(&crate::stage::chest_stone_id(
+                            self.run.def.find_prefix,
+                            i,
+                        )) =>
+                    {
+                        let id = crate::stage::chest_stone_id(self.run.def.find_prefix, i);
+                        self.progress.note_find(id);
+                        self.notice.toast = Some((s().toast_find_stone.to_string(), TOAST_TIME));
                     }
+                    // 여벌(0274 ⑦): 가진 바탕의 고급(`Sturdy` — 옵션 한 줄) — 주운 것이니 바로 가방에(바닥의 여벌을 주울 때와 같은 길).
+                    // 가진 것이 없으면(맨손뿐) 잔불.
+                    Some(Loot::Spare) => {
+                        let rare = Some(crate::items::Rarity::Sturdy);
+                        match self.roll_spare_of(rare, 0, self.loot_seed(1, i)) {
+                            Some(item) => self.take_item(item),
+                            None => self.chest_embers(),
+                        }
+                    }
+                    _ => self.chest_embers(),
                 }
             }
         }
+    }
+
+    /// 상자의 것을 이미 가졌다(또는 든 것이 없다): 잔불 `CHEST_EMBERS`.
+    fn chest_embers(&mut self) {
+        self.world.earn(crate::stage::CHEST_EMBERS);
+        let n = crate::stage::CHEST_EMBERS.to_string();
+        self.notice.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
     }
 
     /// 떨어진 아이템을 주웠다.
@@ -193,7 +221,7 @@ impl App {
                     &named
                 }
             };
-            self.toast = Some((text.to_string(), TOAST_TIME));
+            self.notice.toast = Some((text.to_string(), TOAST_TIME));
         }
     }
 
@@ -214,7 +242,7 @@ impl App {
         if !new.is_empty() {
             let n = (crate::tuning::ELITE_FIRST_EMBERS * new.len() as u32).to_string();
             self.progress.note_elites(new);
-            self.toast = Some((fill(s().toast_elite, &[&n]), TOAST_TIME));
+            self.notice.toast = Some((fill(s().toast_elite, &[&n]), TOAST_TIME));
         }
     }
 
@@ -242,11 +270,49 @@ impl App {
                     let item = crate::items::roll(
                         base,
                         crate::items::roll_rarity(2, seed),
-                        crate::items::tier_cap(self.stage),
+                        crate::items::tier_cap(self.this_run.stage),
                         seed,
                     );
                     self.lay_drop(at, at - super::bag::BESIDE, item);
                 }
+            }
+        }
+        self.on_field_down();
+    }
+
+    /// 필드 보스가 쓰러졌다(0270 D): 그 판에는 다시 서지 않는다. 처음이면 기록에 적고 **가장 높은 등급의 여벌 하나를 확정**으로 +
+    /// 그 보스의 장신구(아직 없고 바닥에도 없으면), 그 뒤로는 문지기의 급으로 굴린 여벌 하나 — 모두 쓰러진 자리 곁의 바닥에(0226:
+    /// 주워야 든다, 가방이 가득이면 남는다). 처음의 덤 잔불은 스테이지가 이미 흩었다.
+    fn on_field_down(&mut self) {
+        let Some((at, first)) = self.run.take_field_down() else {
+            return;
+        };
+        self.this_run.fields_down |= 1 << self.this_run.stage;
+        let Some(field) = &self.run.def.field else {
+            return;
+        };
+        let seed = self.loot_seed(5, 0);
+        let loot = crate::items::field_loot(first);
+        if first {
+            self.progress.note_field(self.run.def.find_prefix);
+            let n = crate::tuning::FIELD_FIRST_EMBERS.to_string();
+            self.notice.toast = Some((fill(s().toast_field, &[&n]), TOAST_TIME));
+        }
+        if let Some(item) = self.roll_spare_of(loot.rarity, loot.luck, seed) {
+            self.lay_drop(at, at + super::bag::BESIDE, item);
+        }
+        if let Some(id) = field.charm.filter(|_| loot.charm) {
+            let base = crate::items::Base::Charm(id);
+            let lying = self.run.item_drops.iter().any(|d| d.item.base == base);
+            if !self.progress.owned.contains(&id) && !lying {
+                let seed = self.loot_seed(6, 0);
+                let item = crate::items::roll(
+                    base,
+                    crate::items::roll_rarity(loot.luck, seed),
+                    crate::items::tier_cap(self.this_run.stage),
+                    seed,
+                );
+                self.lay_drop(at, at - super::bag::BESIDE, item);
             }
         }
     }
@@ -259,14 +325,14 @@ impl App {
         );
         if out == crate::stage::StageOut::Cleared {
             self.progress.run = None;
-            self.rest_at = None;
+            self.this_run.rest_at = None;
         }
         // 문지기의 핵(0105 · 0125 · 0185 · 0208 → 0161): 이길 때마다 기술 점수 1, 문지기마다 따로 셋까지. 처음 이긴 판은
         // "핵이 몸에 스민다"(lore CANON — 핵이 다가왔다). 셈은 `Progress::take_core`(0251 R7).
         if core {
             let s = s();
-            let taken = self.progress.take_core(self.stage);
-            self.toast = Some(match taken.count {
+            let taken = self.progress.take_core(self.this_run.stage);
+            self.notice.toast = Some(match taken.count {
                 Some(n) => {
                     let (n, m) = (n.to_string(), crate::progression::CORE_CAP.to_string());
                     (fill(s.toast_core, &[&n, &m]), TOAST_TIME)
@@ -291,7 +357,7 @@ impl App {
             .item_drops
             .iter()
             .map(|d| (d.pos.to_array(), d.item));
-        self.progress.ground.set(self.stage, drops);
+        self.progress.ground.set(self.this_run.stage, drops);
     }
 
     /// 지역을 세운 뒤 기록의 바닥 것들을 되놓는다(0226).
@@ -299,7 +365,7 @@ impl App {
         if self.dev_run_now() {
             return;
         }
-        let here: Vec<_> = self.progress.ground.of(self.stage).collect();
+        let here: Vec<_> = self.progress.ground.of(self.this_run.stage).collect();
         for (p, item) in here {
             self.run.lay_item(Vec3::from_array(p), item);
         }
@@ -313,7 +379,7 @@ impl App {
             Some((luck, seed)) => items::roll(
                 base,
                 items::roll_rarity(luck, seed),
-                items::tier_cap(self.stage),
+                items::tier_cap(self.this_run.stage),
                 seed,
             ),
             None => items::Item::plain(base),
@@ -327,7 +393,7 @@ impl App {
         // 가방의 다음 번호도 섞는다: 지역을 오가거나 이어하면 그 판의 엘리트가 다시 서는데(판 수는 그대로), 같은 씨앗이면
         // 다시 쓰러뜨릴 때마다 똑같은 아이템이 나온다.
         (kind << 48)
-            ^ ((self.stage as u64) << 32)
+            ^ ((self.this_run.stage as u64) << 32)
             ^ ((self.progress.bag.serial() as u64) << 20)
             // 바닥에 떨어뜨린 수도(0226): 줍지 않고 둔 채 다시 쓰러뜨리면 가방의 번호는 그대로다.
             ^ (((self.run.item_serial() & 0xff) as u64) << 40)
@@ -348,7 +414,7 @@ impl App {
         }
         self.progress.settle_items();
         self.world.apply_stats(self.progress.stats(), false);
-        self.toast = Some((fill(s().toast_charm, &[&label]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_charm, &[&label]), TOAST_TIME));
     }
 
     /// 무기를 얻는다(0117): 가진 것에 넣는다 — 드는 것은 장비 창에서(싸우는 손을 마음대로 바꾸지 않는다). 알림.
@@ -358,12 +424,23 @@ impl App {
             self.progress.weapons.push(w);
         }
         self.progress.settle_items();
-        self.toast = Some((fill(s().toast_weapon, &[&label]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_weapon, &[&label]), TOAST_TIME));
     }
 
     /// 여벌을 굴린다(0223 V4c — 엘리트·문지기가 떨군다): 이미 가진 바탕 가운데 하나의 **다른 것**(등급·옵션을 굴린다) — 더 나은 것을
     /// 찾는 재미. 가진 것이 없으면(맨손뿐) 아무것도 없다.
     fn roll_spare(&self, luck: u8, seed: u64) -> Option<crate::items::Item> {
+        self.roll_spare_of(None, luck, seed)
+    }
+
+    /// 여벌을 굴리되 등급을 정해 줄 수 있다(0270 D — 필드 보스의 첫 떨굼은 굴리는 등급 가운데 가장 높은 것으로 확정).
+    /// `rarity`가 없으면 떨군 것의 급(`luck`)으로 굴린다.
+    fn roll_spare_of(
+        &self,
+        rarity: Option<crate::items::Rarity>,
+        luck: u8,
+        seed: u64,
+    ) -> Option<crate::items::Item> {
         use crate::items::{self, Base};
         let p = &self.progress;
         let mut pool: Vec<Base> = p.weapons.iter().map(|w| Base::Weapon(*w)).collect();
@@ -379,21 +456,25 @@ impl App {
         let base = items::pick_base(&pool, &worn, seed)?;
         Some(items::roll(
             base,
-            items::roll_rarity(luck, seed),
-            items::tier_cap(self.stage),
+            rarity.unwrap_or_else(|| items::roll_rarity(luck, seed)),
+            items::tier_cap(self.this_run.stage),
             seed,
         ))
     }
 
     /// 아이템의 이름("단단한 낡은 검").
     pub(super) fn item_label(item: &crate::items::Item) -> String {
+        crate::i18n::item_label(item.rarity, Self::base_name(item))
+    }
+
+    /// 바탕의 이름(등급 없이 — 큰 창의 머리, 0275).
+    pub(super) fn base_name(item: &crate::items::Item) -> &'static str {
         use crate::items::Base;
-        let name = match item.base {
+        match item.base {
             Base::Weapon(w) => weapon_name(w),
             Base::Shield(s) => tr(s.def().name),
             Base::Charm(c) => tr(crate::charms::def(c).name),
-        };
-        crate::i18n::item_label(item.rarity, name)
+        }
     }
 
     /// 여벌이 바닥에 떨어진다(0226 — 사장 "가득이면 못 주워야지, 바닥에 떨어져 있어야지"): 주워야 가방에 든다.
@@ -441,7 +522,7 @@ impl App {
         self.progress.settle_items();
         self.world.apply_stats(self.progress.stats(), false);
         // 같은 틱에 핵·엘리트의 알림도 뜬다 — 덮어쓰지 않고 그 뒤에 잇는다.
-        self.toast_wait.push(fill(s().toast_item, &[&label]));
+        self.notice.toast_wait.push(fill(s().toast_item, &[&label]));
     }
 
     /// 가방이 가득인지를 스테이지에 알린다(0226 — 틱마다, 스테이지의 틱 앞에): 가득이면 떨어진 아이템을 못 줍고, 상자의 것도
@@ -463,6 +544,9 @@ impl App {
                         && match l {
                             Loot::Charm(id) => !self.progress.owned.contains(id),
                             Loot::Weapon(w) => !self.progress.owns_weapon(*w),
+                            // 숫돌은 가방 밖 · 여벌은 늘 칸이 든다(0274 ⑦).
+                            Loot::Stone => false,
+                            Loot::Spare => true,
                         }
                 })
                 .fold(0u64, |m, (i, _)| m | 1 << i)
@@ -474,27 +558,29 @@ impl App {
     /// 화로 가게에서 산다(0064 M4): 잔불이 모자라면 알림만.
     pub(super) fn buy(&mut self, (ware, price): (crate::growth::Ware, u32)) {
         let s = s();
-        if self.world.embers < price {
-            self.toast = Some((s.shop_poor.to_string(), 1.6));
+        if self.world.embers() < price {
+            self.notice.toast = Some((s.shop_poor.to_string(), 1.6));
             self.snd(crate::sfx::Id::Deny);
             return;
         }
         // 가방이 가득이면(0226) 칸이 드는 것(장신구·방패)은 못 산다.
         if self.progress.bag.full() && crate::growth::needs_room(ware) {
-            self.toast = Some((s.bag_full.to_string(), 1.6));
+            self.notice.toast = Some((s.bag_full.to_string(), 1.6));
             self.snd(crate::sfx::Id::Deny);
             return;
         }
         self.snd(crate::sfx::Id::Buy);
-        self.world.embers -= price;
-        self.progress.embers = self.world.embers;
+        // 값은 위에서 견줬다.
+        let paid = self.world.spend(price);
+        debug_assert!(paid);
+        self.progress.embers = self.world.embers();
         match ware {
             crate::growth::Ware::Charm(id) => self.gain_charm(id, None),
             crate::growth::Ware::Oil => {
                 self.progress.growth.oil = true;
                 // 쉼터에서 막 쉬었으니 늘어난 등잔도 가득.
                 self.world.apply_stats(self.progress.stats(), true);
-                self.toast = Some((fill(s.toast_bought, &[s.shop_oil]), TOAST_TIME));
+                self.notice.toast = Some((fill(s.toast_bought, &[s.shop_oil]), TOAST_TIME));
             }
             crate::growth::Ware::Shield(id) => {
                 // 방패(0223): 사면 바로 든다(보조무기 칸이 비었으면 — 0224) — 한손 무기를 들고 있어야 쓰인다.
@@ -507,7 +593,7 @@ impl App {
                     self.progress.shield = Some(id);
                 }
                 self.arm_world();
-                self.toast = Some((fill(s.toast_bought, &[tr(id.def().name)]), TOAST_TIME));
+                self.notice.toast = Some((fill(s.toast_bought, &[tr(id.def().name)]), TOAST_TIME));
             }
         }
         self.persist();
@@ -591,16 +677,16 @@ impl App {
         if self.dev.run {
             return;
         }
-        if self.progress != self.saved {
-            let ok = crate::save::save(self.slot, &self.progress);
-            self.slots[self.slot] = self.progress.summary();
+        if self.progress != self.book.saved {
+            let ok = crate::save::save(self.book.slot, &self.progress);
+            self.book.slots[self.book.slot] = self.progress.summary();
             // 실패가 시작될 때 한 번만 알린다(저장할 때마다 알리면 화면을 덮는다).
-            if !ok && !self.save_failed {
+            if !ok && !self.book.save_failed {
                 warn!("save failed");
-                self.toast = Some((s().save_failed.to_string(), TOAST_TIME));
+                self.notice.toast = Some((s().save_failed.to_string(), TOAST_TIME));
             }
-            self.save_failed = !ok;
-            self.saved = self.progress.clone();
+            self.book.save_failed = !ok;
+            self.book.saved = self.progress.clone();
         }
     }
 }

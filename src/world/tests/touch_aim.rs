@@ -1,6 +1,7 @@
 //! 터치 끌어 조준(0217 — 브롤스타즈 꼴): 끈 쪽은 락온보다 앞서고, 톡은 가까운 적, 쥐고 끄는 동안 모은다.
 //! 버튼은 하나의 규칙 — 쏘기·수류탄·끼운 스킬(쪽이 있는 꼴) 어느 것이 올라가도 같다.
 use super::*;
+use crate::det::Det;
 use crate::skills;
 
 /// 끈 쪽(`aim` + `aim_drag`)은 락온 대상보다 앞선다 — 그냥 스틱 조준은 락온이면 쓰지 않는다(0014 그대로).
@@ -113,7 +114,7 @@ fn holding_a_dragged_cast_charges_without_a_first_shot() {
         &t,
     );
     let b = w.bolts.first().expect("the charged bolt");
-    assert_eq!(b.def, weapons::Id::Sword.def().charged);
+    assert_eq!(b.def, weapons::Id::Sword.bolts().1);
     assert!(b.dir.x > 0.9);
     assert!(w.player.ranged.mana < mana - 0.9, "one charge spent");
     // 쥐지 않은(패드·키보드의) 꾹은 그대로 — 첫 발을 쏜 뒤에 모은다(0056).
@@ -183,6 +184,8 @@ fn a_dragged_lane_skill_goes_the_finger_way_not_the_walking_way() {
     let t = Tuning::default();
     let dash = |drag: bool| {
         let mut w = World::new("test", 40.0);
+        // 0274 ③: 가로지르기는 쌍단검의 스킬.
+        w.set_weapon(crate::weapons::Id::Daggers);
         w.set_skills([skills::Id::Cut, skills::Id::Whirl]);
         w.view_yaw = Some(0.0);
         let p0 = w.player.pos;
@@ -205,18 +208,97 @@ fn a_dragged_lane_skill_goes_the_finger_way_not_the_walking_way() {
     assert!(d.y.abs() > d.x.abs() * 3.0, "walking way: {d:?}");
 }
 
-/// 둥근 꼴(쟁반·버티기·되울림·불티)은 쪽이 없다 — 그 스킬이 끼워진 버튼은 끌지 않는다(톡 = 바로).
+/// 둥근 꼴(쟁반·버티기·되울림·불티)은 쪽이 없다 — 그 스킬이 끼워진 버튼은 끌지 않는다(톡 = 바로). 0278 R14: 목록을 베껴 쓰지 않고
+/// 월드에 묻는다 — 바라보는 쪽(-z)과 다른 쪽(+x)으로 끌어 쓰면, `aims`인 모양만 시작하는 쪽이 끈 쪽을 따른다(`skill_dir`).
 #[test]
 fn only_skills_with_a_direction_take_the_drag() {
-    use skills::Form;
+    let t = Tuning::default();
     for s in &skills::SKILLS {
-        let (id, form) = (s.id, s.form);
-        let round = matches!(
-            form,
-            Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. }
+        let id = s.id;
+        let mut w = World::new("test", 40.0);
+        w.player.facing = std::f32::consts::PI; // -z
+        hold_for_skill(&mut w, id);
+        w.set_skills(skills::Loadout::from([id, skills::sane([id, id])[1]]));
+        w.step(
+            &Actions {
+                skill1: true,
+                aim: vec2(1.0, 0.0),
+                aim_drag: true,
+                ..Default::default()
+            },
+            &t,
         );
-        assert_eq!(form.aims(), !round, "{id:?}");
+        let PState::Skill { dir, .. } = w.player.state else {
+            panic!("{id:?} did not start: {:?}", w.player.state)
+        };
+        // 끈 쪽으로 돈다(한 틱에 다 돌지 않는 모양도 있다 — 가로지르기) · 바라보는 쪽 그대로는 -z 그대로.
+        let took = dir.x > 0.5;
+        assert!(
+            took || dir.z < -0.9,
+            "{id:?}: neither the drag nor the facing: {dir:?}"
+        );
+        assert_eq!(
+            s.form.aims(),
+            took,
+            "{id:?}: aims() vs the way it went {dir:?}"
+        );
     }
+}
+
+/// 0278 R16: 한 대상의 모양(`Form::info().aim == Aim::Sighted`)만 숄더뷰의 크로스헤어 쪽으로 나간다 — 표를 베끼지 않고 월드에
+/// 묻는다. 바라보는 쪽(+z 근처)과 다른 카메라 앞(-z)에서, 손이 겨누지 않고(끌기·스틱 없음) 쓰면 `sighted`인 모양만 -z로 시작한다.
+#[test]
+fn only_sighted_skills_follow_the_shoulder_crosshair() {
+    let t = Tuning::default();
+    for s in &skills::SKILLS {
+        let id = s.id;
+        let mut w = World::new("test", 40.0);
+        w.player.facing = 0.0;
+        w.view_yaw = Some(0.0); // 카메라 앞 = -z
+        hold_for_skill(&mut w, id);
+        w.set_skills(skills::Loadout::from([id, skills::sane([id, id])[1]]));
+        let face = w.player.facing_dir();
+        assert!(face.z > 0.9, "faces +z: {face:?}");
+        w.step(
+            &Actions {
+                skill1: true,
+                aim_ahead: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let PState::Skill { dir, .. } = w.player.state else {
+            panic!("{id:?} did not start: {:?}", w.player.state)
+        };
+        let took = dir.z < -0.9;
+        assert!(took || dir.dot(face) > 0.9, "{id:?}: neither: {dir:?}");
+        assert_eq!(
+            s.form.info().aim == skills::Aim::Sighted,
+            took,
+            "{id:?}: info().aim {:?} vs the way it went {dir:?}",
+            s.form.info().aim
+        );
+    }
+}
+
+/// 스킬 `id`를 쓸 수 있는 것을 든다: 검 → 검과 방패 → 무기 표의 차례.
+fn hold_for_skill(w: &mut World, id: skills::Id) {
+    let def = id.def();
+    if def.fits(w.grip()) {
+        return;
+    }
+    w.set_shield(Some(crate::shield::Id::Pilgrim));
+    if def.fits(w.grip()) {
+        return;
+    }
+    w.set_shield(None);
+    for arm in weapons::IDS {
+        w.set_weapon(arm);
+        if def.fits(w.grip()) {
+            return;
+        }
+    }
+    panic!("{id:?} fits nothing");
 }
 
 /// 쇠뇌의 첫 볼트 쪽(수평).
@@ -237,7 +319,7 @@ fn crossbow_shot(w: &mut World, a: Actions) -> Vec3 {
 /// 원뿔 밖(20°)의 적은 찾지 않고, 스틱을 안 기울이면 바라보는 쪽(0213 그대로).
 #[test]
 fn a_pad_stick_snaps_to_a_foe_within_the_narrow_cone() {
-    let off = |deg: f32| vec2(deg.to_radians().sin(), deg.to_radians().cos());
+    let off = |deg: f32| vec2(deg.to_radians().sin_d(), deg.to_radians().cos_d());
     let foe = vec3(0.0, 0.0, -10.0); // 앞(화면 위 = -z) 10m
     let shoot = |stick: Vec2, assist: f32| {
         let mut w = World::new("test", 40.0);
@@ -258,7 +340,7 @@ fn a_pad_stick_snaps_to_a_foe_within_the_narrow_cone() {
     assert!(d.z < -0.999, "snapped onto the foe: {d:?}");
     let d = shoot(off(5.0), 0.0);
     assert!(
-        (d.x - 5f32.to_radians().sin()).abs() < 0.01,
+        (d.x - 5f32.to_radians().sin_d()).abs() < 0.01,
         "no assist: the stick as is {d:?}"
     );
     let d = shoot(off(20.0), 8.0);
@@ -374,7 +456,7 @@ fn aim_help_skips_foes_behind_a_wall() {
         min: vec3(-3.0, 0.0, -5.2),
         max: vec3(3.0, 4.0, -4.8),
     };
-    let off = |deg: f32| vec2(deg.to_radians().sin(), deg.to_radians().cos());
+    let off = |deg: f32| vec2(deg.to_radians().sin_d(), deg.to_radians().cos_d());
     // 패드 보조: 앞 10m의 적, 스틱은 5° 빗나감.
     let assisted = |walled: bool| {
         let mut w = World::new("test", 40.0);

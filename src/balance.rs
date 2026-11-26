@@ -34,6 +34,29 @@ pub struct Build {
     pub finds: Vec<String>,
     pub tree: Tree,
     pub weapon: crate::weapons::Id,
+    /// 든 무기를 벼린 단(0180 — 0~3). `SIM_FORGE`가 있으면 그것이 앞선다.
+    pub forge: u8,
+    /// 보조무기 슬롯에 멘 무기(0272 1b — 그 종류의 보조특성이 능력치에 든다). 봇은 바꿔 들지 않는다.
+    pub sub: Option<crate::weapons::Id>,
+    /// 왼손의 방패(0274 ② — 망치도 한손이 되어 방패와 든다). 봇은 막지 않는다(패링 버튼을 한 틱만 누른다) — 쥔 꼴만 바뀐다.
+    pub shield: bool,
+    /// 재기(0274 ② — 한손검의 스킬)의 레벨(0 = 없음): 끼워 두고, 틈에 체력이 한 번 돌 만큼 빠졌으면 쓴다.
+    pub rally: u8,
+    /// 보조무기 슬롯이 비었다고 월드에 말한다(0276 — 빈 손의 결이 켜진다. 부무기 · 방패가 있으면 결은 없다).
+    pub bare: bool,
+    /// 봇의 손(0276 — 빈 손의 결을 재려고): 보통(패링 · 평타 콤보) · 구르기(패링할 때 옆으로 구르고 곧장 친다 — 그림자 걸음) ·
+    /// 강공격(틈에 평타 대신 다 모은 강공격 — 두 손 내려베기 · 이어 꿰뚫기).
+    pub style: Style,
+    /// 대검을 휘두르는 동안의 휘청 배를 바꾼다(0274 ④ — `Some(1.0)` = 휘청 줄임 없음: 그것이 보스전을 얼마나 줄이나 잰다).
+    pub flinch: Option<f32>,
+}
+
+/// 봇의 손(0276).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Style {
+    Plain,
+    Dodge,
+    Heavy,
 }
 
 /// 한 판의 결과.
@@ -77,6 +100,33 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     prog.board.cells = b.tree;
     // 벼린 단 훑기(0180): `SIM_FORGE=2`면 든 무기를 그 단까지 벼린 것으로 잰다.
     prog.weapon = Some(b.weapon);
+    prog.sub = b.sub;
+    w.set_sub(b.sub);
+    if b.shield {
+        w.set_shield(Some(crate::shield::Id::Pilgrim));
+    }
+    w.set_open_hand(b.bare);
+    w.flinch_probe = b.flinch;
+    if b.rally > 0 {
+        use crate::skills::{Id as Sk, Loadout, Pick, Slot, Ult};
+        w.set_skills(Loadout {
+            slots: [
+                Slot {
+                    id: Sk::Rally,
+                    rank: b.rally,
+                    pick: Pick::A,
+                },
+                Slot {
+                    id: Sk::Whirl,
+                    rank: 0,
+                    pick: Pick::A,
+                },
+            ],
+            ult: 0,
+            great: Ult::Flurry,
+        });
+    }
+    prog.forged.set(b.weapon, b.forge);
     if let Some(r) = std::env::var("SIM_FORGE").ok().and_then(|v| v.parse().ok()) {
         prog.forged.set(b.weapon, r);
     }
@@ -87,6 +137,27 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         .and_then(|v| v.parse::<i32>().ok())
     {
         st.dmg += d;
+    }
+    // 기력 회복 훑기(0272 1b — 보조특성의 값을 고를 때): `SIM_REGEN=1.05`면 기력 회복에 그 배를 얹어 잰다.
+    if let Some(k) = std::env::var("SIM_REGEN")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    {
+        st.stamina_regen *= k;
+    }
+    // 자세 피해 훑기(같은 까닭): `SIM_POISE=1.05`.
+    if let Some(k) = std::env::var("SIM_POISE")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    {
+        st.poise *= k;
+    }
+    // 최대 기력 훑기(0272 2단계 — 창의 보조특성): `SIM_STAMINA=3`이면 최대 기력에 그만큼을 얹어 잰다.
+    if let Some(k) = std::env::var("SIM_STAMINA")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    {
+        st.stamina_max += k;
     }
     w.apply_stats(st, true);
     w.tree = b.tree;
@@ -106,6 +177,8 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     let mut ok = false;
     let mut ring_ok = [false; 4];
     let mut parries = 0u32;
+    // 구르는 손(0276): 이 공격 번호의 틈에 이미 굴렀다.
+    let mut dodged_for: u32 = u32::MAX;
     let offbeat: f32 = std::env::var("SIM_OFFBEAT")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -211,6 +284,36 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
                     a.move_dir = vec2(1.0, 0.0);
                 }
             }
+            // 내려 딛기(0270 D 고요한 사슴): 성공이면 원판 밖으로 물러나고 뿌리 줄(한 줄·세 줄)에서 옆으로 비킨다(줄 사이의
+            // 빈 데로 — 가까운 줄에서 멀어지는 쪽) — 실패면 맞는다.
+            (EState::Tele { .. } | EState::Swing { .. } | EState::Wave { .. }, Atk::Stomp) => {
+                defending = true;
+                let rel = -to;
+                let inside = matches!(e.state, EState::Tele { .. })
+                    && dist <= crate::tuning::STOMP_R + PLAYER_RADIUS + 0.5;
+                let mut want = if inside {
+                    rel.normalize_or_zero()
+                } else {
+                    Vec3::ZERO
+                };
+                for (yaw, len) in e.root_lines() {
+                    let f = e.dir_at(yaw);
+                    let along = rel.dot(f);
+                    let off = rel - f * along;
+                    if along > 0.0
+                        && along <= len + 1.0
+                        && off.length() <= crate::tuning::ROOTS_R + PLAYER_RADIUS + 0.3
+                    {
+                        want += off.normalize_or(vec3(f.z, 0.0, -f.x));
+                    }
+                }
+                if ok && want.length_squared() > 1e-4 {
+                    // 락온 기준(앞 = 보스 쪽)의 스틱으로.
+                    let fwd = to.normalize_or(Vec3::Z);
+                    let right = fwd.cross(Vec3::Y);
+                    a.move_dir = vec2(want.dot(right), want.dot(fwd)).normalize_or_zero();
+                }
+            }
             // 종 내던지기: 떨어질 원판 안이면 빠져나오고(성공이면), 떨어진 자리의 고리는 울림처럼 뛴다.
             (EState::Tele { .. } | EState::Swing { .. }, Atk::Hurl) => {
                 defending = true;
@@ -254,8 +357,43 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         if opening && gap > 1.3 {
             a.move_dir = vec2(0.0, 1.0);
         }
-        if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy {
+        // 구르는 손(0276 — 그림자 걸음을 재려고): 틈마다 처음 한 번은 보스 쪽으로 굴러 들어가 친다(구른 뒤 첫 타). 기력은 회피 몫까지 남긴다.
+        let dodge_cost = t[crate::tuning::P::StaminaDodge];
+        if b.style == Style::Dodge
+            && opening
+            && dodged_for != e.atk_count
+            && gap <= 4.0
+            && gap > 0.6
+            && !busy
+            && matches!(w.player.state, PState::Idle)
+            && w.player.stamina >= reserve + dodge_cost
+        {
+            dodged_for = e.atk_count;
+            a.dodge = true;
+            a.move_dir = vec2(0.0, 1.0);
+        }
+        if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy && !a.dodge {
             a.attack = true;
+        }
+        // 강공격의 손(0276): 평타를 누른 채 다 모을 때까지 쥐고 뗀다(지키는 때가 오면 뗀다).
+        if b.style == Style::Heavy {
+            let full = t[crate::tuning::P::HeavyCharge]
+                * w.player.weapon.def().heavy.map_or(1.0, |h| h.charge);
+            a.attack_held = match w.player.state {
+                PState::Attack { .. } => !defending,
+                PState::Charging { t: e } => !defending && e < full,
+                _ => a.attack,
+            };
+        }
+        // 재기(0274 ②): 틈에 체력이 한 번 돌 만큼(두 눈금) 빠졌고 쿨타임이 끝났으면 — 등잔보다 먼저.
+        let rally_ready = b.rally > 0 && w.player.skill.cd[crate::skills::Id::Rally.index()] <= 0.0;
+        if rally_ready
+            && w.player.hp <= w.player.max_hp - 2 * crate::tuning::HP_UNIT
+            && opening
+            && !busy
+        {
+            a.skill1 = true;
+            a.attack = false;
         }
         // 등잔: 체력 두 눈금(20) 이하·틈·조금 떨어져 있으면.
         if w.player.hp <= 2 * crate::tuning::HP_UNIT && w.player.flask > 0 && opening && !busy {
@@ -374,6 +512,13 @@ pub fn builds() -> Vec<Build> {
             finds: vec![],
             tree: tree(0),
             weapon: W::Sword,
+            forge: 0,
+            sub: None,
+            shield: false,
+            rally: 0,
+            bare: false,
+            style: Style::Plain,
+            flinch: None,
         },
         // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 패시브 칸 둘.
         Build {
@@ -387,6 +532,13 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(2),
             weapon: W::Sword,
+            forge: 0,
+            sub: None,
+            shield: false,
+            rally: 0,
+            bare: false,
+            style: Style::Plain,
+            flinch: None,
         },
         // 둘째 판 이후(문지기 핵 둘·패시브 칸 넷): 힘 3단(강타 +1).
         Build {
@@ -400,6 +552,13 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(4),
             weapon: W::Sword,
+            forge: 0,
+            sub: None,
+            shield: false,
+            rally: 0,
+            bare: false,
+            style: Style::Plain,
+            flinch: None,
         },
         // 정원 도착(0185): 문지기 둘·마을의 잔불 — 레벨 일곱, 패시브 칸 여섯.
         Build {
@@ -413,6 +572,13 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(5),
             weapon: W::Sword,
+            forge: 0,
+            sub: None,
+            shield: false,
+            rally: 0,
+            bare: false,
+            style: Style::Plain,
+            flinch: None,
         },
         // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
         Build {
@@ -426,8 +592,97 @@ pub fn builds() -> Vec<Build> {
             finds: finds(),
             tree: tree(6),
             weapon: W::Sword,
+            forge: 0,
+            sub: None,
+            shield: false,
+            rally: 0,
+            bare: false,
+            style: Style::Plain,
+            flinch: None,
         },
     ]
+}
+
+/// 성소에 닿아 문지기 앞에 선 몸(0270 D 필드 보스 모의 — "성소에 갓 닿은 몸"): 잔불 ≈ 150 = 레벨 둘, 탑의 귀, 등잔·한 모금,
+/// 패시브 칸 하나. 첫 도착 몸(B — 마을에 닿은 몸)보다 한 걸음 앞.
+pub fn sanctuary_build() -> Build {
+    Build {
+        name: "S sanctuary, at the gate (Lv2 life1/might1, Ear, lamp+sip, Riposte1)",
+        level: Level {
+            life: 1,
+            stamina: 0,
+            might: 1,
+        },
+        worn: vec![Charm::Ear],
+        finds: vec![
+            "sanctuary.lamp.1".to_string(),
+            "sanctuary.sip.1".to_string(),
+        ],
+        tree: Tree::from_counts([0, 1, 0]),
+        weapon: crate::weapons::Id::Sword,
+        forge: 0,
+        sub: None,
+        shield: false,
+        rally: 0,
+        bare: false,
+        style: Style::Plain,
+        flinch: None,
+    }
+}
+
+/// 필드 보스 모의(0270 D): 고요한 사슴 — 성소에 갓 닿은 몸(S)은 드물게(25~40%), 둘째 지역을 마친 몸(D — 정원 도착)은
+/// 대개(70~85%) 이기게, 싸움은 60~90초. 돌리기: `cargo test stag_fight_length -- --ignored --nocapture`
+/// (`SIM_BOSS_HP`로 체력을 훑는다).
+#[test]
+#[ignore]
+fn stag_fight_length() {
+    let t = Tuning::default();
+    let runs = 120;
+    let all = builds();
+    // 둘째 지역을 마친 몸(D)은 숫돌 넷(성소 1 + 마을 3)을 지나왔다 — 벼림 0·1·2단으로 나눠 본다(0216: 정원 도착 = 벼림 1~2).
+    let forged = |b: &Build, forge: u8, name: &'static str| Build {
+        forge,
+        name,
+        ..b.clone()
+    };
+    let bs = [
+        all[0].clone(),
+        sanctuary_build(),
+        forged(&sanctuary_build(), 1, "S+1 sanctuary, forged once"),
+        all[1].clone(),
+        all[3].clone(),
+        forged(&all[3], 1, "D+1 garden arrival, forged once"),
+        forged(&all[3], 2, "D+2 garden arrival, forged twice"),
+    ];
+    for b in &bs {
+        let dummy = fight_vs(Kind::Stag, true, b, 1.0, 1, &t).secs;
+        println!("\n## Stag — {} (dummy: {dummy:.1}s)", b.name);
+        println!(
+            "p    | win  | secs(win) | taken | flasks | hp left | parries | cut | dmg plain/opened"
+        );
+        let ps: &[f32] = if std::env::var("SIM_QUICK").is_ok() {
+            &[0.5, 0.7]
+        } else {
+            &[0.25, 0.5, 0.7, 0.85, 1.0]
+        };
+        for &p in ps {
+            let m = summary(Kind::Stag, b, p, runs, &t);
+            println!(
+                "{p:.2} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>6.2} | {:>7.1} | {:>7.1} | {:>3.1} | {:.0}%/{:.0}%",
+                m.win * 100.0, m.secs, m.taken, m.flasks, m.left, m.parries, m.interrupted,
+                m.share.0 * 100.0, m.share.1 * 100.0
+            );
+        }
+    }
+}
+
+/// 모의 장치가 사슴의 수를 읽는다: 다 받아내는 봇은 문지기 앞의 몸으로도 이긴다(원판에서 물러나고 뿌리 줄을 비킨다).
+#[test]
+fn a_perfect_bot_beats_the_stag() {
+    let t = Tuning::default();
+    let f = fight_vs(Kind::Stag, false, &sanctuary_build(), 1.0, 1, &t);
+    assert!(f.won, "{f:?}");
+    assert!(f.parries > 0);
 }
 
 #[test]
@@ -457,6 +712,103 @@ fn bellkeeper_fight_length() {
     }
 }
 
+/// 보조특성 모의(0272 1b): 같은 몸·같은 씨앗으로 보조무기 슬롯만 바꿔 싸움 길이를 견준다 — 어느 보조특성도 싸움을 4% 넘게
+/// 줄이지 않아야 한다. 봇은 평타 콤보만 친다(스킬·바꿔 들기 없음): 기력 회복(검)·자세 피해(망치)는 이 모의에 그대로 들고,
+/// 속성 게이지(지팡이)·스킬 쿨타임(활)·등의 장전(쇠뇌)은 0으로 나온다(쓰는 길이 없다 — 상한은 문서에 셈으로 적는다).
+/// 돌리기: `cargo test sub_trait_fight_length -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn sub_trait_fight_length() {
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    // 짧은 싸움(문지기 15~20초)은 판마다 한두 번의 주고받음이 몇 %라 60판으로는 흔들린다 — `SIM_RUNS=300`으로 좁힌다.
+    let runs = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    let all = builds();
+    let with = |b: &Build, weapon: W, sub: Option<W>| Build {
+        weapon,
+        sub,
+        ..b.clone()
+    };
+    for (kind, bi) in [
+        (Kind::Warden, 1),
+        (Kind::Bellkeeper, 1),
+        (Kind::Bellkeeper, 3),
+        (Kind::Mossward, 3),
+    ] {
+        let b = &all[bi];
+        for (main, subs) in [
+            (
+                W::Sword,
+                &[
+                    W::Hammer,
+                    W::Staff,
+                    W::Bow,
+                    W::Crossbow,
+                    W::Spear,
+                    W::Daggers,
+                ][..],
+            ),
+            (W::Hammer, &[W::Sword, W::Spear][..]),
+            (W::Staff, &[W::Sword, W::Hammer, W::Spear][..]),
+            // 0272 2단계: 창(주무기로도).
+            (W::Spear, &[W::Sword, W::Hammer][..]),
+            // 0274 ③: 쌍단검(주무기로) · 쌍단검을 멘 검(손버릇 — 잔불만이라 0%여야 한다).
+            (W::Daggers, &[W::Sword][..]),
+        ] {
+            let base = with(b, main, None);
+            let d0 = fight_vs(kind, true, &base, 1.0, 1, &t).secs;
+            println!(
+                "\n## {kind:?} — {} — main {main:?} (dummy {d0:.1}s)",
+                b.name
+            );
+            println!("sub      | dummy    | p    | win  | secs(win) | Δsecs");
+            for p in [0.5, 0.7, 0.85] {
+                let m0 = summary(kind, &base, p, runs, &t);
+                println!(
+                    "none     | {d0:>6.1}s  | {p:.2} | {:>3.0}% | {:>9.1} |",
+                    m0.win * 100.0,
+                    m0.secs
+                );
+                for &sub in subs {
+                    let sb = with(b, main, Some(sub));
+                    let d = fight_vs(kind, true, &sb, 1.0, 1, &t).secs;
+                    let m = summary(kind, &sb, p, runs, &t);
+                    println!(
+                        "{:<8} | {d:>6.1}s {:>+5.1}% | {p:.2} | {:>3.0}% | {:>9.1} | {:>+5.1}%",
+                        format!("{sub:?}"),
+                        (d / d0 - 1.0) * 100.0,
+                        m.win * 100.0,
+                        m.secs,
+                        (m.secs / m0.secs - 1.0) * 100.0
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// 보조특성은 모의에 든다: 망치를 멘 검의 몸은 자세 피해가 늘어 있다(능력치를 합치는 한 곳을 지난다).
+#[test]
+fn the_sim_carries_the_sub_weapons_trait() {
+    let t = Tuning::default();
+    let b = Build {
+        sub: Some(crate::weapons::Id::Hammer),
+        ..builds()[0].clone()
+    };
+    let with = fight_vs(Kind::Warden, true, &b, 1.0, 1, &t);
+    let without = fight_vs(Kind::Warden, true, &builds()[0], 1.0, 1, &t);
+    assert!(with.won && without.won);
+    assert!(
+        with.secs <= without.secs,
+        "{} vs {}",
+        with.secs,
+        without.secs
+    );
+}
+
 /// 모의 장치가 살아 있나: 다 받아내는 봇은 맨몸으로도 이긴다.
 #[test]
 fn a_perfect_bot_beats_the_bellkeeper_bare_handed_with_a_sword() {
@@ -480,4 +832,290 @@ fn jump_curve() {
         a.jump = false;
         println!("{i:>2} {:.3} {:?}", w.player.air, w.player.state);
     }
+}
+
+/// 보조특성의 값 고르기(0272 1b — 한손검의 기력 회복 `SIM_REGEN` · 망치의 자세 피해 `SIM_POISE` · 2단계 창의 최대 기력 `SIM_STAMINA`): 무기 셋으로, 가장 짧은 싸움
+/// (문지기)까지 — 배를 바꿔 가며 같은 씨앗으로 견준다(보조무기 없이 능력치에 바로 얹는다).
+/// 돌리기: `SIM_REGEN=1.04 SIM_RUNS=300 cargo test --release sub_knob_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn sub_knob_probe() {
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120);
+    let all = builds();
+    for (kind, bi) in [
+        (Kind::Warden, 1),
+        (Kind::Bellkeeper, 1),
+        (Kind::Mossward, 3),
+    ] {
+        for main in [W::Sword, W::Hammer, W::Staff] {
+            let b = Build {
+                weapon: main,
+                ..all[bi].clone()
+            };
+            let d = fight_vs(kind, true, &b, 1.0, 1, &t).secs;
+            let row: Vec<String> = [0.5, 0.7, 0.85]
+                .into_iter()
+                .map(|p| {
+                    let m = summary(kind, &b, p, runs, &t);
+                    format!(
+                        "{:.2}/{:.0}% (parries {:.1}, opened {:.0}%)",
+                        m.secs,
+                        m.win * 100.0,
+                        m.parries,
+                        m.share.1 * 100.0
+                    )
+                })
+                .collect();
+            println!("{kind:?} {main:?} dummy {d:.2} | {}", row.join(" | "));
+        }
+    }
+}
+
+/// 0274 ② 종류 모의: 한손검 · 망치(한손 3연타) · 망치와 방패 · 재기를 쓰는 한손검 · 망치를 멘 한손검(보조특성 = 등잔 회복량) · 쌍단검(0274 ③)을
+/// 같은 몸·같은 씨앗으로 — 문지기(첫 도착 B) · 종지기(B) · 이끼 덮인 문지기(정원 도착 D). 성공률 0.5 · 0.7 · 0.85.
+/// 돌리기: `SIM_RUNS=300 cargo test --release class_fight_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn class_fight_probe() {
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120);
+    let all = builds();
+    for (kind, bi) in [
+        (Kind::Warden, 1),
+        (Kind::Bellkeeper, 1),
+        (Kind::Mossward, 3),
+    ] {
+        let b = &all[bi];
+        let v = |name: &'static str, weapon: W, sub: Option<W>, shield: bool, rally: u8| Build {
+            name,
+            weapon,
+            sub,
+            shield,
+            rally,
+            ..b.clone()
+        };
+        let variants = [
+            v("sword", W::Sword, None, false, 0),
+            v("sword+rally1", W::Sword, None, false, 1),
+            v("sword+rally5", W::Sword, None, false, 5),
+            v("sword/sub hammer", W::Sword, Some(W::Hammer), false, 0),
+            v("hammer", W::Hammer, None, false, 0),
+            v("hammer+shield", W::Hammer, None, true, 0),
+            v("hammer/sub sword", W::Hammer, Some(W::Sword), false, 0),
+            // 0274 ③: 쌍단검(주무기 · 보조무기로).
+            v("daggers", W::Daggers, None, false, 0),
+            v("daggers/sub sword", W::Daggers, Some(W::Sword), false, 0),
+            v("sword/sub daggers", W::Sword, Some(W::Daggers), false, 0),
+            // 0274 ④: 대검(주무기 · 보조무기로) · 휘청 줄임을 걷은 대검(그것이 싸움을 얼마나 줄이나).
+            v("greatsword", W::Greatsword, None, false, 0),
+            Build {
+                flinch: Some(1.0),
+                ..v("gs no steady", W::Greatsword, None, false, 0)
+            },
+            v(
+                "greatsword/sub sword",
+                W::Greatsword,
+                Some(W::Sword),
+                false,
+                0,
+            ),
+            v(
+                "sword/sub greatsw.",
+                W::Sword,
+                Some(W::Greatsword),
+                false,
+                0,
+            ),
+            // 다 모은 강공격의 덤(대검을 멘 보조특성)은 쥐어 모으는 손에서만 — 강공격의 손으로도 잰다.
+            Build {
+                style: Style::Heavy,
+                ..v("sword heavy-hand", W::Sword, None, false, 0)
+            },
+            Build {
+                style: Style::Heavy,
+                ..v(
+                    "sword heavy/sub gs",
+                    W::Sword,
+                    Some(W::Greatsword),
+                    false,
+                    0,
+                )
+            },
+            // 0274 ⑤: 낫(주무기 · 보조무기로 · 방패와 · 빈 손).
+            v("scythe", W::Scythe, None, false, 0),
+            v("scythe+shield", W::Scythe, None, true, 0),
+            v("scythe/sub sword", W::Scythe, Some(W::Sword), false, 0),
+            v("sword/sub scythe", W::Sword, Some(W::Scythe), false, 0),
+            Build {
+                bare: true,
+                ..v("scythe empty", W::Scythe, None, false, 0)
+            },
+            // 0274 ⑥: 완드(주무기 · 보조무기로 · 방패를 들어도(쉰다) · 빈 손). 봇은 RB를 쓰지 않는다 — 주된 공격인 저주탄은 재지 못한다.
+            v("wand", W::Wand, None, false, 0),
+            v("wand+shield", W::Wand, None, true, 0),
+            v("wand/sub sword", W::Wand, Some(W::Sword), false, 0),
+            v("sword/sub wand", W::Sword, Some(W::Wand), false, 0),
+            Build {
+                bare: true,
+                ..v("wand empty", W::Wand, None, false, 0)
+            },
+        ];
+        println!("\n## {kind:?} — {}", b.name);
+        println!("variant          | dummy  | p    | win  | secs(win) | taken | flasks");
+        // `SIM_ONLY=wand` — 이름에 그 글이 든 줄만(0274 ⑥ — 한 종류만 다시 잴 때).
+        let only = std::env::var("SIM_ONLY").ok();
+        for bv in &variants {
+            if only.as_deref().is_some_and(|o| !bv.name.contains(o)) {
+                continue;
+            }
+            let d = fight_vs(kind, true, bv, 1.0, 1, &t).secs;
+            for p in [0.5, 0.7, 0.85] {
+                let m = summary(kind, bv, p, runs, &t);
+                println!(
+                    "{:<16} | {d:>5.1}s | {p:.2} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>5.2}",
+                    bv.name,
+                    m.win * 100.0,
+                    m.secs,
+                    m.taken,
+                    m.flasks
+                );
+            }
+        }
+    }
+}
+
+/// 0276 빈 손의 결 모의: 같은 무기로 보조무기 슬롯을 비운 몸(빈 손) · 무기를 멘 몸 · 방패를 든 몸을 같은 씨앗으로 — 기준은 "빈 손이
+/// 가장 좋은 보조무기 조합보다 어느 싸움도 4% 넘게 빠르지 않다". 봇의 손을 결에 맞춘다(그림자 걸음 = 구르는 손 · 두 손 내려베기와
+/// 이어 꿰뚫기 = 강공격의 손 · 기도하는 손 = 보통 손이 마시는 등잔). 지팡이의 칸 · 활 · 쇠뇌는 봇이 원거리를 쓰지 않아 재지 못한다.
+/// 돌리기: `SIM_RUNS=300 cargo test --release bare_hand_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn bare_hand_probe() {
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60);
+    let only = std::env::var("SIM_ONLY").ok();
+    let all = builds();
+    // (주무기, 봇의 손, 견줄 보조무기 슬롯 — None = 방패)
+    let rows: [(W, Style, &[Option<W>]); 14] = [
+        (
+            W::Sword,
+            Style::Plain,
+            &[Some(W::Hammer), Some(W::Spear), Some(W::Daggers), None],
+        ),
+        (
+            W::Sword,
+            Style::Heavy,
+            &[Some(W::Hammer), Some(W::Spear), Some(W::Daggers), None],
+        ),
+        (
+            W::Hammer,
+            Style::Plain,
+            &[Some(W::Sword), Some(W::Spear), None],
+        ),
+        (W::Spear, Style::Plain, &[Some(W::Sword), Some(W::Hammer)]),
+        (W::Spear, Style::Heavy, &[Some(W::Sword), Some(W::Hammer)]),
+        (W::Daggers, Style::Plain, &[Some(W::Sword), Some(W::Hammer)]),
+        (W::Daggers, Style::Dodge, &[Some(W::Sword), Some(W::Hammer)]),
+        (W::Staff, Style::Plain, &[Some(W::Sword), Some(W::Hammer)]),
+        // 0274 ④: 대검(남김없이 휘두른다 — 분노가 두 배로 차고 가득이면 평타가 끝나지 않는다).
+        (
+            W::Greatsword,
+            Style::Plain,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
+        (
+            W::Greatsword,
+            Style::Heavy,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
+        // 0274 ⑤: 낫(땅을 짚는 손 — 뿌리 스킬 · 가시 씨앗의 범위: 봇은 스킬 · RB를 쓰지 않아 0이어야 한다).
+        (
+            W::Scythe,
+            Style::Plain,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers), None],
+        ),
+        (
+            W::Scythe,
+            Style::Heavy,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers), None],
+        ),
+        // 0274 ⑥: 완드(계약의 표 — 저주탄으로 쓰러뜨린 적만: 봇은 RB를 쓰지 않아 0이어야 한다). 방패와 들지 않는다(양손 — 방패는 쉰다).
+        (
+            W::Wand,
+            Style::Plain,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
+        (
+            W::Wand,
+            Style::Heavy,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
+    ];
+    let mut worst: f32 = f32::MIN;
+    for (kind, bi) in [
+        (Kind::Warden, 1),
+        (Kind::Bellkeeper, 1),
+        (Kind::Mossward, 3),
+    ] {
+        let b = &all[bi];
+        for (main, style, subs) in rows {
+            if only
+                .as_deref()
+                .is_some_and(|o| !format!("{main:?}").eq_ignore_ascii_case(o))
+            {
+                continue;
+            }
+            let mk = |sub: Option<W>, shield: bool, bare: bool| Build {
+                weapon: main,
+                sub,
+                shield,
+                bare,
+                style,
+                ..b.clone()
+            };
+            println!("\n## {kind:?} — {} — {main:?} / {style:?}", b.name);
+            println!("off hand       | p    | win  | secs(win) | Δ vs best");
+            for p in [0.5, 0.7, 0.85] {
+                let bare = summary(kind, &mk(None, false, true), p, runs, &t);
+                let mut best = f32::MAX;
+                let mut lines = Vec::new();
+                for &sub in subs {
+                    let m = summary(kind, &mk(sub, sub.is_none(), false), p, runs, &t);
+                    best = best.min(m.secs);
+                    let name = sub.map_or("shield".to_string(), |w| format!("{w:?}"));
+                    lines.push(format!(
+                        "{name:<14} | {p:.2} | {:>3.0}% | {:>9.1} |",
+                        m.win * 100.0,
+                        m.secs
+                    ));
+                }
+                let d = (best - bare.secs) / best * 100.0;
+                worst = worst.max(d);
+                for l in lines {
+                    println!("{l}");
+                }
+                println!(
+                    "{:<14} | {p:.2} | {:>3.0}% | {:>9.1} | {:+.1}% faster",
+                    "EMPTY",
+                    bare.win * 100.0,
+                    bare.secs,
+                    d
+                );
+            }
+        }
+    }
+    println!("\nworst: the empty hand is {worst:+.1}% faster than the best off hand");
 }

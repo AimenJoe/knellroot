@@ -1,6 +1,7 @@
 //! 스킬이 놓고 간 것의 틱(0251 R11 — `skill_tick.rs`에서 뺐다): 갈라진 땅·느려짐·솟은 뿌리, 던진 무기, 불티 마당, 그리고
 //! 놓인 것·되울림이 적에게 닿는 타(`skill_touch`·`skill_blast`·`echo_ring`).
 use super::*;
+use crate::det::Det;
 
 impl World {
     pub(in crate::world) fn tick_skill_fields(&mut self, t: &Tuning, dt: f32) {
@@ -25,6 +26,18 @@ impl World {
             en.marks.slow = 1.0;
             en.marks.snare = (en.marks.snare - dt).max(0.0);
             en.marks.bind = (en.marks.bind - dt).max(0.0);
+            // 오금(0274 ②b): 잡몹은 `HAMSTRING_SLOW`, 문지기는 묶임과 같은 `ROOT_BOSS_SLOW`(휘청이지 않고 느려지기만).
+            en.marks.hamstring = (en.marks.hamstring - dt).max(0.0);
+            // 저주의 표 · 계약의 표(0274 ⑥ — 완드).
+            en.marks.hex = (en.marks.hex - dt).max(0.0);
+            en.marks.pact = (en.marks.pact - dt).max(0.0);
+            if en.marks.hamstring > 0.0 && en.active() {
+                en.marks.slow = en.marks.slow.min(if en.boss {
+                    crate::tuning::ROOT_BOSS_SLOW
+                } else {
+                    crate::tuning::HAMSTRING_SLOW
+                });
+            }
             if en.boss || !en.active() {
                 continue;
             }
@@ -169,10 +182,34 @@ impl World {
     pub(super) fn tick_fields(&mut self, t: &Tuning, dt: f32) {
         let pp = self.player.pos;
         let mut due: Vec<Field> = Vec::new();
+        let enemies = &self.enemies;
         for f in &mut self.skill_fields {
             f.age += dt;
-            if f.follow {
-                f.pos = pp;
+            match f.kind {
+                FieldKind::Embers { follow, .. } => {
+                    if follow {
+                        f.pos = pp;
+                    }
+                }
+                // 흐르는 눈발(0270 C3 ㄱ).
+                FieldKind::Drift { flow } => {
+                    if flow != Vec3::ZERO {
+                        f.pos += flow * dt;
+                    }
+                }
+                // 덫(0270 C3 — 뿌리 덫): 깨어 있는 적이 들어서면 한 번 솟고 사라진다.
+                FieldKind::Trap { .. } => {
+                    if enemies
+                        .iter()
+                        .any(|en| en.active() && f.holds(en.pos, en.radius))
+                    {
+                        f.pulses += 1;
+                        due.push(*f);
+                        f.age = f.secs;
+                    }
+                    continue;
+                }
+                FieldKind::Still => {}
             }
             let next = f.every * (f.pulses + 1) as f32;
             if f.age + 1e-4 >= next && next <= f.secs + 1e-4 {
@@ -185,7 +222,7 @@ impl World {
                 .skill_fields
                 .iter()
                 .filter(|f| f.holds(en.pos, en.radius))
-                .map(|f| f.kindle)
+                .map(|f| f.kindle())
                 .max()
                 .unwrap_or(0);
         }
@@ -211,11 +248,62 @@ impl World {
                             flat: false,
                         },
                     );
+                    // 쇠 덫(0276): 이빨이 문 잡몹은 `SNARE_BIND`초 걷지 못한다(뿌리 솟기의 묶음과 같은 표지), 문지기는 그만큼 느려지기만.
+                    if f.iron() {
+                        let en = &mut self.enemies[i];
+                        if en.boss {
+                            en.marks.hamstring = en.marks.hamstring.max(crate::tuning::SNARE_BIND);
+                        } else if en.hp > 0 {
+                            en.marks.bind = en.marks.bind.max(crate::tuning::SNARE_BIND);
+                        }
+                    }
+                }
+                // 화약 덫(0272 — 충격): 뿌리가 아니라 화약이 터진다.
+                let powder = f.dose.0 == crate::status::Kind::Shock;
+                if f.is_trap() && powder {
+                    ev.push(Event::Boom { at: f.pos });
+                } else if f.iron() {
+                    // 쇠 덫(0276): 이빨이 문다 — 뿌리는 솟지 않는다.
+                    ev.push(Event::SnareSnap {
+                        at: vec3(f.pos.x, self.ground_y(f.pos), f.pos.z),
+                    });
+                } else if f.is_trap() {
+                    // 솟는 덫: 씨 자리와 둘레에서 뿌리가 솟는다(그림 — 뿌리 솟기의 뿌리와 같은 것).
+                    let g = vec3(f.pos.x, self.ground_y(f.pos), f.pos.z);
+                    for k in 0..=TRAP_SPIKES {
+                        let a = k as f32 / TRAP_SPIKES as f32 * std::f32::consts::TAU;
+                        let r = if k == TRAP_SPIKES {
+                            0.0
+                        } else {
+                            f.radius * 0.6
+                        };
+                        self.skill_spikes.push(Spike {
+                            pos: g + vec3(a.sin_d() * r, 0.0, a.cos_d() * r),
+                            age: 0.0,
+                            lean: vec3(a.sin_d() * 0.15, 0.0, a.cos_d() * 0.15),
+                        });
+                    }
+                    ev.push(Event::RootSpike { at: g });
                 }
                 ev.push(Event::FieldPulse {
                     at: f.pos,
                     radius: f.radius,
+                    kind: f.dose.0,
                 });
+                // 덫의 마지막 가시(뿌리 덫의 맺음): 솟은 자리가 크게 한 번 더.
+                if let FieldKind::Trap {
+                    spire: Some((radius, damage)),
+                    ..
+                } = f.kind
+                {
+                    let at = f.pos;
+                    self.skill_blast(t, &mut ev, at, radius, damage, NO_DOSE, true);
+                    ev.push(if powder {
+                        Event::Boom { at }
+                    } else {
+                        Event::RootSpike { at }
+                    });
+                }
             }
             self.skill_ev = ev;
         }
@@ -233,6 +321,8 @@ impl World {
         c: &Touch,
     ) -> bool {
         let snare = self.snare_secs();
+        // 날카로움의 덤(0270 C5)은 손의 타에만 — 타입이 스스로 낸 피해(`flat`)는 아니다.
+        let knack = if c.flat { Knack::NONE } else { self.knack() };
         let en = &mut self.enemies[i];
         if !en.boss {
             en.marks.snare = en.marks.snare.max(snare);
@@ -241,14 +331,22 @@ impl World {
         if c.damage > 0 {
             let crit = c.crit && en.exposed > 0.0;
             let bonus = if c.flat { 0 } else { self.stats.dmg };
-            en.hp -= hurt_by(en, bonus + c.damage, crit, self.stats.opened_dmg, t);
+            en.hp -= wound(
+                en,
+                bonus + c.damage,
+                crit,
+                self.stats.opened_dmg,
+                knack,
+                t,
+                ev,
+            );
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit { at });
             }
-            en.hurt = 0.15;
+            en.struck();
             ev.push(Event::Hit { at });
-            self.skill_hit_tick = true;
+            self.notes.skill_hit = true;
         }
         if c.knock != Vec3::ZERO {
             en.knock = c.knock;

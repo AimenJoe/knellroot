@@ -11,7 +11,7 @@ impl App {
             return;
         }
         // 단추가 가로라 좌우로도 고른다(위·아래도 그대로).
-        ui::menu_input(&mut self.cursor, 2, a.menu_left, a.menu_right);
+        ui::menu_input(&mut self.menu.cursor, 2, a.menu_left, a.menu_right);
         let Some(i) = self.menu_pick(a, 2) else {
             return;
         };
@@ -62,7 +62,10 @@ impl App {
         self.go(next);
         // 줄이 준 가게(벼린 단을 거둠): 돌아온 커서는 묻기 전의 자리다 — 줄 안으로.
         if yes && matches!(k, flow::Ask::Recall(_)) {
-            self.cursor = self.cursor.min(self.shop_list().len().saturating_sub(1));
+            self.menu.cursor = self
+                .menu
+                .cursor
+                .min(self.shop_list().len().saturating_sub(1));
         }
     }
 
@@ -70,13 +73,13 @@ impl App {
         let s = s();
         // 아래 칸을 그 커서 그대로 깐다(무엇을 묻는지 보이게).
         if let Some(e) = self.stack.under().copied() {
-            let (cursor, view) = (self.cursor, self.view);
-            (self.cursor, self.view) = (e.cursor, e.view);
+            let (cursor, view) = (self.menu.cursor, self.menu.view);
+            (self.menu.cursor, self.menu.view) = (e.cursor, e.view);
             self.draw_layered(f, e.scene);
-            (self.cursor, self.view) = (cursor, view);
+            (self.menu.cursor, self.menu.view) = (cursor, view);
         }
         // 묻는 창은 누를 자리를 제 단추와 창 밖만 남긴다(nail).
-        self.hits.clear();
+        self.menu.hits.clear();
         #[cfg(feature = "dev")]
         crate::ui::check::forget();
         self.ui.dim(0.55);
@@ -167,7 +170,9 @@ impl App {
             panel.w - u * 32.0,
             u * btn_h,
         );
-        let hits = self.ui.buttons(&[yes, s.ask_cancel], self.cursor, area);
+        let hits = self
+            .ui
+            .buttons(&[yes, s.ask_cancel], self.menu.cursor, area);
         self.push_hits(&hits);
         self.push_outside(panel);
         self.menu_hint(

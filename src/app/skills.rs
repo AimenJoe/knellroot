@@ -1,7 +1,10 @@
 //! 기술 화면(0161 — 옛 나무 창·기술 판·멈춤의 기술 창을 하나로, 0160 시안 1의 방향). 화로와 멈춤이 같은 화면을 연다:
 //! 화로(`edit`)에서는 올리기·열기·고르기 바꾸기·되돌리기까지, 멈춤에서는 읽기와 끼우기만.
 //!
-//! - 왼쪽: 갈래 셋(흐름·맞받기·자리) × 줄 셋(처음부터 / 쓴 점수 4 / 쓴 점수 8)의 **칸 그림**. 스킬 = 네모 + 단의 점 다섯,
+//! - 맨 위: **판 줄**(0270 C2 — 몸 · 결투 · 방패 · 망치 · 지팡이 · 원거리, `plates::PLATES`). 판 하나만 보인다 — 열면 든 무기의 판
+//!   (맨손은 결투의 꼴). 맨 윗줄에서 위 = 판 줄, 판 줄에서 옆 = 판 바꾸기, 아래 = 격자로. 든 무기·부무기의 판에 금빛 표지.
+//! - 왼쪽: 몸의 판 = 갈래 셋(흐름·맞받기·자리)의 패시브·다리·맺음(줄은 쓴 점수 합), 무기 판 = 대표 타입 두 갈래 + 가운데 × 줄 셋
+//!   (첫 스킬 / 둘째 스킬 / 결과 큰 기술 — 줄은 그 판에 쓴 점수, `plates::offer_on`)의 **칸 그림**. 스킬 = 네모 + 단의 점 다섯,
 //!   큰 기술 = 여덟모 + 마름모 점 셋, 패시브 = 동그라미. 그림은 터치 버튼의 13×13 도트(`touch::skill_icon`·`ult_icon`)와
 //!   패시브의 것(`icons::cell_mask`). 밝기 넷(색만으로 말하지 않는다): 익힘 = 금빛 테·채운 면 / 지금 살 수 있음 = 민트 점선 /
 //!   못 삼·잠김 = 흐림 / 고른 칸 = 밝은 바깥 테. 끼운 스킬은 칸 번호 표지(1·2·큰), 3단부터는 고르기 표지.
@@ -14,6 +17,8 @@
 use super::frame::Window;
 use super::menu::Hit;
 use super::*;
+use crate::det::Det;
+use crate::plates::{self, Col, Plate, Seat, PLATES};
 use crate::progression::{Cell, BRANCHES};
 use crate::skills::{
     self as sk, Board, Entry, Form, Offer, Pick, ENTRIES, NE, PICK_RANK, SIZE_RANK,
@@ -24,8 +29,9 @@ use crate::weapons::Grip;
 const ALERT: f32 = 1.4;
 /// 상세 칸이 넘칠 때 굴림 표시(▲▼)에 비워 두는 맨 아래 줄의 높이(창 단위).
 const PANE_MARKS: f32 = 9.0;
-/// 커서의 자리: 판의 칸들(`ENTRIES`의 자리) 다음이 "되돌리기" 단추.
+/// 커서의 자리: 판의 칸들(`ENTRIES`의 자리) 다음이 "되돌리기" 단추, 그다음이 판 줄(0270 C2 — 거기서 옆 걸음 = 판 바꾸기).
 pub(super) const RESPEC: usize = NE;
+pub(super) const STRIP: usize = NE + 1;
 
 /// 따뜻한 흰빛(익힌 칸의 그림·고른 칸의 테) — 키캡 글과 같은 빛.
 const CREAM: Color = ui::KEY_TEXT;
@@ -50,6 +56,29 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Swallow => (s.skill_swallow, s.skill_swallow_d),
         sk::Id::Bash => (s.skill_bash, s.skill_bash_d),
         sk::Id::Roots => (s.skill_roots, s.skill_roots_d),
+        sk::Id::Stitch => (s.skill_stitch, s.skill_stitch_d),
+        sk::Id::Ram => (s.skill_ram, s.skill_ram_d),
+        sk::Id::Toll => (s.skill_toll, s.skill_toll_d),
+        sk::Id::Swat => (s.skill_swat, s.skill_swat_d),
+        sk::Id::Ripple => (s.skill_ripple, s.skill_ripple_d),
+        sk::Id::Snow => (s.skill_snow, s.skill_snow_d),
+        sk::Id::Flare => (s.skill_flare, s.skill_flare_d),
+        sk::Id::Snare => (s.skill_snare, s.skill_snare_d),
+        sk::Id::Fuse => (s.skill_fuse, s.skill_fuse_d),
+        sk::Id::Mine => (s.skill_mine, s.skill_mine_d),
+        sk::Id::Skewer => (s.skill_skewer, s.skill_skewer_d),
+        sk::Id::Pole => (s.skill_pole, s.skill_pole_d),
+        sk::Id::Pin => (s.skill_pin, s.skill_pin_d),
+        sk::Id::Pommel => (s.skill_pommel, s.skill_pommel_d),
+        sk::Id::Shove => (s.skill_shove, s.skill_shove_d),
+        sk::Id::Rally => (s.skill_rally, s.skill_rally_d),
+        sk::Id::Slip => (s.skill_slip, s.skill_slip_d),
+        sk::Id::Sunder => (s.skill_sunder, s.skill_sunder_d),
+        sk::Id::Sear => (s.skill_sear, s.skill_sear_d),
+        sk::Id::Reap => (s.skill_reap, s.skill_reap_d),
+        sk::Id::Harvest => (s.skill_harvest, s.skill_harvest_d),
+        sk::Id::Hex => (s.skill_hex, s.skill_hex_d),
+        sk::Id::Blight => (s.skill_blight, s.skill_blight_d),
     }
 }
 
@@ -60,6 +89,14 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Upend => (s.ult_upend, s.ult_upend_d),
         sk::Ult::Flurry => (s.ult_flurry, s.ult_flurry_d),
         sk::Ult::Line => (s.ult_line, s.ult_line_d),
+        sk::Ult::Bell => (s.ult_bell, s.ult_bell_d),
+        sk::Ult::Blizzard => (s.ult_blizzard, s.ult_blizzard_d),
+        sk::Ult::Rain => (s.ult_rain, s.ult_rain_d),
+        sk::Ult::Gale => (s.ult_gale, s.ult_gale_d),
+        sk::Ult::Ambush => (s.ult_ambush, s.ult_ambush_d),
+        sk::Ult::Tempest => (s.ult_tempest, s.ult_tempest_d),
+        sk::Ult::Grove => (s.ult_grove, s.ult_grove_d),
+        sk::Ult::Price => (s.ult_price, s.ult_price_d),
     }
 }
 
@@ -85,6 +122,18 @@ pub(super) fn cell_pick_text(c: Cell, b: bool) -> (&'static str, &'static str, &
     match (b, c.pick_b()) {
         (true, Some((name, desc))) => (s.pick_mark_b, tr(name), tr(desc)),
         _ => (s.pick_mark_a, tr(d.name), tr(d.desc)),
+    }
+}
+
+/// 속성 패시브의 고르기(0274 ② — 울림): 표지·이름·한 줄 — I = 결 자체, II = `Vein::pick_b`.
+pub(super) fn vein_pick_text(
+    v: crate::progression::Vein,
+    b: bool,
+) -> (&'static str, &'static str, &'static str) {
+    let s = s();
+    match (b, v.pick_b()) {
+        (true, Some((name, desc))) => (s.pick_mark_b, tr(name), tr(desc)),
+        _ => (s.pick_mark_a, tr(v.name()), tr(v.desc())),
     }
 }
 
@@ -118,6 +167,52 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Bash, Pick::B) => (s.pick_bash_b, s.pick_bash_b_d),
         (sk::Id::Roots, Pick::A) => (s.pick_roots_a, s.pick_roots_a_d),
         (sk::Id::Roots, Pick::B) => (s.pick_roots_b, s.pick_roots_b_d),
+        (sk::Id::Stitch, Pick::A) => (s.pick_stitch_a, s.pick_stitch_a_d),
+        (sk::Id::Stitch, Pick::B) => (s.pick_stitch_b, s.pick_stitch_b_d),
+        (sk::Id::Ram, Pick::A) => (s.pick_ram_a, s.pick_ram_a_d),
+        (sk::Id::Ram, Pick::B) => (s.pick_ram_b, s.pick_ram_b_d),
+        (sk::Id::Toll, Pick::A) => (s.pick_toll_a, s.pick_toll_a_d),
+        (sk::Id::Toll, Pick::B) => (s.pick_toll_b, s.pick_toll_b_d),
+        (sk::Id::Swat, Pick::A) => (s.pick_swat_a, s.pick_swat_a_d),
+        (sk::Id::Swat, Pick::B) => (s.pick_swat_b, s.pick_swat_b_d),
+        (sk::Id::Ripple, Pick::A) => (s.pick_ripple_a, s.pick_ripple_a_d),
+        (sk::Id::Ripple, Pick::B) => (s.pick_ripple_b, s.pick_ripple_b_d),
+        (sk::Id::Snow, Pick::A) => (s.pick_snow_a, s.pick_snow_a_d),
+        (sk::Id::Snow, Pick::B) => (s.pick_snow_b, s.pick_snow_b_d),
+        (sk::Id::Flare, Pick::A) => (s.pick_flare_a, s.pick_flare_a_d),
+        (sk::Id::Flare, Pick::B) => (s.pick_flare_b, s.pick_flare_b_d),
+        (sk::Id::Snare, Pick::A) => (s.pick_snare_a, s.pick_snare_a_d),
+        (sk::Id::Snare, Pick::B) => (s.pick_snare_b, s.pick_snare_b_d),
+        (sk::Id::Fuse, Pick::A) => (s.pick_fuse_a, s.pick_fuse_a_d),
+        (sk::Id::Fuse, Pick::B) => (s.pick_fuse_b, s.pick_fuse_b_d),
+        (sk::Id::Mine, Pick::A) => (s.pick_mine_a, s.pick_mine_a_d),
+        (sk::Id::Mine, Pick::B) => (s.pick_mine_b, s.pick_mine_b_d),
+        (sk::Id::Skewer, Pick::A) => (s.pick_skewer_a, s.pick_skewer_a_d),
+        (sk::Id::Skewer, Pick::B) => (s.pick_skewer_b, s.pick_skewer_b_d),
+        (sk::Id::Pole, Pick::A) => (s.pick_pole_a, s.pick_pole_a_d),
+        (sk::Id::Pole, Pick::B) => (s.pick_pole_b, s.pick_pole_b_d),
+        (sk::Id::Pin, Pick::A) => (s.pick_pin_a, s.pick_pin_a_d),
+        (sk::Id::Pin, Pick::B) => (s.pick_pin_b, s.pick_pin_b_d),
+        (sk::Id::Pommel, Pick::A) => (s.pick_pommel_a, s.pick_pommel_a_d),
+        (sk::Id::Pommel, Pick::B) => (s.pick_pommel_b, s.pick_pommel_b_d),
+        (sk::Id::Shove, Pick::A) => (s.pick_shove_a, s.pick_shove_a_d),
+        (sk::Id::Shove, Pick::B) => (s.pick_shove_b, s.pick_shove_b_d),
+        (sk::Id::Rally, Pick::A) => (s.pick_rally_a, s.pick_rally_a_d),
+        (sk::Id::Rally, Pick::B) => (s.pick_rally_b, s.pick_rally_b_d),
+        (sk::Id::Slip, Pick::A) => (s.pick_slip_a, s.pick_slip_a_d),
+        (sk::Id::Slip, Pick::B) => (s.pick_slip_b, s.pick_slip_b_d),
+        (sk::Id::Sunder, Pick::A) => (s.pick_sunder_a, s.pick_sunder_a_d),
+        (sk::Id::Sunder, Pick::B) => (s.pick_sunder_b, s.pick_sunder_b_d),
+        (sk::Id::Sear, Pick::A) => (s.pick_sear_a, s.pick_sear_a_d),
+        (sk::Id::Sear, Pick::B) => (s.pick_sear_b, s.pick_sear_b_d),
+        (sk::Id::Reap, Pick::A) => (s.pick_reap_a, s.pick_reap_a_d),
+        (sk::Id::Reap, Pick::B) => (s.pick_reap_b, s.pick_reap_b_d),
+        (sk::Id::Harvest, Pick::A) => (s.pick_harvest_a, s.pick_harvest_a_d),
+        (sk::Id::Harvest, Pick::B) => (s.pick_harvest_b, s.pick_harvest_b_d),
+        (sk::Id::Hex, Pick::A) => (s.pick_hex_a, s.pick_hex_a_d),
+        (sk::Id::Hex, Pick::B) => (s.pick_hex_b, s.pick_hex_b_d),
+        (sk::Id::Blight, Pick::A) => (s.pick_blight_a, s.pick_blight_a_d),
+        (sk::Id::Blight, Pick::B) => (s.pick_blight_b, s.pick_blight_b_d),
     };
     (mark, name, desc)
 }
@@ -137,6 +232,29 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Swallow => s.cap_swallow,
         sk::Id::Bash => s.cap_bash,
         sk::Id::Roots => s.cap_roots,
+        sk::Id::Stitch => s.cap_stitch,
+        sk::Id::Ram => s.cap_ram,
+        sk::Id::Toll => s.cap_toll,
+        sk::Id::Swat => s.cap_swat,
+        sk::Id::Ripple => s.cap_ripple,
+        sk::Id::Snow => s.cap_snow,
+        sk::Id::Flare => s.cap_flare,
+        sk::Id::Snare => s.cap_snare,
+        sk::Id::Fuse => s.cap_fuse,
+        sk::Id::Mine => s.cap_mine,
+        sk::Id::Skewer => s.cap_skewer,
+        sk::Id::Pole => s.cap_pole,
+        sk::Id::Pin => s.cap_pin,
+        sk::Id::Pommel => s.cap_pommel,
+        sk::Id::Shove => s.cap_shove,
+        sk::Id::Rally => s.cap_rally,
+        sk::Id::Slip => s.cap_slip,
+        sk::Id::Sunder => s.cap_sunder,
+        sk::Id::Sear => s.cap_sear,
+        sk::Id::Reap => s.cap_reap,
+        sk::Id::Harvest => s.cap_harvest,
+        sk::Id::Hex => s.cap_hex,
+        sk::Id::Blight => s.cap_blight,
     }
 }
 
@@ -159,29 +277,33 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
     let s = s();
     let d = id.def();
     let harmless = d.damage == 0;
+    // 재기(0274) · 생기 거두기(0274 ⑤): 단이 올리는 것은 도는 체력(거두기는 피해도 같은 배로).
+    let mends = d.form.info().mends;
     match rank {
         0 | 1 => s.sk_rank_learn.to_string(),
+        2 if mends => fill(s.rk_heal, &[&pct(sk::RANK2_DAMAGE)]),
         // 되울림의 2단은 이어지는 시간(0158 G2).
         2 if matches!(d.form, Form::Echo { .. }) => fill(s.rk_secs, &[&num(sk::RANK2_SECS)]),
         2 if harmless => fill(s.rk_stagger, &[&format!("{:.1}", sk::RANK2_STAGGER)]),
         2 => fill(s.rk_damage, &[&pct(sk::RANK2_DAMAGE)]),
         r if r == PICK_RANK => s.sk_rank_pick.to_string(),
         r if r == SIZE_RANK => {
-            let t = match d.form {
-                Form::Ring { .. } | Form::Brace { .. } | Form::Echo { .. } | Form::Field { .. } => {
-                    s.rk_radius
-                }
-                Form::Lane { .. } | Form::Erupt { .. } => s.rk_length,
-                Form::Pull { .. } | Form::Throw { .. } | Form::Hop { .. } => s.rk_range,
-                Form::Cone { .. } | Form::Bash { .. } => s.rk_arc,
+            let t = match d.form.info().grows {
+                sk::Grow::Radius => s.rk_radius,
+                sk::Grow::Length => s.rk_length,
+                sk::Grow::Range => s.rk_range,
+                sk::Grow::Arc => s.rk_arc,
             };
             fill(t, &[&pct(sk::RANK4_SIZE)])
         }
         _ => {
             let mut parts = Vec::new();
+            // 5단의 피해(재기는 도는 체력)는 2단의 몫에 더한 것(합 +30%).
+            let more = pct(1.0 + sk::RANK5_DAMAGE - sk::RANK2_DAMAGE);
+            if mends {
+                parts.push(fill(s.rk_heal_more, &[&more]));
+            }
             if !harmless {
-                // 5단의 피해는 2단의 몫에 더한 것(합 +30%).
-                let more = pct(1.0 + sk::RANK5_DAMAGE - sk::RANK2_DAMAGE);
                 parts.push(fill(s.rk_damage_more, &[&more]));
             }
             parts.push(fill(s.rk_cooldown, &[&pct(sk::RANK5_COOLDOWN)]));
@@ -205,19 +327,61 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         ),
         (sk::Ult::Line, 2) => fill(s.rk_line_len, &[&num(sk::LINE.len2)]),
         (sk::Ult::Line, _) => fill(s.rk_line_dmg, &[&sk::LINE.damage3.to_string()]),
+        (sk::Ult::Bell, 2) => fill(s.rk_bell_radius, &[&num(sk::BELL.radius2)]),
+        (sk::Ult::Bell, _) => fill(s.rk_line_dmg, &[&sk::BELL.damage3.to_string()]),
+        (sk::Ult::Blizzard, 2) => fill(s.rk_flurry_secs, &[&num(sk::BLIZZARD.secs2)]),
+        (sk::Ult::Blizzard, _) => fill(s.rk_line_dmg, &[&sk::BLIZZARD.damage3.to_string()]),
+        (sk::Ult::Rain, 2) => fill(s.rk_flurry_secs, &[&num(sk::RAIN.secs2)]),
+        (sk::Ult::Rain, _) => fill(s.rk_line_dmg, &[&sk::RAIN.damage3.to_string()]),
+        (sk::Ult::Gale, 2) => fill(s.rk_line_len, &[&num(sk::GALE.len2)]),
+        (sk::Ult::Gale, _) => fill(s.rk_line_dmg, &[&sk::GALE.last3.to_string()]),
+        (sk::Ult::Ambush, 2) => fill(s.rk_ambush_range, &[&num(sk::AMBUSH.range2)]),
+        (sk::Ult::Ambush, _) => fill(s.rk_line_dmg, &[&sk::AMBUSH.last3.to_string()]),
+        (sk::Ult::Tempest, 2) => fill(s.rk_tempest_radius, &[&num(sk::TEMPEST.radius2)]),
+        (sk::Ult::Tempest, _) => fill(s.rk_line_dmg, &[&sk::TEMPEST.last3.to_string()]),
+        // 깨어나는 숲(0274 ⑤): 2단 = 가장 바깥 고리의 둘레, 3단 = 마지막 고리의 피해.
+        (sk::Ult::Grove, 2) => fill(s.rk_bell_radius, &[&num(sk::GROVE.radius_at(2, 2))]),
+        (sk::Ult::Grove, _) => fill(s.rk_line_dmg, &[&sk::GROVE.last3.to_string()]),
+        // 치른 값(0274 ⑥): 2단 = 둘레, 3단 = 터지는 울림의 피해.
+        (sk::Ult::Price, 2) => fill(s.rk_bell_radius, &[&num(sk::PRICE.radius2)]),
+        (sk::Ult::Price, _) => fill(s.rk_line_dmg, &[&sk::PRICE.toll3.to_string()]),
     }
 }
 
-/// 칸의 갈래·종류 줄: "스킬 · 흐름 · 대기 7초"(대기는 지금 단의 값) / "큰 기술 · 자리" / "패시브 · 맞받기".
+/// 판의 이름(0270 C2 → 0272: 공통 · 종류의 이름 · 방패).
+pub(super) fn plate_name(p: Plate) -> &'static str {
+    tr(p.name())
+}
+
+/// 타입의 이름 — 물리도 이름이 있다(무기 판의 갈래 머리·스킬의 종류 줄).
+pub(super) fn kind_name(k: crate::status::Kind) -> &'static str {
+    match k {
+        crate::status::Kind::Physical => s().sk_physical,
+        _ => crate::i18n::ail_name(k),
+    }
+}
+
+/// 칸의 갈래·종류 줄: "스킬 · 균열 · 대기 7초"(스킬은 무기 판의 칸이라 갈래 대신 타입 — 0270 C2, 대기는 지금 단의 값) /
+/// "큰 기술 · 방패 · 망치"(그 큰 기술이 서는 판) / "패시브 · 맞받기".
 pub(super) fn kind_line(board: &Board, e: Entry) -> String {
     let s = s();
     let branch = tr(e.branch().name());
     match e {
         Entry::Skill(id) => {
             let eff = id.def().at(board.rank[id.index()], board.pick[id.index()]);
-            fill(s.sk_kind_skill, &[branch, &num(eff.skill.cooldown)])
+            fill(
+                s.sk_kind_skill,
+                &[kind_name(id.def().kind), &num(eff.skill.cooldown)],
+            )
         }
-        Entry::Ult(_) => fill(s.sk_kind_ult, &[branch]),
+        Entry::Ult(u) => {
+            let on: Vec<&str> = PLATES
+                .iter()
+                .filter(|p| p.great() == Some(u))
+                .map(|&p| plate_name(p))
+                .collect();
+            fill(s.sk_kind_ult, &[&on.join(" · ")])
+        }
         Entry::Cell(c) if c.pick_b().is_some() => fill(s.sk_kind_cell_pick, &[branch]),
         Entry::Cell(_) => fill(s.sk_kind_cell, &[branch]),
         Entry::Key(_) => fill(s.sk_kind_key, &[branch]),
@@ -239,8 +403,9 @@ pub(super) enum Look {
 }
 
 /// 칸의 밝기와 "다음 단을 지금 살 수 있나"(익힌 칸도 더 올릴 수 있으면 참 — 다음 단의 점이 민트).
-pub(super) fn look(board: &Board, total: u32, e: Entry) -> (Look, bool) {
-    let offer = board.offer(e, total);
+/// 판 `plate`에서 본 것(0270 C2 — 무기 판은 그 판의 줄, `plates::offer_on`).
+pub(super) fn look(plate: Plate, board: &Board, total: u32, e: Entry) -> (Look, bool) {
+    let offer = plates::offer_on(plate, board, e, total);
     let ready = offer == Offer::Ready;
     let look = if board.rank(e) >= 1 {
         Look::Owned
@@ -256,10 +421,16 @@ pub(super) fn look(board: &Board, total: u32, e: Entry) -> (Look, bool) {
 }
 
 /// 고른 칸의 상태 한 줄과 그 빛(민트 = 지금 할 수 있다, 흐림 = 못 한다, 금빛 = 다 했다).
-pub(super) fn state_line(board: &Board, total: u32, e: Entry, edit: bool) -> (String, Color) {
+pub(super) fn state_line(
+    plate: Plate,
+    board: &Board,
+    total: u32,
+    e: Entry,
+    edit: bool,
+) -> (String, Color) {
     let s = s();
     let price = e.price(board.rank(e)).to_string();
-    match board.offer(e, total) {
+    match plates::offer_on(plate, board, e, total) {
         Offer::Full if matches!(e, Entry::Cell(_) | Entry::Link(_) | Entry::Vein(_)) => {
             (s.sk_st_open_cell.to_string(), AMBER)
         }
@@ -268,6 +439,10 @@ pub(super) fn state_line(board: &Board, total: u32, e: Entry, edit: bool) -> (St
         Offer::Swap if !edit => (s.sk_st_key_view.to_string(), INK),
         Offer::Swap => (s.sk_st_key_swap.to_string(), ui::MINT),
         Offer::Full => (s.board_full.to_string(), AMBER),
+        // 무기 판의 줄은 그 판에 쓴 점수로 연다(0270 C2).
+        Offer::Locked(n) if plate.seat(e).is_some() => {
+            (fill(s.sk_st_plate_locked, &[&n.to_string()]), DIM)
+        }
         Offer::Locked(n) => (fill(s.sk_st_locked, &[&n.to_string()]), DIM),
         // 0215: 길이 끊겼다 · 맺음은 그 갈래에 더 써야.
         Offer::Cut => match e {
@@ -314,6 +489,7 @@ pub(super) struct Kits {
 }
 
 pub(super) fn node_acts(
+    plate: Plate,
     board: &Board,
     total: u32,
     kits: &Kits,
@@ -322,7 +498,7 @@ pub(super) fn node_acts(
     edit: bool,
 ) -> Vec<Do> {
     let mut v = Vec::new();
-    let offer = board.offer(e, total);
+    let offer = plates::offer_on(plate, board, e, total);
     if edit && matches!(offer, Offer::Ready | Offer::Swap) {
         v.push(Do::Buy);
     }
@@ -347,6 +523,10 @@ pub(super) fn node_acts(
         Entry::Ult(u) if board.has_ult(u) && board.wearable_ult(great) != u => v.push(Do::WearUlt),
         // 숫자 칸의 고르기(0215 D): 연 칸이면 화로에서 값 없이 바꾼다.
         Entry::Cell(c) if edit && c.pick_b().is_some() && board.cells.has(c) => v.push(Do::Flip),
+        // 속성 패시브의 고르기(0274 ② — 울림): 연 결이면 화로에서 값 없이 바꾼다.
+        Entry::Vein(vn) if edit && vn.pick_b().is_some() && board.cells.veined(vn) => {
+            v.push(Do::Flip)
+        }
         _ => {}
     }
     // 멈춤(0173): 점수가 있어 올릴 수 있는 칸인데 올리는 줄이 없으면 왜인지 알 수 없었다 — 끝에 흐린 줄로 남긴다.
@@ -366,33 +546,36 @@ pub(super) fn wear_skill(worn: [sk::Id; 2], slot: usize, id: sk::Id) -> [sk::Id;
     out
 }
 
-/// 그 스킬을 쓰는 무기 갈래의 이름들(" · "로 이은 글 — 어느 무기나 되면 그 말).
+/// 그 스킬을 쓰는 무기 종류의 이름들(" · "로 이은 글 — 어느 무기나 되면 그 말, 0272). 한손 종류는 방패로 갈린다: 방패를 들어도
+/// 되면 이름만, 방패 없이만 되면 "한손검(방패 없이)", 방패와 함께만 되면 "방패(한손 무기와 함께)".
 pub(super) fn hands_text(id: sk::Id) -> String {
+    use crate::weapons::{Hand, CLASSES};
     let s = s();
     let h = id.def().hands;
-    // 한손검의 두 갈래(0225): 방패와 함께만 쓰는 것 = 방패 기술, 방패 없이만 쓰는 것 = 결투 기술.
-    match h {
-        sk::ANY => return s.hands_any.to_string(),
-        sk::DUEL => return s.hands_duel_art.to_string(),
-        sk::SHIELD => return s.hands_shield_art.to_string(),
-        _ => {}
+    if h == sk::ANY {
+        return s.hands_any.to_string();
     }
-    // 한손 둘(방패가 있든 없든)·양손 둘(망치·지팡이)이 다 되면 묶어서 말한다.
-    let mut names = Vec::new();
-    let mut left = h;
-    for (bits, name) in [
-        (sk::ONE, s.hands_one),
-        (sk::TWO, s.hands_two),
-        (sk::DUEL, s.hands_duel),
-        (sk::SHIELD, s.hands_shield),
-        (sk::HEAVY, s.hands_heavy),
-        (sk::FOCUS, s.hands_focus),
-        (sk::RANGED, s.hands_ranged),
-    ] {
-        if left & bits == bits {
-            names.push(name);
-            left &= !bits;
+    let shield = h & sk::SHIELD != 0;
+    let mut one = false;
+    let mut names: Vec<String> = Vec::new();
+    for c in CLASSES.iter().filter(|c| h & sk::class_bit(c.class) != 0) {
+        let name = tr(c.name);
+        if c.hand == Hand::One {
+            one = true;
+            if !shield {
+                names.push(fill(s.hands_no_shield, &[name]));
+                continue;
+            }
         }
+        names.push(name.to_string());
+    }
+    // 방패 비트는 "한손 무기와 방패"다 — 한손 종류가 다 이름에 들지 않았으면(0274: 망치도 한손) 방패 줄을 따로 적는다.
+    let all_one = CLASSES
+        .iter()
+        .filter(|c| c.hand == Hand::One)
+        .all(|c| h & sk::class_bit(c.class) != 0);
+    if shield && !(one && all_one) {
+        names.push(s.hands_shield.to_string());
     }
     names.join(" · ")
 }
@@ -403,7 +586,7 @@ fn unfit_toast() -> String {
 }
 
 /// 목록 한 줄의 글.
-fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String {
+pub(super) fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String {
     let s = s();
     match (d, e) {
         (Do::Buy, Entry::Cell(_) | Entry::Link(_) | Entry::Vein(_)) => {
@@ -426,6 +609,10 @@ fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String {
             let (mark, name, _) = cell_pick_text(c, !board.cells.picked_b(c));
             fill(s.act_flip, &[mark, name])
         }
+        (Do::Flip, Entry::Vein(v)) => {
+            let (mark, name, _) = vein_pick_text(v, !board.cells.vein_picked_b(v));
+            fill(s.act_flip, &[mark, name])
+        }
         (Do::Flip, _) => String::new(),
         (Do::Away, _) => s.act_away.to_string(),
     }
@@ -433,28 +620,35 @@ fn act_label(board: &Board, e: Entry, d: Do, has_sub: bool) -> String {
 
 /// 화면의 자리(480×270 기준 px, 창의 몸 왼쪽 위가 원점). 칸의 자리·걷기·그림이 같은 수를 쓴다.
 pub(super) mod geo {
+    use crate::plates::Plate;
+
     /// 왼쪽 칸 격자: 갈래 셋.
     pub const GRID_W: f32 = super::super::tabs::LEFT_W;
     pub const COL_W: f32 = crate::skills::LANE_W;
+    /// 판 줄(0270 C2 — 몸 · 결투 · 방패 · 망치 · 지팡이 · 원거리): 격자 자리의 맨 위, 갈래 머리 위.
+    pub const STRIP_H: f32 = 17.0;
     /// 갈래 머리(이름 + 한 줄).
     pub const HEAD_H: f32 = 27.0;
-    /// 줄 띠의 높이(첫 줄·둘째 줄 = 스킬 줄 + 패시브 줄, 셋째 줄 = 큰 기술과 패시브가 한 줄). 띠 셋의 합이 보이는 높이를 넘는다 —
-    /// 격자는 위아래로 굴린다(0163: 이름표와 칸 사이를 띄우고, 줄이 늘어도 같은 꼴).
-    /// 0214: 넷째 줄(스킬 + 패시브 — 첫·둘째 줄과 같은 꼴) · 맺음 줄(마름모 하나씩).
-    pub const BAND_H: [f32; 6] = [72.0, 72.0, 56.0, 72.0, 56.0, 44.0];
+    /// 굴리는 자리의 위(판 줄 + 갈래 머리).
+    pub const TOP: f32 = STRIP_H + HEAD_H;
+    /// 몸의 판의 줄 띠(0270 C2 — 스킬·큰 기술·결이 무기 판으로 가 패시브·다리의 줄 넷과 맺음 줄만 남았다): 띠 위의 이름표("쓴 점수
+    /// N부터") 자리 + 작은 칸 하나. 띠의 합이 보이는 높이를 넘으면 격자는 위아래로 굴린다(0163).
+    pub const BODY_BAND: [f32; 5] = [34.0, 34.0, 34.0, 34.0, 42.0];
+    /// 몸의 판: 띠 안에서 칸의 위.
+    pub const BODY_TOP: f32 = 11.0;
+    /// 무기 판의 줄 띠(셋 — 첫 스킬 · 둘째 스킬 · 결과 큰 기술): 이름표 + 스킬 칸 + 단의 점.
+    pub const WEAPON_BAND: [f32; 3] = [50.0; 3];
     /// 맺음 칸의 반 대각선(마름모 — 패시브보다 크게).
     pub const KEY: f32 = 26.0;
     /// 다리 칸의 대각선(0215 — 갈래 경계 위의 작은 마름모 고리).
     pub const LINK: f32 = 15.0;
-    /// 띠 안: 스킬 칸의 위·한 변, 단의 점, 패시브 칸의 위·지름.
+    /// 띠 안: 스킬 칸의 위·한 변, 단의 점, 패시브 칸의 지름.
     pub const CELL_TOP: f32 = 17.0;
     pub const SKILL: f32 = 24.0;
     pub const PIPS_TOP: f32 = 42.5;
-    pub const PASSIVE_TOP: f32 = 49.0;
     pub const PASSIVE: f32 = 18.0;
-    /// 굴리기: 휠·▲▼ 한 칸(기준 px), 커서가 창을 끌 때 칸 둘레에 남기는 여유(위: 이름표, 아래: 단의 점).
+    /// 굴리기: 휠·▲▼ 한 칸(기준 px).
     pub const WHEEL: f32 = 24.0;
-    pub const REVEAL_PAD: f32 = 4.0;
     /// 오른쪽 상세 칸.
     pub const DETAIL_X: f32 = super::super::tabs::RIGHT_X;
     pub const DETAIL_W: f32 = super::super::tabs::RIGHT_W;
@@ -465,33 +659,98 @@ pub(super) mod geo {
     pub const RESPEC_W: f32 = 150.0;
     pub const RESPEC_H: f32 = 16.0;
 
-    /// 띠를 그리는 차례(2026-11-23 사장 "속성 패시브가 가장 위쪽에 올라와서 보이도록"): 결의 줄(타입마다의 패시브)이 맨 위,
-    /// 그 아래로 판의 줄 차례.
-    pub fn band_order(row: usize) -> usize {
-        if row == crate::skills::VEIN_ROW {
-            0
-        } else {
-            row + 1
+    /// 판의 줄 띠들.
+    pub fn bands(plate: Plate) -> &'static [f32] {
+        match plate {
+            Plate::Body => &BODY_BAND,
+            Plate::Class(_) | Plate::Shield => &WEAPON_BAND,
         }
     }
 
-    pub fn band_top(row: usize) -> f32 {
-        let me = band_order(row);
-        HEAD_H
-            + (0..BAND_H.len())
-                .filter(|&r| band_order(r) < me)
-                .map(|r| BAND_H[r])
-                .sum::<f32>()
+    pub fn band_top(plate: Plate, row: usize) -> f32 {
+        TOP + bands(plate)[..row].iter().sum::<f32>()
     }
 
-    /// 굴리는 내용의 높이(띠 셋).
-    pub fn content_h() -> f32 {
-        BAND_H.iter().sum()
+    /// 굴리는 내용의 높이(띠의 합).
+    pub fn content_h(plate: Plate) -> f32 {
+        bands(plate).iter().sum()
     }
 }
 
+/// 판 줄(0270 C2 → 0275): 이름의 글 배(창의 배 `Window::k`에 곱한다 — 줄이지 않는다), 칸에서 이름 곁에 비우는 폭(양옆 —
+/// 오른쪽 귀퉁이의 금빛 점 자리, 기준 px), 칸 사이 틈. 다 들면 남는 폭을 나눠 채우고, 넘치면 가로로 굴린다(`ui::strip_tabs`).
+pub(super) const STRIP_K: f32 = 0.58;
+pub(super) const STRIP_PAD: f32 = 12.0;
+const STRIP_GAP: f32 = 2.0;
+
 /// 열린 줄의 안내·선이 걷히는 초(2026-11-23).
 const ROW_FADE: f32 = 0.8;
+
+/// 줄 띠의 열림(0278 R22 — 순수, 그리기가 읽기만 한다): 지금 쓴 점수, 줄마다 여는 점수, 열린 줄의 비트. 몸의 판은 쓴 점수 합
+/// (`ROW_NEEDS`), 무기 판은 그 판에 쓴 점수(`plates::PLATE_ROWS`, 0270 C2).
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(super) struct SkillRows {
+    pub spent: u32,
+    pub needs: Vec<u32>,
+    pub open: u8,
+}
+
+pub(super) fn skill_rows(plate: Plate, board: &Board) -> SkillRows {
+    let bands = geo::bands(plate);
+    let (spent, needs): (u32, Vec<u32>) = match plate {
+        Plate::Body => (board.spent(), sk::ROW_NEEDS[..bands.len()].to_vec()),
+        Plate::Class(_) | Plate::Shield => (plate.spent(board), plates::PLATE_ROWS.to_vec()),
+    };
+    let open = (0..bands.len())
+        .filter(|&r| spent >= needs[r])
+        .fold(0, |m, r| m | (1 << r));
+    SkillRows { spent, needs, open }
+}
+
+/// 줄 열림 연출의 기억(2026-11-23 사장 "기술을 열었을 때 선이 사라지면서 안내도 없어지는 연출" — 0278 R22에서 그리기 밖으로):
+/// 이미 본 열린 줄(비트 — 없으면 아직 본 적 없음: 처음 볼 때 열린 줄은 연출 없이 숨긴다)과 줄마다 열린 때(앱의 `clock`).
+/// 앱이 그리기 전에 `note`하고(`App::ready_skill_rows`), 그리기는 `fade`만 읽는다.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(super) struct RowFades {
+    seen: Option<u8>,
+    opened: [f32; 6],
+}
+
+impl Default for RowFades {
+    fn default() -> Self {
+        RowFades {
+            seen: None,
+            opened: [f32::NEG_INFINITY; 6],
+        }
+    }
+}
+
+impl RowFades {
+    /// 판이 바뀌었다 — 다음에 보는 열린 줄은 연출 없이.
+    pub(super) fn reset(&mut self) {
+        self.seen = None;
+    }
+
+    /// 지금 열린 줄을 본다: 새로 열린 줄은 지금(`clock`)부터 걷힌다.
+    pub(super) fn note(&mut self, open: u8, clock: f32) {
+        let was = self.seen.unwrap_or(open);
+        for (r, t) in self.opened.iter_mut().enumerate() {
+            if open & !was & (1 << r) != 0 {
+                *t = clock;
+            }
+        }
+        self.seen = Some(open);
+    }
+
+    /// 줄 `row`의 띠가 보이는 몫(1 = 다, 0 = 없음): 잠긴 줄은 늘 다, 열린 줄은 열린 뒤 `ROW_FADE`초 동안만 걷히며.
+    pub(super) fn fade(&self, row: usize, open: bool, clock: f32) -> f32 {
+        if open {
+            1.0 - ((clock - self.opened[row]) / ROW_FADE).clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    }
+}
 
 /// 칸 하나의 자리: 가운데와 반 변(반지름).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -500,76 +759,197 @@ pub(super) struct Spot {
     pub half: f32,
 }
 
-/// 판의 칸마다의 자리(`ENTRIES`의 자리). 줄·갈래마다 스킬(큰 기술)은 위, 패시브는 그 아래 — 셋째 줄만 나란히. 가로 자리는
-/// 판의 길과 같은 `Entry::lane`(0215 — 선이 그림과 어긋나지 않게), 다리 칸은 패시브 줄의 갈래 경계에 작은 마름모.
-pub(super) fn spots() -> [Spot; NE] {
-    use geo::*;
-    std::array::from_fn(|i| {
-        let e = ENTRIES[i];
-        let row = e.row();
-        let top = band_top(row);
-        let big_y = top + CELL_TOP + SKILL * 0.5;
-        let small_y = top + PASSIVE_TOP + PASSIVE * 0.5;
-        let (y, half) = match e {
-            Entry::Key(_) => (big_y, KEY * 0.5),
-            Entry::Cell(_) if row == sk::ULT_ROW as usize => (big_y, PASSIVE * 0.5),
-            Entry::Cell(_) => (small_y, PASSIVE * 0.5),
-            Entry::Link(_) => (small_y, LINK * 0.5),
-            // 결의 줄(0223 11절): 띠 하나에 둥근 칸 넷.
-            Entry::Vein(_) => (top + CELL_TOP + PASSIVE * 0.5, PASSIVE * 0.5),
-            Entry::Skill(_) | Entry::Ult(_) => (big_y, SKILL * 0.5),
-        };
-        Spot {
-            c: vec2(e.lane(), y),
-            half,
-        }
-    })
-}
-
-/// 칸 `i`가 "보인다"고 할 구간(내용의 y — 띠 셋의 처음이 0): 커서가 그 칸에 서면 격자 창이 이 구간이 보이게 가장 적게 움직인다(0163).
-/// 줄의 윗칸(스킬·큰 기술)은 띠의 머리(이름표)부터 단의 점까지, 아랫칸(패시브)은 칸부터 띠의 끝까지 — 셋째 줄은 띠 하나가 통째로.
-pub(super) fn reveal_span(i: usize) -> (f32, f32) {
-    use geo::*;
-    let (e, sp) = (ENTRIES[i], spots()[i]);
-    let row = e.row();
-    let (top, bottom) = (band_top(row) - HEAD_H, band_top(row) + BAND_H[row] - HEAD_H);
-    let (y, h) = (sp.c.y - HEAD_H, sp.half);
-    match e {
-        Entry::Cell(_) if row != 2 => (y - h - REVEAL_PAD, bottom),
-        _ if row == 2 || row == sk::KEY_ROW || row == sk::VEIN_ROW => (top, bottom),
-        _ => (top, y + h + 6.0 + REVEAL_PAD),
+/// 칸 `e`가 판 `plate`의 몇째 줄 띠에 서나(몸의 판 = 판의 줄 `Entry::row`, 무기 판 = 자리의 줄).
+pub(super) fn row_on(plate: Plate, e: Entry) -> usize {
+    match plate {
+        Plate::Body => e.row(),
+        Plate::Class(_) | Plate::Shield => plate.seat(e).map_or(0, |s| s.row as usize),
     }
 }
 
-/// 십자 한 걸음(0161 — KB `game-menu-scene-stack-and-focus`: 격자는 돌지 않는다): 누른 쪽에 있는 칸 가운데 가장 가깝고 곧은 것으로.
-/// 그쪽에 칸이 없으면 그대로 — 다만 맨 아래에서 **아래**는 되돌리기 단추(창 아래 오른쪽, `respec`일 때 — 화로). 오른쪽 걸음은 격자에서
-/// 끝난다(0261, 사장 "오른쪽 이동은 기술 쪽에서 끝나야 한다" — 단추에서 왼쪽으로 가도 떠난 자리로 돌아오지 않아 길을 잃었다).
-/// 단추에서 위는 `back`(단추로 내려오기 전의 칸)으로, 옆은 그대로.
-pub(super) fn walk(from: usize, dx: i32, dy: i32, respec: bool, back: usize) -> usize {
+/// `ENTRIES`의 자리.
+fn index_of(e: Entry) -> usize {
+    ENTRIES.iter().position(|x| *x == e).unwrap_or(0)
+}
+
+/// 판 `plate`의 칸마다의 자리(`ENTRIES`의 자리, 판의 차례). 몸의 판은 가로 자리를 판의 길과 같은 `Entry::lane`으로(0215 —
+/// 선이 그림과 어긋나지 않게, 다리 칸은 갈래 경계의 작은 마름모), 세로만 줄 띠로 당긴다. 무기 판(0270 C2)은 갈래 셋(왼쪽 = 대표
+/// 타입 A · 가운데 · 오른쪽 = B) × 줄 셋 — 한 칸 자리에 여럿이면 갈래 폭을 나눠 나란히.
+pub(super) fn spots_on(plate: Plate) -> Vec<(usize, Spot)> {
+    use geo::*;
+    match plate {
+        Plate::Body => plate
+            .entries()
+            .into_iter()
+            .map(|i| {
+                let e = ENTRIES[i];
+                let top = band_top(plate, e.row()) + BODY_TOP;
+                let (size, half) = match e {
+                    Entry::Key(_) => (KEY, KEY * 0.5),
+                    Entry::Link(_) => (PASSIVE, LINK * 0.5),
+                    _ => (PASSIVE, PASSIVE * 0.5),
+                };
+                (
+                    i,
+                    Spot {
+                        c: vec2(e.lane(), top + size * 0.5),
+                        half,
+                    },
+                )
+            })
+            .collect(),
+        Plate::Class(_) | Plate::Shield => {
+            let seats = plate.seats();
+            seats
+                .iter()
+                .map(|s| {
+                    let peers: Vec<&Seat> = seats
+                        .iter()
+                        .filter(|o| o.row == s.row && o.col == s.col)
+                        .collect();
+                    let k = peers.iter().position(|o| o.entry == s.entry).unwrap_or(0);
+                    let col = match s.col {
+                        Col::Left => 0.0,
+                        Col::Mid => 1.0,
+                        Col::Right => 2.0,
+                    };
+                    // 한 자리에 넷 넘게 서면(0274 — 한손검의 가운데 열) 갈래 폭을 나누면 칸이 겹친다: 칸 사이를 칸 폭 + 2로 벌려
+                    // 갈래의 가운데를 두고 옆 갈래 쪽으로 넘친다(옆 갈래는 그 줄에 하나뿐이라 닿지 않는다 — 시험).
+                    let n = peers.len() as f32;
+                    let step = (COL_W / n).max(SKILL + 2.0);
+                    let x = COL_W * (col + 0.5) + step * (k as f32 - (n - 1.0) * 0.5);
+                    let y = band_top(plate, s.row as usize) + CELL_TOP + SKILL * 0.5;
+                    let half = match s.entry {
+                        Entry::Vein(_) => PASSIVE * 0.5,
+                        _ => SKILL * 0.5,
+                    };
+                    (
+                        index_of(s.entry),
+                        Spot {
+                            c: vec2(x, y),
+                            half,
+                        },
+                    )
+                })
+                .collect()
+        }
+    }
+}
+
+/// 판 `plate`에서 칸 `i`(`ENTRIES`의 자리)의 자리 — 그 판에 서지 않으면 없다.
+pub(super) fn spot_on(plate: Plate, i: usize) -> Option<Spot> {
+    spots_on(plate)
+        .into_iter()
+        .find(|(j, _)| *j == i)
+        .map(|(_, s)| s)
+}
+
+/// 판의 칸을 읽는 차례(위에서 아래로, 왼쪽에서 오른쪽으로).
+fn reading(plate: Plate) -> Vec<(usize, Spot)> {
+    let mut v = spots_on(plate);
+    v.sort_by(|a, b| {
+        a.1.c
+            .y
+            .total_cmp(&b.1.c.y)
+            .then(a.1.c.x.total_cmp(&b.1.c.x))
+    });
+    v
+}
+
+/// 칸 `i`가 "보인다"고 할 구간(내용의 y — 띠의 처음이 0): 커서가 그 칸에 서면 격자 창이 이 구간이 보이게 가장 적게 움직인다(0163).
+/// 0270 C2부터 띠마다 칸 줄이 하나라 띠 하나가 통째로(이름표부터 단의 점까지).
+pub(super) fn reveal_span(plate: Plate, i: usize) -> (f32, f32) {
+    let row = ENTRIES.get(i).map_or(0, |&e| row_on(plate, e));
+    let top = geo::band_top(plate, row) - geo::TOP;
+    (top, top + geo::bands(plate)[row])
+}
+
+/// 판 `plate`를 열 때 설 칸(0161 → 0270 C2, `ENTRIES`의 자리): 올릴 수 있는 화면(`edit`)이면 그 판에서 지금 살 수 있는 첫 칸(읽는
+/// 차례), 없으면(또는 읽기 전용이면) 배운 첫 스킬, 그것도 없으면 왼쪽 위 칸.
+pub(super) fn first_focus_on(plate: Plate, board: &Board, total: u32, edit: bool) -> usize {
+    let order = reading(plate);
+    order
+        .iter()
+        .find(|(i, _)| edit && plates::offer_on(plate, board, ENTRIES[*i], total) == Offer::Ready)
+        .or_else(|| {
+            order
+                .iter()
+                .find(|(i, _)| matches!(ENTRIES[*i], Entry::Skill(id) if board.learned(id)))
+        })
+        .or(order.first())
+        .map_or(STRIP, |(i, _)| *i)
+}
+
+/// 십자 한 걸음(0161 — KB `game-menu-scene-stack-and-focus`: 격자는 돌지 않는다): 판 `plate`의 칸 가운데 누른 쪽에 있는 가장
+/// 가깝고 곧은 것으로(위아래는 곧은 것이 없으면 그쪽 줄의 가장 가까운 칸). 그쪽에 칸이 없으면 — 위는 판 줄(`STRIP`, 0270 C2),
+/// 아래는 되돌리기 단추(창 아래 오른쪽, `respec`일 때 — 화로), 옆은 그대로. 오른쪽 걸음은 격자에서 끝난다(0261, 사장 "오른쪽 이동은
+/// 기술 쪽에서 끝나야 한다"). 단추에서 위는 `back`(격자를 떠나기 전의 칸 — 이 판에 없으면 왼쪽 위 칸)으로, 판 줄에서 아래는
+/// 늘 맨 윗줄로(떠난 칸이 거기 있으면 그 칸).
+/// 판 줄의 옆 걸음(판 바꾸기)은 부른 쪽이 한다 — 여기서는 판 줄에 머문다.
+pub(super) fn walk(
+    plate: Plate,
+    from: usize,
+    dx: i32,
+    dy: i32,
+    respec: bool,
+    back: usize,
+) -> usize {
     if dx == 0 && dy == 0 {
         return from;
     }
-    if from >= NE {
-        return if dy < 0 { back.min(NE - 1) } else { from };
+    let spots = spots_on(plate);
+    let first = reading(plate).first().map_or(STRIP, |(i, _)| *i);
+    let left = spots.iter().find(|(i, _)| *i == back).map(|(_, s)| s.c.y);
+    let top = spots
+        .iter()
+        .map(|(_, s)| s.c.y)
+        .fold(f32::INFINITY, f32::min);
+    match from {
+        // 판 줄에서 아래 = 맨 윗줄(떠난 칸이 맨 윗줄에 있으면 거기, 아니면 왼쪽 위 — 늘 맨 윗줄로 내려온다).
+        STRIP if dy > 0 => return if left == Some(top) { back } else { first },
+        STRIP => return STRIP,
+        RESPEC if dy < 0 => return if left.is_some() { back } else { first },
+        RESPEC => return RESPEC,
+        _ => {}
     }
-    let spots = spots();
-    let here = spots[from].c;
-    let dir = vec2(dx as f32, dy as f32);
-    // 옆 걸음은 같은 높이의 칸만(줄은 반듯하다 — 비스듬히 다른 줄로 새지 않게 좁게 보고 어긋남을 크게 친다),
-    // 위아래 걸음은 가장 가까운 줄로(갈래 안의 칸은 줄마다 자리가 달라 넓게 보고 어긋남을 작게 친다).
-    let (cone, weight) = if dx != 0 { (0.5, 3.0) } else { (1.2, 0.6) };
-    let best = (0..NE)
-        .filter(|&i| i != from)
-        .filter_map(|i| {
-            let d = spots[i].c - here;
-            let along = d.dot(dir);
-            let across = (d - dir * along).length();
-            (along > 0.5 && across <= along * cone).then_some((i, along + across * weight))
-        })
-        .min_by(|a, b| a.1.total_cmp(&b.1))
-        .map(|(i, _)| i);
+    let Some(here) = spots.iter().find(|(i, _)| *i == from).map(|(_, s)| s.c) else {
+        return first;
+    };
+    // 옆 걸음은 같은 줄의 칸만(줄은 반듯하다 — 0270 C2: 칸이 성긴 무기 판에서 비스듬히 다른 줄로 샜다). 위아래 걸음은 그쪽의
+    // **바로 다음 줄**에서 가로로 가장 가까운 칸(0270 C2 — 비스듬한 칸을 부채꼴로 보면 칸이 성긴 줄을 건너뛰었다: 몸의 판 셋째 줄 ·
+    // 무기 판의 둘째 줄).
+    let best = if dx != 0 {
+        let dir = vec2(dx as f32, 0.0);
+        spots
+            .iter()
+            .filter(|(i, _)| *i != from)
+            .filter_map(|(i, s)| {
+                let d = s.c - here;
+                let along = d.dot(dir);
+                (along > 0.5 && d.y.abs() < 0.5).then_some((*i, along))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(i, _)| i)
+    } else {
+        let ahead = |s: &Spot| (s.c.y - here.y) * dy.signum() as f32;
+        let next = spots
+            .iter()
+            .map(|(_, s)| ahead(s))
+            .filter(|&d| d > 0.5)
+            .fold(f32::INFINITY, f32::min);
+        spots
+            .iter()
+            .filter(|(_, s)| (ahead(s) - next).abs() < 0.5)
+            .min_by(|a, b| {
+                (a.1.c.x - here.x)
+                    .abs()
+                    .total_cmp(&(b.1.c.x - here.x).abs())
+            })
+            .map(|(i, _)| *i)
+    };
     match best {
         Some(i) => i,
+        None if dy < 0 => STRIP,
         None if respec && dy > 0 => RESPEC,
         None => from,
     }
@@ -661,7 +1041,7 @@ fn outline(shape: Shape, c: Vec2, half: f32) -> Vec<Vec2> {
         Shape::Round => (0..36)
             .map(|i| {
                 let a = i as f32 / 36.0 * std::f32::consts::TAU;
-                c + vec2(a.cos(), a.sin()) * half
+                c + vec2(a.cos_d(), a.sin_d()) * half
             })
             .collect(),
         Shape::Diamond => vec![
@@ -782,9 +1162,16 @@ pub(super) fn draw_node(e: Entry, c: Vec2, half: f32, s: f32, look: Look, focus:
     }
 }
 
-/// 단의 점: `n`개 가운데 `have`개가 금빛, 다음 것(`next`)은 민트 테, 나머지는 흐린 테. 큰 기술은 마름모.
+/// 단의 점의 꼴(0278 R21 — 옛 `diamond: bool`): 스킬은 네모, 큰 기술은 마름모.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Pip {
+    Square,
+    Diamond,
+}
+
+/// 단의 점: `n`개 가운데 `have`개가 금빛, 다음 것(`next`)은 민트 테, 나머지는 흐린 테. 꼴은 `pip`.
 #[allow(clippy::too_many_arguments)]
-fn draw_pips(cx: f32, y: f32, n: u8, have: u8, next: bool, diamond: bool, size: f32, fade: f32) {
+fn draw_pips(cx: f32, y: f32, n: u8, have: u8, next: bool, pip: Pip, size: f32, fade: f32) {
     let gap = (size * 0.4).max(1.0).round();
     let size = size.round().max(2.0);
     let w = n as f32 * size + (n as f32 - 1.0) * gap;
@@ -803,7 +1190,7 @@ fn draw_pips(cx: f32, y: f32, n: u8, have: u8, next: bool, diamond: bool, size: 
                 ..ui::BORDER
             }
         };
-        if diamond {
+        if pip == Pip::Diamond {
             let pts = [
                 c + vec2(0.0, -h - 1.0),
                 c + vec2(h + 1.0, 0.0),
@@ -838,9 +1225,9 @@ enum Block {
         state: u8,
         cost: Option<(String, bool)>,
     },
-    /// 3단: 두 고르기를 나란히 — (이름 줄, 설명 줄들, 고른 것인가).
+    /// 3단: 두 고르기를 나란히 — (이름 줄들, 설명 줄들, 고른 것인가). 이름도 상자 폭에서 줄을 바꾼다(0275).
     Picks {
-        boxes: [(String, Vec<String>, bool); 2],
+        boxes: [(Vec<String>, Vec<String>, bool); 2],
         open: bool,
     },
     Gap(f32),
@@ -848,15 +1235,14 @@ enum Block {
 
 /// 상세 칸의 글 크기(본문 1 = 13px 기준)와 줄 높이(기준 px).
 const K_NAME: f32 = super::tabs::K_NAME;
-const K_KIND: f32 = super::tabs::K_KIND;
 const K_BODY: f32 = super::tabs::K_BODY;
-const K_RANK: f32 = 0.68;
-const K_PICK: f32 = 0.62;
+pub(super) const K_RANK: f32 = 0.68;
+pub(super) const K_PICK: f32 = 0.62;
 const LH_BODY: f32 = super::tabs::LH_BODY;
 const LH_RANK: f32 = 9.8;
 const LH_PICK: f32 = 8.8;
 /// 단 줄의 번호 칸 폭.
-const RANK_NUM: f32 = 11.0;
+pub(super) const RANK_NUM: f32 = 11.0;
 
 impl Block {
     /// 덩이의 높이(기준 px).
@@ -865,8 +1251,10 @@ impl Block {
             Block::Text { lines, k, .. } => lines.len() as f32 * LH_BODY * (k / K_BODY),
             Block::Rank { lines, .. } => lines.len().max(1) as f32 * LH_RANK + 2.0,
             Block::Picks { boxes, .. } => {
-                let n = boxes[0].1.len().max(boxes[1].1.len()) as f32;
-                LH_RANK + n * LH_PICK + 6.0
+                let tall = |b: &(Vec<String>, Vec<String>, bool)| {
+                    b.0.len().max(1) as f32 * LH_RANK + b.1.len() as f32 * LH_PICK
+                };
+                tall(&boxes[0]).max(tall(&boxes[1])) + 6.0
             }
             Block::Gap(h) => *h,
         }
@@ -916,76 +1304,157 @@ impl App {
     /// 되돌리기 단추를 누를 수 있나: 쓴 점수가 있고 잔불이 값만큼 있다(개발 창의 판은 되돌리지 않는다).
     fn respec_ready(&self) -> bool {
         let b = self.progress.board;
-        !self.dev_board_on() && b.spent() > 0 && self.world.embers >= b.respec_cost()
+        !self.dev_board_on() && b.spent() > 0 && self.world.embers() >= b.respec_cost()
     }
 
-    /// 기술 화면 한 틱: 십자 = 칸 걷기, 확인·고른 칸 다시 누르기 = 그 칸의 일 목록(되돌리기 단추면 묻는 창), 뒤로·✕·창 밖 = 닫기.
+    /// 든 무기·보조무기의 판(0270 C2 → 0272): 쥔 꼴의 판(`Plate::held`) — 스킬을 끼우는 셈(`kits`·`World::grip`)과 같은 꼴.
+    /// 맨손은 무기 판이 없다(공통 판에서 연다 — 한손검의 판을 빌려 쓰지 않는다). 판 줄의 금빛 표지와 판을 고르는 차례가 쓴다.
+    pub(super) fn held_plates(&self) -> (Option<Plate>, Option<Plate>) {
+        let kits = self.kits();
+        (
+            Plate::held(kits.main.0),
+            kits.sub.and_then(|(g, _)| Plate::held(g)),
+        )
+    }
+
+    /// 보이는 판을 바꾼다: 격자 창·줄의 열림 연출은 판마다 처음부터(줄 띠가 다르다).
+    pub(super) fn set_plate(&mut self, p: Plate) {
+        if self.tab.skill_plate != p {
+            self.tab.skill_plate = p;
+            self.menu.view = ui::ListView::default();
+            self.tab.skill_rows.reset();
+        }
+    }
+
+    /// 기술 탭을 열 때(0270 C2): 든 무기의 판과 그 판에서 설 칸(`first_focus_on`).
+    pub(super) fn open_plate(&mut self, edit: bool) {
+        let p = self.held_plates().0.unwrap_or(Plate::Body);
+        self.set_plate(p);
+        // 판 줄은 처음부터 — 그 판이 보이게(손으로 굴려 둔 창을 이어 가지 않는다, 0275).
+        self.tab.plate_strip = ui::Strip::default();
+        self.menu.cursor = first_focus_on(p, &self.board(), self.progress.skill_points(), edit);
+    }
+
+    /// 커서의 칸이 보이는 판에 없으면(성장 탭의 기술 줄에서 넘어온 칸 등) 그 칸이 서는 판으로 — 든 무기 · 부무기의 판 먼저.
+    pub(super) fn sync_plate(&mut self) {
+        self.sync_plate_at(self.menu.cursor);
+    }
+
+    fn sync_plate_at(&mut self, cursor: usize) {
+        let Some(&e) = ENTRIES.get(cursor) else {
+            return;
+        };
+        if !self.tab.skill_plate.has(e) {
+            let (main, sub) = self.held_plates();
+            let prefer: Vec<Plate> = [main, sub].into_iter().flatten().collect();
+            self.set_plate(plates::home(e, &prefer));
+        }
+    }
+
+    /// 기술 화면 한 틱: 십자 = 칸 걷기(맨 윗줄에서 위 = 판 줄, 판 줄에서 옆 = 판 바꾸기), 확인·고른 칸 다시 누르기 = 그 칸의 일 목록
+    /// (되돌리기 단추면 묻는 창, 판 줄이면 격자로), 판 줄의 판 누르기 = 그 판, 뒤로·✕·창 밖 = 닫기.
     pub(super) fn tick_skills(&mut self, a: &Actions, edit: bool) {
-        let mut a = *a;
-        let before = self.cursor;
+        self.sync_plate();
+        // 판 줄이 넘쳐 굴리는 동안(0275) 그 위의 끌기·휠은 판 줄을.
+        let mut a = super::strip_input(&mut self.tab.plate_strip, a);
+        let before = self.menu.cursor;
         // 휠·끌기: 격자 위에서는 격자 창을(0163), 상세 칸 위에서는 그 칸을 굴린다(오른쪽 스틱은 늘 상세 칸).
         self.grid_scroll(&mut a);
         self.pane_scroll(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if let Some(Hit::Scroll(d)) = tap {
-            self.view.nudge(0.0, d, geo::WHEEL * 2.0);
+            self.menu.view.nudge(0.0, d, geo::WHEEL * 2.0);
             return;
         }
         if a.back || a.pause || tap == Some(Hit::Close) {
             self.go(Go::Back);
             return;
         }
-        self.cursor = walk(
-            self.cursor.min(RESPEC),
+        // 판 줄의 판을 눌렀다: 그 판으로, 커서는 판 줄에(상세가 그 판을 말한다).
+        if let Some(Hit::Cell(1, p)) = tap {
+            if self.menu.cursor < NE {
+                self.tab.respec_from = self.menu.cursor;
+            }
+            self.set_plate(PLATES[p.min(PLATES.len() - 1)]);
+            self.menu.cursor = STRIP;
+            self.tab.scroll = 0.0;
+            return;
+        }
+        let (dx, dy) = (
             a.menu_right as i32 - a.menu_left as i32,
             a.menu_down as i32 - a.menu_up as i32,
-            edit,
-            self.respec_from,
         );
-        // 단추로 내려온 칸을 기억한다 — 단추에서 위로 가면 거기로(0261).
-        if self.cursor == RESPEC && before < NE {
-            self.respec_from = before;
+        // 판 줄에서 옆 = 판 바꾸기(가장자리에서 돌지 않는다).
+        if self.menu.cursor == STRIP && dx != 0 && dy == 0 {
+            let i = self.tab.skill_plate.index() as i32 + dx;
+            if (0..PLATES.len() as i32).contains(&i) {
+                self.set_plate(PLATES[i as usize]);
+            }
+            return;
+        }
+        // 판 줄에서 확인 = 격자로(아래 걸음과 같다).
+        let (dy, confirm_strip) = if self.menu.cursor == STRIP && a.confirm {
+            (1, true)
+        } else {
+            (dy, false)
+        };
+        self.menu.cursor = walk(
+            self.tab.skill_plate,
+            self.menu.cursor.min(STRIP),
+            dx,
+            dy,
+            edit,
+            self.tab.respec_from,
+        );
+        // 격자를 떠난 칸을 기억한다 — 단추에서 위·판 줄에서 아래로 가면 거기로(0261).
+        if self.menu.cursor >= NE && before < NE {
+            self.tab.respec_from = before;
         }
         // 십자로 옮긴 커서는 창을 끈다 — 손가락으로 고른 칸은 이미 보이니 창을 옮기지 않는다(둘째 탭이 같은 자리에 닿게, 0076).
-        if self.cursor != before && self.cursor < NE {
-            let (y0, y1) = reveal_span(self.cursor);
-            self.view.reveal(y0, y1);
+        if self.menu.cursor != before && self.menu.cursor < NE {
+            let (y0, y1) = reveal_span(self.tab.skill_plate, self.menu.cursor);
+            self.menu.view.reveal(y0, y1);
+        }
+        if confirm_strip {
+            self.tab.scroll = 0.0;
+            return;
         }
         // 터치·마우스: 다른 칸은 고르기만, 고른 칸을 다시 누르면 확인(장비 창과 같은 두 걸음). 단추는 한 번에.
         let confirm = match tap {
             Some(Hit::Cell(0, i)) => {
-                let again = self.cursor == i || i == RESPEC;
-                if i == RESPEC && self.cursor < NE {
-                    self.respec_from = self.cursor;
+                let again = self.menu.cursor == i || i == RESPEC;
+                if i == RESPEC && self.menu.cursor < NE {
+                    self.tab.respec_from = self.menu.cursor;
                 }
-                self.cursor = i;
+                self.menu.cursor = i;
                 again
             }
             _ => a.confirm,
         };
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
-        if !confirm {
+        if !confirm || self.menu.cursor == STRIP {
             return;
         }
-        if self.cursor >= NE {
+        if self.menu.cursor >= NE {
             return self.pick_respec(edit);
         }
-        let acts = self.acts_at(self.cursor, edit);
+        let acts = self.acts_at(self.menu.cursor, edit);
         if acts.iter().all(|d| matches!(d, Do::Away | Do::Unfit)) {
             // 할 수 있는 일이 없다 — 까닭을 상태 줄 자리에 한 번 밝게(0173: 소리만으로는 왜 안 되는지 몰랐다).
-            let why = match (acts.is_empty(), ENTRIES.get(self.cursor)) {
+            let why = match (acts.is_empty(), ENTRIES.get(self.menu.cursor)) {
                 (false, Some(&Entry::Skill(_))) if acts.contains(&Do::Unfit) => unfit_toast(),
                 (false, _) => s().toast_away.to_string(),
                 (true, Some(&e)) => {
-                    state_line(&self.board(), self.progress.skill_points(), e, edit).0
+                    let total = self.progress.skill_points();
+                    state_line(self.tab.skill_plate, &self.board(), total, e, edit).0
                 }
                 (true, None) => String::new(),
             };
             if !why.is_empty() {
-                self.toast = Some((why, ALERT));
+                self.notice.toast = Some((why, ALERT));
             }
             self.snd(crate::sfx::Id::Deny);
             return;
@@ -996,12 +1465,13 @@ impl App {
     /// 격자 굴리기(0163): 휠·끌기가 격자의 보이는 자리(`Hit::Field` — 칸 위도 그 안이다)에서 일어났으면 격자 창을 옮긴다.
     fn grid_scroll(&mut self, a: &mut Actions) {
         let over = a.point.is_some_and(|p| {
-            self.hits
+            self.menu
+                .hits
                 .iter()
                 .any(|(r, h)| *h == Hit::Field && r.contains(p))
         });
         if over && (a.wheel != 0 || a.drag != 0.0) {
-            self.view.nudge(a.drag, a.wheel, geo::WHEEL);
+            self.menu.view.nudge(a.drag, a.wheel, geo::WHEEL);
             (a.wheel, a.drag) = (0, 0.0);
         }
     }
@@ -1017,8 +1487,8 @@ impl App {
             (0, 0.0)
         };
         let line = self.ui.u(LH_RANK).max(1.0);
-        self.scroll = super::equip::pane_step(
-            self.scroll,
+        self.tab.scroll = super::equip::pane_step(
+            self.tab.scroll,
             a.aim.y,
             TICK_DT,
             wheel,
@@ -1048,6 +1518,7 @@ impl App {
             return Vec::new();
         };
         node_acts(
+            self.tab.skill_plate,
             &self.board(),
             self.progress.skill_points(),
             &self.kits(),
@@ -1068,10 +1539,10 @@ impl App {
         if !edit || self.dev_board_on() {
             self.snd(crate::sfx::Id::Deny);
         } else if board.spent() == 0 {
-            self.toast = Some((s.board_respec_none.to_string(), ALERT));
+            self.notice.toast = Some((s.board_respec_none.to_string(), ALERT));
             self.snd(crate::sfx::Id::Deny);
-        } else if self.world.embers < board.respec_cost() {
-            self.toast = Some((s.shop_poor.to_string(), ALERT));
+        } else if self.world.embers() < board.respec_cost() {
+            self.notice.toast = Some((s.shop_poor.to_string(), ALERT));
             self.snd(crate::sfx::Id::Deny);
         } else {
             self.ask(flow::Ask::Respec);
@@ -1114,7 +1585,7 @@ impl App {
                 self.after_wear();
             }
             (Do::Unfit, Entry::Skill(_)) => {
-                self.toast = Some((unfit_toast(), ALERT));
+                self.notice.toast = Some((unfit_toast(), ALERT));
                 self.snd(crate::sfx::Id::Deny);
             }
             (Do::WearUlt, Entry::Ult(u)) => {
@@ -1141,8 +1612,18 @@ impl App {
                 }
                 self.after_wear();
             }
+            (Do::Flip, Entry::Vein(v)) => {
+                #[cfg(feature = "dev")]
+                if let Some(b) = self.dev.board.as_mut() {
+                    b.flip_vein(v);
+                }
+                if !self.dev_board_on() {
+                    self.progress.board.flip_vein(v);
+                }
+                self.after_wear();
+            }
             (Do::Away, _) => {
-                self.toast = Some((s().toast_away.to_string(), ALERT));
+                self.notice.toast = Some((s().toast_away.to_string(), ALERT));
                 self.snd(crate::sfx::Id::Deny);
             }
             _ => {}
@@ -1162,7 +1643,8 @@ impl App {
     pub(super) fn buy_skill(&mut self, i: usize) {
         let Some(&e) = ENTRIES.get(i) else { return };
         let total = self.progress.skill_points();
-        if !self.progress.board.buy(e, total) {
+        // 보이는 판의 셈으로(0270 C2 — 무기 판은 그 판의 줄): 단·기록은 같은 판(`Board`)에 남는다.
+        if !plates::buy_on(self.tab.skill_plate, &mut self.progress.board, e, total) {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
@@ -1200,7 +1682,7 @@ impl App {
                 fill(s().toast_rank, &[name, &rank])
             }
         };
-        self.toast = Some((text, ALERT));
+        self.notice.toast = Some((text, ALERT));
         self.apply_board();
         self.persist();
     }
@@ -1208,18 +1690,18 @@ impl App {
     /// 묻는 창에서 "되돌리기": 잔불을 내고 쓴 점수를 모두 돌려받는다(패시브 칸까지) — 스킬 칸은 빈 칸이 된다(0166 — 다시 배우면 그 자리에).
     pub(super) fn respec_skills(&mut self) {
         let mut great = self.progress.ult;
-        if !self
-            .progress
-            .board
-            .respec_paid(&mut self.world.embers, &mut great)
-        {
+        // 지갑은 월드의 것(0278 R24): 셈은 기술 판이 하고(`respec_paid` — 모자라면 그대로), 낸 만큼 월드에서 쓴다.
+        let mut purse = self.world.embers();
+        if !self.progress.board.respec_paid(&mut purse, &mut great) {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
-        self.progress.embers = self.world.embers;
+        let paid = self.world.spend(self.world.embers() - purse);
+        debug_assert!(paid);
+        self.progress.embers = self.world.embers();
         self.progress.ult = great;
         self.snd(crate::sfx::Id::Buy);
-        self.toast = Some((s().toast_respec.to_string(), ALERT));
+        self.notice.toast = Some((s().toast_respec.to_string(), ALERT));
         self.apply_board();
         self.persist();
     }
@@ -1254,6 +1736,23 @@ impl App {
     }
 
     /// 기술 탭 그림. `at` = 고른 칸(되돌리기 단추면 `RESPEC`).
+    /// 그리기 전(0278 R22 — 그리는 중에 상태를 바꾸지 않게): 이 프레임에 기술 탭의 격자가 그려지면(맨 위 · 작은 목록이나 묻는 창
+    /// 밑) 그 커서의 판을 맞추고 줄의 열림을 본다(`RowFades::note`). 그리기는 읽기만 한다.
+    pub(super) fn ready_skill_rows(&mut self) {
+        let cursor = match (self.scene(), self.stack.under()) {
+            (Scene::Skills { .. }, _) => self.menu.cursor,
+            (Scene::SkillAct | Scene::Ask(_), Some(e))
+                if matches!(e.scene, Scene::Skills { .. }) =>
+            {
+                e.cursor
+            }
+            _ => return,
+        };
+        self.sync_plate_at(cursor);
+        let open = skill_rows(self.tab.skill_plate, &self.board()).open;
+        self.tab.skill_rows.note(open, self.clock);
+    }
+
     pub(super) fn draw_skills(&mut self, f: &Frame, at: usize, host: flow::Host) {
         let s = s();
         let edit = host.edits();
@@ -1282,70 +1781,177 @@ impl App {
         );
     }
 
-    /// 왼쪽: 갈래 머리 · 줄 띠 · 칸들. 누를 자리(칸)를 채운다.
+    /// 판 줄(0270 C2): 판 여섯의 이름을 나란히 — 보이는 판은 금빛 글 + 밑줄, 커서가 판 줄에 있으면 그 판에 밝은 테(칸의 포커스와
+    /// 같은 빛). 든 무기의 판은 오른쪽 위에 금빛 점, 부무기의 판은 금빛 고리(칸의 `node_badge`·`sub_badge`와 같은 갈림). 살 칸이
+    /// 있다는 민트 점은 판 줄에 두지 않는다(사장 2026-11-24 "기술 서브탭의 new 인디케이터는 필요없을듯" — 탭 머리의 점과 칸의 민트로
+    /// 넉넉하다). 누를 자리는 판마다.
+    fn draw_plate_strip(&mut self, w: &Window, at: usize) {
+        let (k, u) = (w.k, w.s);
+        let (main, sub) = self.held_plates();
+        // 칸의 폭은 이름대로(0272): 이름 + 표지 자리. 판이 여덟(창)이 되어 영어 이름이 다 못 서자 글자를 줄였는데(0272 2단계),
+        // 0275부터는 줄이지 않는다 — 큰 창의 탭 줄(0233)처럼 다 들면 남는 폭을 나눠 채우고, 넘치면 가로로 굴린다(끌기·휠,
+        // 보이는 판이 바뀌면 그 판이 보이게 가장 적게, 양끝 ◀▶ = 더 있다). 가장자리에 걸친 이름은 잘린 채로(넘침 검사 밖).
+        let tk = STRIP_K * k;
+        let widths: Vec<f32> = PLATES
+            .iter()
+            .map(|&p| self.ui.width(plate_name(p), tk) + STRIP_PAD * u)
+            .collect();
+        let arrow = self.ui.width("◀", tk) + u * 4.0;
+        let (x0, x1) = (w.at(0.0, 0.0).x, w.at(geo::GRID_W, 0.0).x);
+        let h = (geo::STRIP_H - 3.0) * u;
+        let (cells, view) = ui::strip_tabs(
+            &mut self.tab.plate_strip,
+            &widths,
+            x0,
+            x1,
+            w.origin.y,
+            h,
+            STRIP_GAP * u,
+            arrow,
+            self.tab.skill_plate.index(),
+        );
+        if let Some(v) = view {
+            // 포커스의 테(칸 밖으로 한 칸)가 창 끝에서 잘리지 않을 만큼만 넓혀 자른다.
+            ui::clip(Some(Rect::new(
+                v.x - u * 1.5,
+                v.y - u * 2.0,
+                v.w + u * 3.0,
+                v.h + u * 4.0,
+            )));
+        }
+        for (i, &p) in PLATES.iter().enumerate() {
+            let (x, cw) = cells[i];
+            let r = Rect::new(x, w.origin.y, cw, h);
+            let whole = match view {
+                Some(v) if x + cw <= v.x || x >= v.x + v.w => continue,
+                Some(v) => x >= v.x - 0.5 && x + cw <= v.x + v.w + 0.5,
+                None => true,
+            };
+            let shown = p == self.tab.skill_plate;
+            if shown {
+                draw_rectangle(r.x, r.y, r.w, r.h, ui::PANEL_LIGHT);
+                draw_rectangle(r.x, r.y + r.h - u, r.w, u.max(1.0), AMBER);
+            }
+            let ink = if shown { AMBER } else { DIM };
+            let name = plate_name(p);
+            let ty = r.y + (r.h - self.ui.px(tk)) * 0.5;
+            if whole {
+                self.ui.text_center(name, r.x + r.w * 0.5, ty, tk, ink);
+            } else {
+                let tw = self.ui.width(name, tk);
+                self.ui
+                    .plain_text(name, r.x + (r.w - tw) * 0.5, ty, tk, ink);
+            }
+            let dot = (u * 2.2).max(2.0);
+            let (dx, dy) = (r.x + r.w - dot * 1.6, r.y + dot * 1.4);
+            if main == Some(p) {
+                draw_circle(dx, dy, dot, AMBER);
+            } else if sub == Some(p) {
+                draw_circle_lines(dx, dy, dot, 1.0, AMBER);
+            }
+            if at == STRIP && shown {
+                let o = Rect::new(r.x - u, r.y - u, r.w + u * 2.0, r.h + u * 2.0);
+                self.ui.edge(o, (u * 1.6).max(2.0), CREAM);
+            }
+            // 누를 자리는 보이는 몫만.
+            let hit = match view {
+                Some(v) => {
+                    let l = x.max(v.x);
+                    Rect::new(l, r.y, (x + cw).min(v.x + v.w) - l, r.h)
+                }
+                None => r,
+            };
+            self.menu.hits.push((hit, Hit::Cell(1, i)));
+        }
+        if let Some(v) = view {
+            ui::clip(None);
+            let (l, r) = self.tab.plate_strip.more();
+            let ink = |more: bool| if more { INK } else { Color { a: 0.35, ..DIM } };
+            let ty = w.origin.y + (h - self.ui.px(tk)) * 0.5;
+            self.ui.text_center("◀", x0 + arrow * 0.5, ty, tk, ink(l));
+            self.ui
+                .text_center("▶", v.x + v.w + arrow * 0.5, ty, tk, ink(r));
+        }
+    }
+
+    /// 왼쪽: 판 줄 · 갈래 머리 · 줄 띠 · 칸들. 누를 자리(판·칸)를 채운다.
     fn draw_skill_grid(&mut self, w: &Window, board: &Board, total: u32, at: usize) {
         let s = s();
         let (k, u) = (w.k, w.s);
-        // 갈래 머리: 이름(금빛) + 한 줄.
-        for b in BRANCHES {
-            let cx = w.at(geo::COL_W * (b.index() as f32 + 0.5), 0.0).x;
-            self.ui
-                .text_center(tr(b.name()), cx, w.at(0.0, 0.0).y, k, AMBER);
-            let motto = self.ui.fit(tr(b.motto()), (geo::COL_W - 4.0) * u, 0.62 * k);
-            self.ui
-                .text_center(&motto, cx, w.at(0.0, 14.5).y, 0.62 * k, DIM);
+        let plate = self.tab.skill_plate;
+        self.draw_plate_strip(w, at);
+        // 갈래 머리: 몸의 판 = 이름(금빛) + 한 줄, 무기 판 = 대표 타입 둘(그 타입의 빛 `status::INK`)과 가운데 "그 밖".
+        let head = geo::STRIP_H;
+        match plate {
+            Plate::Body => {
+                for b in BRANCHES {
+                    let cx = w.at(geo::COL_W * (b.index() as f32 + 0.5), 0.0).x;
+                    self.ui
+                        .text_center(tr(b.name()), cx, w.at(0.0, head).y, k, AMBER);
+                    let motto = self.ui.fit(tr(b.motto()), (geo::COL_W - 4.0) * u, 0.62 * k);
+                    self.ui
+                        .text_center(&motto, cx, w.at(0.0, head + 14.5).y, 0.62 * k, DIM);
+                }
+            }
+            Plate::Class(_) | Plate::Shield => {
+                // 가운데 열의 머리 = 그 종류의 물리 속성(참격 · 타격 · 관통 · 마법 — 방패 판은 방어, 0272).
+                let [a, b] = plate.pair().unwrap_or([crate::status::Kind::Physical; 2]);
+                let mid = plate.attribute().map_or("", tr);
+                for (col, kind) in [(0.0, Some(a)), (1.0, None), (2.0, Some(b))] {
+                    let cx = w.at(geo::COL_W * (col + 0.5), 0.0).x;
+                    let (name, ink) = match kind.and_then(|k| k.slot().map(|i| (k, i))) {
+                        Some((kind, i)) => {
+                            let [r, g, b] = crate::status::INK[i];
+                            (kind_name(kind), Color::new(r, g, b, 1.0))
+                        }
+                        None => (mid, DIM),
+                    };
+                    let name = self.ui.fit(name, (geo::COL_W - 4.0) * u, k);
+                    self.ui
+                        .text_center(&name, cx, w.at(0.0, head + 5.0).y, k, ink);
+                }
+            }
         }
-        // 굴리는 자리(0163): 갈래 머리 아래 ~ 몸의 끝. 내용(띠 셋)이 넘치면 창을 옮겨 본다 — 처음 그릴 때는 커서 칸이 보이게.
-        let room = w.body_h - geo::HEAD_H;
-        let (mut off, fresh) = self.view.span(room, geo::content_h(), u);
+        // 굴리는 자리(0163): 갈래 머리 아래 ~ 몸의 끝. 내용(띠)이 넘치면 창을 옮겨 본다 — 처음 그릴 때는 커서 칸이 보이게.
+        let room = w.body_h - geo::TOP;
+        let (mut off, fresh) = self.menu.view.span(room, geo::content_h(plate), u);
         if fresh && at < NE {
-            let (y0, y1) = reveal_span(at);
-            off = self.view.reveal(y0, y1);
+            let (y0, y1) = reveal_span(plate, at);
+            off = self.menu.view.reveal(y0, y1);
         }
-        let port = w.rect(0.0, geo::HEAD_H, geo::GRID_W, room);
+        let port = w.rect(0.0, geo::TOP, geo::GRID_W, room);
         let (port_top, port_bottom) = (port.y, port.y + port.h);
         ui::clip(Some(port));
         // 줄 띠: 가는 선 + 오른쪽 끝의 이름. 잠긴 줄만 "쓴 점수 N부터 · n점 더"(2026-11-23 사장 "열린 후엔 필요 없음") — 열리는 순간
-        // 선이 이름 쪽으로 걷히며 이름과 함께 사라진다(`ROW_FADE`). 결의 줄은 띠 이름 그대로. 글은 다 보일 때만(잘린 글은 그리지 않는다).
-        let spent = board.spent();
-        let open_mask: u8 = (0..sk::ROW_NEEDS.len())
-            .filter(|&r| r != sk::VEIN_ROW && spent >= sk::ROW_NEEDS[r])
-            .fold(0, |m, r| m | (1 << r));
-        let (seen, opened) = &mut self.skill_rows;
-        let was = seen.unwrap_or(open_mask);
-        for (r, t) in opened.iter_mut().enumerate() {
-            if open_mask & !was & (1 << r) != 0 {
-                *t = self.clock;
-            }
-        }
-        *seen = Some(open_mask);
-        let opened_at = *opened;
-        for (row, (&need, &since)) in sk::ROW_NEEDS.iter().zip(opened_at.iter()).enumerate() {
+        // 선이 이름 쪽으로 걷히며 이름과 함께 사라진다(`ROW_FADE`). 몸의 판은 쓴 점수 합(`ROW_NEEDS`), 무기 판은 그 판에 쓴 점수
+        // (`plates::PLATE_ROWS`, 0270 C2). 글은 다 보일 때만(잘린 글은 그리지 않는다).
+        let SkillRows {
+            spent,
+            needs,
+            open: open_mask,
+        } = skill_rows(plate, board);
+        for (row, &need) in needs.iter().enumerate() {
             let open = open_mask & (1 << row) != 0;
             // 열린 줄: 열린 뒤 `ROW_FADE`초 동안만 걷히며 보이고 그 뒤엔 없다.
-            let fade = if open {
-                1.0 - ((self.clock - since) / ROW_FADE).clamp(0.0, 1.0)
-            } else {
-                1.0
-            };
+            let fade = self.tab.skill_rows.fade(row, open, self.clock);
             if fade <= 0.0 {
                 continue;
             }
-            let label = if row == sk::VEIN_ROW {
-                s.sk_row_vein.to_string()
-            } else {
-                fill(
-                    s.sk_row_locked,
-                    &[&need.to_string(), &(need.saturating_sub(spent)).to_string()],
-                )
-            };
-            let top = geo::band_top(row) - off;
+            let label = fill(
+                match plate {
+                    Plate::Body => s.sk_row_locked,
+                    Plate::Class(_) | Plate::Shield => s.sk_row_plate,
+                },
+                &[&need.to_string(), &(need.saturating_sub(spent)).to_string()],
+            );
+            let top = geo::band_top(plate, row) - off;
             let lk = 0.6 * k;
             let lw = self.ui.width(&label, lk);
-            let right = w.at(geo::GRID_W, 0.0).x;
+            // 오른쪽 끝은 굴림 표시(▲▼)의 자리로 비운다 — 띠가 당겨진 몸의 판(0270 C2)에서 맺음 줄의 이름이 ▼와 겹쳤다.
+            let right = w.at(geo::GRID_W, 0.0).x - self.ui.width("▼", lk) - u * 4.0;
             let y = w.at(0.0, top).y;
             let ink = Color {
-                a: if row == sk::VEIN_ROW { 1.0 } else { 0.8 } * fade,
+                a: 0.8 * fade,
                 ..DIM
             };
             let shown = y >= port_top - 0.5 && y + self.ui.px(lk) <= port_bottom + 0.5;
@@ -1372,33 +1978,44 @@ impl App {
         let worn = self.progress.skills.0;
         let sub_worn = self.progress.sub.map(|_| self.progress.sub_skills.0);
         let great = board.wearable_ult(self.progress.ult);
-        let spots = spots();
-        // 판의 길(0215): 칸 사이 선 — 칸보다 먼저(칸의 면이 끝을 덮는다).
-        self.draw_paths(w, board, &spots, off);
+        let spots = spots_on(plate);
+        // 판의 길(0215): 칸 사이 선 — 칸보다 먼저(칸의 면이 끝을 덮는다). 무기 판에는 길이 없다(줄은 그 판의 점수로 연다).
+        if plate == Plate::Body {
+            self.draw_paths(w, board, &spots, off);
+        }
         let mut cells = Vec::new();
         // 튜토리얼의 배우기 걸음(0209): 지금 살 수 있는 칸에 반짝임.
         let guide = self.tutor_menu() == Some(flow::Tab::Skills)
             && flow::tab_of(self.scene()).is_some_and(|(h, _)| h.edits());
-        for (i, &e) in ENTRIES.iter().enumerate() {
-            let sp = spots[i];
+        for &(i, sp) in &spots {
+            let e = ENTRIES[i];
             let (c, half) = (w.at(sp.c.x, sp.c.y - off), sp.half * u);
             // 보이는 자리 밖의 칸은 건너뛴다(걸친 칸은 가위가 자른다).
             let reach = half + u * 8.0;
             if c.y + reach < port_top || c.y - reach > port_bottom {
                 continue;
             }
-            let (lk, ready) = look(board, total, e);
+            let (lk, ready) = look(plate, board, total, e);
             let fade = if lk == Look::Locked { 0.5 } else { 1.0 };
-            let top = geo::band_top(e.row()) - off;
-            let pips_end = w.at(0.0, top + geo::PIPS_TOP + 3.0).y;
+            let pips_top = sp.c.y - geo::SKILL * 0.5 - geo::CELL_TOP + geo::PIPS_TOP - off;
+            let pips_end = w.at(0.0, pips_top + 3.0).y;
             draw_node(e, c, half, u, lk, (i == at).then_some(pips_end));
             let at_c = c;
             // 귀퉁이 표지(글)는 칸이 다 보일 때만.
             let whole = c.y - half - u * 3.0 >= port_top && c.y + half <= port_bottom;
             match e {
                 Entry::Skill(id) => {
-                    let py = w.at(0.0, top + geo::PIPS_TOP).y.round();
-                    draw_pips(c.x, py, e.max(), board.rank(e), ready, false, u * 3.0, fade);
+                    let py = w.at(0.0, pips_top).y.round();
+                    draw_pips(
+                        c.x,
+                        py,
+                        e.max(),
+                        board.rank(e),
+                        ready,
+                        Pip::Square,
+                        u * 3.0,
+                        fade,
+                    );
                     // 끼운 칸 번호는 배운 스킬에만(안 배운 스킬이 놓인 칸은 빈 칸이다, 0166).
                     let slot = worn.iter().position(|x| *x == id);
                     if let (Some(slot), true) = (slot.filter(|_| board.learned(id)), whole) {
@@ -1416,8 +2033,17 @@ impl App {
                     }
                 }
                 Entry::Ult(ult) => {
-                    let py = w.at(0.0, top + geo::PIPS_TOP).y.round();
-                    draw_pips(c.x, py, e.max(), board.rank(e), ready, true, u * 3.0, fade);
+                    let py = w.at(0.0, pips_top).y.round();
+                    draw_pips(
+                        c.x,
+                        py,
+                        e.max(),
+                        board.rank(e),
+                        ready,
+                        Pip::Diamond,
+                        u * 3.0,
+                        fade,
+                    );
                     // 끼운 큰 기술의 표시(0172 — "큰" 글은 걷었다): 고를 것이 있을 때만(둘 이상 배웠다) 금빛 마름모.
                     // 하나만 배웠으면 그것이 끼운 것이다 — 표시가 없다.
                     if ult == great && board.ults_known() > 1 && whole {
@@ -1442,7 +2068,7 @@ impl App {
         }
         ui::clip(None);
         // 더 있다는 표시(▲▼ — 누르면 한 걸음): 격자의 오른쪽 끝, 위·아래. 누를 자리는 칸보다 먼저.
-        let (above, below) = self.view.span_more();
+        let (above, below) = self.menu.view.span_more();
         let mk = 0.6 * k;
         let (mw, mh) = (self.ui.width("▲", mk), self.ui.px(mk));
         let mx = w.at(geo::GRID_W, 0.0).x - mw;
@@ -1453,26 +2079,27 @@ impl App {
             if on {
                 self.ui.text(glyph, mx, y, mk, AMBER);
                 let pad = u * 5.0;
-                self.hits.push((
+                self.menu.hits.push((
                     Rect::new(mx - pad, y - pad, mw + pad * 2.0, mh + pad * 2.0),
                     Hit::Scroll(d),
                 ));
             }
         }
-        self.hits.extend(cells);
-        self.hits.push((port, Hit::Field));
+        self.menu.hits.extend(cells);
+        self.menu.hits.push((port, Hit::Field));
     }
 
-    /// 판의 길(0215 B): 이어진 칸 사이 선. 둘 다 가졌으면 금빛, 가진 칸에서 아직 안 가진 칸으로 갈 수 있으면 옅은 민트, 나머지는
-    /// 흐린 테 빛. 위아래 선은 위 칸의 아래(스킬·큰 기술은 단의 점 밑)에서 아래 칸의 위로, 같은 줄(다리)은 옆에서 옆으로.
-    fn draw_paths(&self, w: &Window, board: &Board, spots: &[Spot; NE], off: f32) {
+    /// 판의 길(0215 B — 몸의 판): 이어진 칸 사이 선. 둘 다 가졌으면 금빛, 가진 칸에서 아직 안 가진 칸으로 갈 수 있으면 옅은 민트,
+    /// 나머지는 흐린 테 빛. 위아래 선은 위 칸의 아래에서 아래 칸의 위로, 같은 줄(다리)은 옆에서 옆으로. 판에 선 칸끼리만.
+    fn draw_paths(&self, w: &Window, board: &Board, spots: &[(usize, Spot)], off: f32) {
         let u = w.s;
-        for (i, &a) in ENTRIES.iter().enumerate() {
-            for (j, &b) in ENTRIES.iter().enumerate() {
+        for &(i, sa) in spots {
+            let a = ENTRIES[i];
+            for &(j, sb) in spots {
+                let b = ENTRIES[j];
                 if !a.feeds(b) || (a.line() == b.line() && i > j && b.feeds(a)) {
                     continue;
                 }
-                let (sa, sb) = (spots[i], spots[j]);
                 let (p, q) = if a.line() == b.line() {
                     let d = if sb.c.x > sa.c.x { 1.0 } else { -1.0 };
                     (
@@ -1480,13 +2107,10 @@ impl App {
                         vec2(sb.c.x - d * sb.half, sb.c.y),
                     )
                 } else {
-                    let low = match a {
-                        Entry::Skill(_) | Entry::Ult(_) => {
-                            geo::band_top(a.row()) + geo::PIPS_TOP + 4.0
-                        }
-                        _ => sa.c.y + sa.half,
-                    };
-                    (vec2(sa.c.x, low), vec2(sb.c.x, sb.c.y - sb.half))
+                    (
+                        vec2(sa.c.x, sa.c.y + sa.half),
+                        vec2(sb.c.x, sb.c.y - sb.half),
+                    )
                 };
                 let (ha, hb) = (board.rank(a) > 0, board.rank(b) > 0);
                 let (ink, thick) = if ha && hb {
@@ -1559,26 +2183,42 @@ impl App {
         let (x0, dw) = (geo::DETAIL_X, geo::DETAIL_W);
         let text_x = x0 + geo::DETAIL_ICON + 6.0;
         let text_w = (dw - geo::DETAIL_ICON - 6.0) * u;
-        // 잠깐 뜨는 알림(산 것·되돌린 것·안 되는 까닭)은 상태 줄 자리에.
-        let alert = self.toast.as_ref().map(|(t, _)| t.clone());
         let entry = ENTRIES.get(at).copied();
+        let plate = self.tab.skill_plate;
         let (name, kind, state) = match entry {
             Some(e) => {
-                let (lk, _) = look(board, total, e);
+                let (lk, _) = look(plate, board, total, e);
                 let c = w.at(x0 + geo::DETAIL_ICON * 0.5, geo::DETAIL_ICON * 0.5 + 1.0);
                 draw_node(e, c, geo::DETAIL_ICON * 0.5 * u, u, lk, None);
                 (
                     entry_text(e).0,
                     kind_line(board, e),
-                    state_line(board, total, e, edit),
+                    state_line(plate, board, total, e, edit),
                 )
+            }
+            // 판 줄(0270 C2): 판의 이름 · 종류(대표 타입 둘) · 그 판에 쓴 점수.
+            None if at == STRIP => {
+                let kind = match plate {
+                    Plate::Body => s.sk_plate_kind_body.to_string(),
+                    Plate::Class(_) | Plate::Shield => {
+                        let [a, b] = plate.pair().unwrap_or([crate::status::Kind::Physical; 2]);
+                        let t = if plate == Plate::Shield {
+                            s.sk_plate_kind_shield
+                        } else {
+                            s.sk_plate_kind_grip
+                        };
+                        fill(t, &[kind_name(a), kind_name(b)])
+                    }
+                };
+                let spent = fill(s.sk_plate_spent, &[&plate.spent(board).to_string()]);
+                (plate_name(plate), kind, (spent, DIM))
             }
             None => {
                 let b = self.progress.board;
                 let cost = fill(s.shop_embers, &[&b.respec_cost().to_string()]);
                 let state = if b.spent() == 0 {
                     (s.board_respec_none.to_string(), DIM)
-                } else if self.world.embers < b.respec_cost() {
+                } else if self.world.embers() < b.respec_cost() {
                     (s.shop_poor.to_string(), DIM)
                 } else {
                     (fill(s.sk_st_respec, &[&b.spent().to_string()]), ui::MINT)
@@ -1593,19 +2233,12 @@ impl App {
         let p = w.at(name_x, 0.0);
         self.ui
             .text(&name, p.x, p.y, K_NAME * k, if owned { AMBER } else { INK });
-        let kind = self.ui.fit(&kind, name_w, K_KIND * k);
-        self.ui.text(&kind, p.x, w.at(0.0, 15.0).y, K_KIND * k, DIM);
-        let (state, ink) = match alert {
-            Some(t) => (t, AMBER),
-            None => state,
-        };
-        let state = self.ui.fit(&state, name_w, K_KIND * k);
-        self.ui
-            .text(&state, p.x, w.at(0.0, 25.0).y, K_KIND * k, ink);
+        // 갈래 줄 · 상태 줄(알림이 길면 두 줄로 — `draw_head_lines`, 0275).
+        self.draw_head_lines(w, name_x, name_w, &kind, &state);
 
         // 몸: 하는 일 + 단마다 한 줄. 넘치면 덩이 단위로 굴린다.
         let width = dw * u;
-        let blocks = self.detail_blocks(board, total, entry, width, k);
+        let blocks = self.detail_blocks(board, total, entry, at, width, k);
         let (top, full) = (geo::DETAIL_HEAD, w.body_h);
         let heights: Vec<f32> = blocks.iter().map(Block::height).collect();
         // 넘치면 맨 아래 한 줄은 굴림 표시(▲▼)의 자리로 비운다 — 표시가 단 줄의 값("1점") 위에 겹치지 않게(0223 V2·V3에서 상세에
@@ -1622,8 +2255,8 @@ impl App {
         {
             max_first += 1;
         }
-        self.scroll = self.scroll.clamp(0.0, max_first as f32);
-        let first = self.scroll.round() as usize;
+        self.tab.scroll = self.tab.scroll.clamp(0.0, max_first as f32);
+        let first = self.tab.scroll.round() as usize;
         let mut y = top;
         let mut shown = first;
         for b in blocks.iter().skip(first) {
@@ -1647,7 +2280,9 @@ impl App {
                 self.ui.text("▼", ax, ay, 0.7 * k, DIM);
             }
         }
-        self.hits.push((w.rect(x0, top, dw, full - top), Hit::Pane));
+        self.menu
+            .hits
+            .push((w.rect(x0, top, dw, full - top), Hit::Pane));
     }
 
     /// 되돌리기 단추(화로): 창 아래 안내 줄의 오른쪽 끝, 늘 같은 자리(0160 시안의 "되돌리기 · 잔불 55"). 그 자리를 돌려준다.
@@ -1663,8 +2298,8 @@ impl App {
         );
         let cost = self.progress.board.respec_cost().to_string();
         let label = fill(s.sk_respec_button, &[s.board_respec, &cost]);
-        self.respec_button(r, &label, at >= NE, self.respec_ready(), w.k);
-        self.hits.push((r, Hit::Cell(0, RESPEC)));
+        self.respec_button(r, &label, at == RESPEC, self.respec_ready(), w.k);
+        self.menu.hits.push((r, Hit::Cell(0, RESPEC)));
         r
     }
 
@@ -1709,12 +2344,39 @@ impl App {
         board: &Board,
         total: u32,
         entry: Option<Entry>,
+        at: usize,
         width: f32,
         k: f32,
     ) -> Vec<Block> {
         let s = s();
         let u = width / geo::DETAIL_W;
         let wrap = |t: &str, w: f32, tk: f32| ui::wrap(&self.ui, t, w, tk * k);
+        let plate = self.tab.skill_plate;
+        // 판 줄(0270 C2): 판이 무엇인지 + 든 무기·부무기의 판이면 그렇다고(금빛 — 판 줄의 표지와 같은 빛).
+        if entry.is_none() && at == STRIP {
+            let what = match plate {
+                Plate::Body => s.sk_plate_body_d,
+                Plate::Class(_) => s.sk_plate_grip_d,
+                Plate::Shield => s.sk_plate_shield_d,
+            };
+            let mut v = vec![Block::Text {
+                lines: wrap(what, width, K_BODY),
+                k: K_BODY,
+                ink: INK,
+            }];
+            let (main, sub) = self.held_plates();
+            for (on, t) in [(main, s.sk_plate_main), (sub, s.sk_plate_sub)] {
+                if on == Some(plate) {
+                    v.push(Block::Gap(5.0));
+                    v.push(Block::Text {
+                        lines: wrap(t, width, K_BODY),
+                        k: K_BODY,
+                        ink: AMBER,
+                    });
+                }
+            }
+            return v;
+        }
         let Some(e) = entry else {
             return vec![Block::Text {
                 lines: wrap(s.board_respec_d, width, K_BODY),
@@ -1723,9 +2385,10 @@ impl App {
             }];
         };
         let rank = board.rank(e);
-        let offer = board.offer(e, total);
+        let offer = plates::offer_on(plate, board, e, total);
         let what = match e {
             Entry::Cell(c) if c.pick_b().is_some() => s.sk_cell_pick,
+            Entry::Vein(v) if v.pick_b().is_some() => s.sk_cell_pick,
             _ => entry_text(e).1,
         };
         let mut v = vec![
@@ -1797,7 +2460,7 @@ impl App {
                         let one = |p: Pick| {
                             let (mark, name, desc) = pick_text(id, p);
                             (
-                                format!("{mark} {name}"),
+                                wrap(&format!("{mark} {name}"), box_w, K_RANK),
                                 wrap(desc, box_w, K_PICK),
                                 rank >= PICK_RANK && board.pick[id.index()] == p,
                             )
@@ -1827,9 +2490,26 @@ impl App {
                 let one = |b: bool| {
                     let (mark, name, desc) = cell_pick_text(c, b);
                     (
-                        format!("{mark} {name}"),
+                        wrap(&format!("{mark} {name}"), box_w, K_RANK),
                         wrap(desc, box_w, K_PICK),
                         open && board.cells.picked_b(c) == b,
+                    )
+                };
+                v.push(Block::Picks {
+                    boxes: [one(false), one(true)],
+                    open,
+                });
+            }
+            // 울림의 속성 패시브(0274 ②): 숫자 칸과 같은 그림 — 두 고르기를 나란히, 연 결이면 지금 것에 금빛.
+            Entry::Vein(vn) if vn.pick_b().is_some() => {
+                let box_w = (width - RANK_NUM * u - u * 4.0) * 0.5 - u * 6.0;
+                let open = board.cells.veined(vn);
+                let one = |b: bool| {
+                    let (mark, name, desc) = vein_pick_text(vn, b);
+                    (
+                        wrap(&format!("{mark} {name}"), box_w, K_RANK),
+                        wrap(desc, box_w, K_PICK),
+                        open && board.cells.vein_picked_b(vn) == b,
                     )
                 };
                 v.push(Block::Picks {
@@ -1921,11 +2601,13 @@ impl App {
                     draw_rectangle(r.x, r.y, r.w, r.h, face);
                     self.ui
                         .edge(r, if *chosen { (u * 1.2).max(2.0) } else { 1.0 }, edge);
-                    let name = self.ui.fit(name, (bw - 6.0) * u, K_RANK * k);
-                    let p = w.at(bx + 3.0, y + 2.0);
-                    self.ui.text(&name, p.x, p.y, K_RANK * k, ink);
+                    for (j, line) in name.iter().enumerate() {
+                        let p = w.at(bx + 3.0, y + 2.0 + LH_RANK * j as f32);
+                        self.ui.text(line, p.x, p.y, K_RANK * k, ink);
+                    }
+                    let top = LH_RANK * name.len().max(1) as f32;
                     for (j, line) in desc.iter().enumerate() {
-                        let p = w.at(bx + 3.0, y + 2.0 + LH_RANK + LH_PICK * j as f32);
+                        let p = w.at(bx + 3.0, y + 2.0 + top + LH_PICK * j as f32);
                         self.ui.text(line, p.x, p.y, K_PICK * k, sub);
                     }
                 }
@@ -1942,12 +2624,12 @@ impl App {
             return;
         };
         let edit = host.edits();
-        let (cursor, view) = (self.cursor, self.view);
-        (self.cursor, self.view) = (under.cursor, under.view);
+        let (cursor, view) = (self.menu.cursor, self.menu.view);
+        (self.menu.cursor, self.menu.view) = (under.cursor, under.view);
         self.draw_layered(f, under.scene);
-        (self.cursor, self.view) = (cursor, view);
+        (self.menu.cursor, self.menu.view) = (cursor, view);
         // 작은 창은 누를 자리를 제 줄과 창 밖만 남긴다(묻는 창과 같다).
-        self.hits.clear();
+        self.menu.hits.clear();
         #[cfg(feature = "dev")]
         crate::ui::check::forget();
         let Some(&e) = ENTRIES.get(under.cursor) else {
@@ -1978,7 +2660,9 @@ impl App {
         let ph = row_h * rows.len() as f32 + u * 8.0;
         // 고른 칸의 오른쪽에(안 들어가면 왼쪽에), 화면 안으로.
         let w = self.window_geo(f);
-        let sp = spots()[under.cursor];
+        let Some(sp) = spot_on(self.tab.skill_plate, under.cursor) else {
+            return;
+        };
         let (c, half) = (w.at(sp.c.x, sp.c.y - under.view.offset()), sp.half * w.s);
         let gap = u * 7.0;
         let mut x = c.x + half + gap;
@@ -2012,7 +2696,9 @@ impl App {
         self.ui.panel(panel, None);
         self.ui.edge(panel, u, AMBER);
         let area = Rect::new(x + u * 3.0, y + u * 4.0, pw - u * 6.0, ph - u * 8.0);
-        let hits = self.ui.list(&rows, self.cursor, &mut self.view, area);
+        let hits = self
+            .ui
+            .list(&rows, self.menu.cursor, &mut self.menu.view, area);
         self.push_hits(&hits);
         self.push_outside(panel);
     }
@@ -2021,6 +2707,107 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::weapons::Class;
+
+    const SWORD: Plate = Plate::Class(Class::Sword);
+
+    /// 0272: "쓰는 무기" 줄은 종류의 이름으로 — 한손 종류는 방패로 갈린다(방패 없이만 되면 그렇게, 방패와 함께만 되면 방패),
+    /// 쇠뇌와 활은 따로, 모든 종류와 방패에 다 되면 "어느 무기나". 판의 이름도 종류 표에서 온다.
+    #[test]
+    fn the_hands_line_names_weapon_classes_and_the_plates_are_named_by_class() {
+        let s = s();
+        assert_eq!(hands_text(Id::Gather), s.hands_any);
+        // 0274 ③: 가로지르기는 쌍단검의 것(두 손이 다 찬 종류라 "방패 없이"를 붙이지 않는다), 자루 치기는 한손검만.
+        // 0274 ④: 대검도(떼를 뚫고 지나가는 광전사).
+        assert_eq!(
+            hands_text(Id::Cut),
+            format!("{} · {}", s.class_dagger, s.class_greatsword)
+        );
+        assert_eq!(
+            hands_text(Id::Pommel),
+            fill(s.hands_no_shield, &[s.class_sword])
+        );
+        assert_eq!(hands_text(Id::Bash), s.hands_shield);
+        // 0274 ⑤: 낫은 한손이지만 휘돌지 않는다 — 한손 종류가 다 들지 않아 방패 줄이 따로 선다(방패를 들면 낫으로도 방패 판의 휘돌이).
+        assert_eq!(
+            hands_text(Id::Whirl),
+            format!(
+                "{} · {} · {} · {}",
+                s.class_sword, s.class_hammer, s.class_greatsword, s.hands_shield
+            )
+        );
+        // 0274 ⑥: 종 치기는 완드(흑마법사)도 — 양손 종류라 방패 없이 그대로.
+        assert_eq!(
+            hands_text(Id::Toll),
+            format!("{} · {} · {}", s.class_hammer, s.class_wand, s.hands_shield)
+        );
+        assert_eq!(hands_text(Id::Snare), s.class_bow);
+        // 0274 ⑤: 뿌리 솟기는 낫(드루이드)도 — 한손 종류라 "방패 없이".
+        assert_eq!(
+            hands_text(Id::Roots),
+            format!(
+                "{} · {} · {} · {}",
+                s.class_staff,
+                s.class_bow,
+                s.class_spear,
+                fill(s.hands_no_shield, &[s.class_scythe])
+            )
+        );
+        assert_eq!(hands_text(Id::Fuse), s.class_crossbow);
+        assert_eq!(
+            hands_text(Id::Embers),
+            format!("{} · {}", s.class_staff, s.class_crossbow)
+        );
+        let names: Vec<&str> = PLATES.iter().map(|&p| plate_name(p)).collect();
+        assert_eq!(
+            names,
+            [
+                s.plate_common,
+                s.class_sword,
+                s.class_hammer,
+                s.class_staff,
+                s.class_crossbow,
+                s.class_bow,
+                s.class_spear,
+                s.class_dagger,
+                s.class_greatsword,
+                s.class_scythe,
+                s.class_wand,
+                s.plate_shield
+            ]
+        );
+        // 가운데 열의 머리 = 종류의 물리 속성(방패 판은 방어) — "그 밖"은 없다.
+        let mids: Vec<&str> = PLATES[1..]
+            .iter()
+            .map(|p| tr(p.attribute().unwrap()))
+            .collect();
+        assert_eq!(
+            mids,
+            [
+                s.attr_slash,
+                s.attr_strike,
+                s.attr_magic,
+                s.attr_pierce,
+                s.attr_pierce,
+                s.attr_pierce,
+                s.attr_pierce,
+                s.attr_slash,
+                s.attr_slash,
+                s.attr_magic,
+                s.attr_guard
+            ]
+        );
+        // 큰 기술의 종류 줄은 그것이 서는 판의 이름.
+        let b = Board::default();
+        assert_eq!(
+            kind_line(&b, Entry::Ult(Ult::Rain)),
+            fill(s.sk_kind_ult, &[s.class_bow])
+        );
+        assert_eq!(
+            kind_line(&b, Entry::Ult(Ult::Line)),
+            fill(s.sk_kind_ult, &[s.class_crossbow])
+        );
+    }
     use crate::progression::Cell;
     use sk::{Id, Ult};
 
@@ -2028,234 +2815,370 @@ mod tests {
         ENTRIES.iter().position(|x| *x == e).unwrap()
     }
 
+    /// 칸이 서는 판(결투 판 먼저 — 시험의 무기는 한손 검).
+    fn on(e: Entry) -> Plate {
+        plates::home(e, &[SWORD])
+    }
+
     /// 처음의 둘을 배운 판(0166: 새 판은 아무것도 모른다 — "배운 스킬"의 규칙은 이 판으로 본다).
     fn started() -> Board {
         Board::default().with_starters()
     }
 
-    /// 칸의 자리: 모든 칸이 격자 안에 있고 서로 겹치지 않는다. 갈래는 왼쪽부터 흐름·맞받기·자리, 줄은 위부터 — 스킬은 그 줄의
-    /// 패시브보다 위에(셋째 줄만 나란히).
+    /// 칸의 자리(0270 C2 — 판마다): 판에 선 칸은 모두 격자 안·제 줄 띠 안에 있고 서로 겹치지 않는다. 몸의 판은 갈래(흐름·맞받기·자리)의
+    /// 기둥 안(다리 칸은 경계 위), 무기 판은 갈래 셋(왼쪽 = 대표 타입 A · 가운데 · 오른쪽 = B)의 기둥 안.
     #[test]
-    fn every_cell_has_its_own_spot_in_its_branch_column_and_row_band() {
-        let sp = spots();
-        for (i, &e) in ENTRIES.iter().enumerate() {
-            let (c, h) = (sp[i].c, sp[i].half);
-            assert!(h > 0.0, "{e:?} has a spot");
-            if let Entry::Link(l) = e {
-                // 다리 칸(0215): 두 갈래의 경계 위.
-                assert_eq!(c.x, geo::COL_W * (l.left() + 1) as f32, "{e:?} boundary");
-            } else if let Entry::Vein(v) = e {
-                // 결의 칸(0223 11절): 판의 폭을 넷으로 나눈 자리(갈래의 기둥 밖).
-                assert_eq!(c.x, sk::LANE_VEIN[v.index()], "{e:?} lane");
+    fn every_cell_has_its_own_spot_in_its_column_and_row_band_on_every_plate() {
+        for plate in PLATES {
+            let sp = spots_on(plate);
+            assert!(!sp.is_empty(), "{plate:?}");
+            for (n, &(i, s)) in sp.iter().enumerate() {
+                let (e, c, h) = (ENTRIES[i], s.c, s.half);
+                assert!(h > 0.0, "{e:?} has a spot");
                 assert!(c.x - h >= 0.0 && c.x + h <= geo::GRID_W, "{e:?} grid");
-            } else {
-                let col = geo::COL_W * e.branch().index() as f32;
+                let col = match (plate, e) {
+                    (Plate::Body, Entry::Link(l)) => {
+                        // 다리 칸(0215): 두 갈래의 경계 위.
+                        assert_eq!(c.x, geo::COL_W * (l.left() + 1) as f32, "{e:?} boundary");
+                        None
+                    }
+                    (Plate::Body, _) => Some(e.branch().index()),
+                    (Plate::Class(_) | Plate::Shield, _) => {
+                        Some(match plate.seat(e).unwrap().col {
+                            Col::Left => 0,
+                            Col::Mid => 1,
+                            Col::Right => 2,
+                        })
+                    }
+                };
+                // 한 자리에 넷 넘게 선 갈래(0274 — 한손검의 가운데 열)는 옆 갈래 쪽으로 넘친다: 겹침은 아래가 본다.
+                let crowded = matches!(plate, Plate::Class(_) | Plate::Shield)
+                    && plate.seat(e).is_some_and(|me| {
+                        plate
+                            .seats()
+                            .iter()
+                            .filter(|o| o.row == me.row && o.col == me.col)
+                            .count()
+                            > 3
+                    });
+                if let Some(col) = col.filter(|_| !crowded) {
+                    let x0 = geo::COL_W * col as f32;
+                    assert!(
+                        c.x - h >= x0 && c.x + h <= x0 + geo::COL_W,
+                        "{plate:?} {e:?} column"
+                    );
+                }
+                let row = row_on(plate, e);
+                let top = geo::band_top(plate, row);
+                // 띠 위의 이름표 자리를 비운다.
                 assert!(
-                    c.x - h >= col && c.x + h <= col + geo::COL_W,
-                    "{e:?} column"
+                    c.y - h >= top + 9.0 && c.y + h <= top + geo::bands(plate)[row],
+                    "{plate:?} {e:?} band"
                 );
-            }
-            let top = geo::band_top(e.row());
-            assert!(
-                c.y - h >= top + 9.0 && c.y + h <= top + geo::BAND_H[e.row()],
-                "{e:?} band"
-            );
-            for (j, o) in sp.iter().enumerate().skip(i + 1) {
-                let apart = (c - o.c).abs();
-                assert!(
-                    apart.x >= h + o.half + 2.0 || apart.y >= h + o.half + 2.0,
-                    "{e:?} overlaps {:?}",
-                    ENTRIES[j]
-                );
+                for &(j, o) in sp.iter().skip(n + 1) {
+                    let apart = (c - o.c).abs();
+                    assert!(
+                        apart.x >= h + o.half + 2.0 || apart.y >= h + o.half + 2.0,
+                        "{plate:?} {e:?} overlaps {:?}",
+                        ENTRIES[j]
+                    );
+                }
             }
         }
-        // 스킬은 같은 줄·같은 갈래의 패시브보다 위에 선다(첫 줄·둘째 줄).
-        let (whirl, breath) = (
-            sp[at(Entry::Skill(Id::Whirl))],
-            sp[at(Entry::Cell(Cell::EvenBreath))],
+        // 몸의 판은 가로 자리가 판의 길 그대로(0215 — 선이 그림과 어긋나지 않게).
+        for (i, s) in spots_on(Plate::Body) {
+            assert_eq!(s.c.x, ENTRIES[i].lane(), "{:?}", ENTRIES[i]);
+        }
+        // 무기 판의 스킬·큰 기술은 결보다 큰 칸.
+        let duel = SWORD;
+        let (cut, shock) = (
+            spot_on(duel, at(Entry::Skill(Id::Pommel))).unwrap(),
+            spot_on(duel, at(Entry::Vein(crate::progression::Vein::Shock))).unwrap(),
         );
-        assert!(whirl.c.y < breath.c.y);
-        assert!(whirl.half > breath.half, "skills are the bigger cells");
+        assert!(cut.half > shock.half && cut.c.y < shock.c.y);
+        // 판 줄은 격자 머리 위, 상세 칸은 창 안.
+        assert!(geo::TOP == geo::STRIP_H + geo::HEAD_H);
         assert!(geo::DETAIL_X + geo::DETAIL_W <= super::super::frame::WINDOW_W - 16.0);
     }
 
-    /// 걷기(KB: 격자는 돌지 않는다): 가장자리에서 바깥쪽을 눌러도 그대로, 어느 칸에서 떠나도 모든 칸에 닿는다.
-    /// 옆 걸음은 같은 높이의 이웃으로, 아래 걸음은 같은 갈래의 아래 칸으로.
-    /// 0163: 격자는 위아래로 굴린다 — 칸마다 "보인다"고 할 구간이 내용 안에 있고 보이는 높이(몸 195 − 머리)에 들어가며,
-    /// 십자로 맨 위에서 맨 아래까지 내려갔다 올라오면 창이 그 칸들을 따라간다(가장 적게).
+    /// 판은 칸을 나눠 갖는다(0270 C2): 몸의 판 = 패시브·다리·맺음, 무기 판 = 스킬·결·큰 기술 — 모든 칸이 어느 판엔가 선다
+    /// (헤드리스 `hearth.js`가 판마다 돌아 모든 칸을 지난다).
+    #[test]
+    fn every_entry_stands_on_some_plate_and_the_body_keeps_the_passives() {
+        for (i, &e) in ENTRIES.iter().enumerate() {
+            let on: Vec<Plate> = PLATES.into_iter().filter(|p| p.has(e)).collect();
+            // 어느 트리에도 서지 않는 결(`plates::HOMELESS` — 비어 있다: 0274 ②의 균열은 `CARRIED`로 한손검 트리에).
+            if matches!(e, Entry::Vein(v) if plates::HOMELESS.contains(&v.kind())) {
+                assert!(on.is_empty(), "{e:?}");
+                continue;
+            }
+            assert!(!on.is_empty(), "{e:?} stands on no plate");
+            assert_eq!(
+                on.contains(&Plate::Body),
+                matches!(e, Entry::Cell(_) | Entry::Key(_) | Entry::Link(_)),
+                "{e:?}"
+            );
+            for p in on {
+                assert!(spot_on(p, i).is_some(), "{p:?} {e:?}");
+            }
+        }
+    }
+
+    /// 0163: 격자는 위아래로 굴린다 — 판마다 칸의 "보인다"고 할 구간이 내용 안에 있고 보이는 높이(몸 195 − 판 줄 − 머리)에
+    /// 들어가며, 십자로 맨 위에서 맨 아래까지 내려갔다 올라오면 창이 그 칸들을 따라간다(가장 적게). 무기 판의 줄 셋은 한 화면.
     #[test]
     fn the_grid_scrolls_to_keep_the_cursor_cell_in_view() {
-        let room = 195.0 - geo::HEAD_H;
-        assert!(
-            geo::content_h() > room,
-            "the bands no longer fit — that is why it scrolls"
-        );
-        for i in 0..NE {
-            let (y0, y1) = reveal_span(i);
-            assert!(
-                y0 >= -0.01 && y1 <= geo::content_h() + 0.01,
-                "{:?}",
-                ENTRIES[i]
-            );
-            assert!(y1 - y0 <= room, "{:?} fits the view", ENTRIES[i]);
-            // 칸 자체가 그 구간 안에 있다.
-            let sp = spots()[i];
-            let (top, bottom) = (
-                sp.c.y - sp.half - geo::HEAD_H,
-                sp.c.y + sp.half - geo::HEAD_H,
-            );
-            assert!(top >= y0 && bottom <= y1, "{:?}", ENTRIES[i]);
+        let room = 195.0 - geo::TOP;
+        for plate in PLATES {
+            for (i, s) in spots_on(plate) {
+                let (y0, y1) = reveal_span(plate, i);
+                assert!(y0 >= -0.01 && y1 <= geo::content_h(plate) + 0.01);
+                assert!(y1 - y0 <= room, "{:?} fits the view", ENTRIES[i]);
+                let (top, bottom) = (s.c.y - s.half - geo::TOP, s.c.y + s.half - geo::TOP);
+                assert!(top >= y0 && bottom <= y1, "{:?}", ENTRIES[i]);
+            }
+            if plate != Plate::Body {
+                assert!(geo::content_h(plate) <= room, "{plate:?}: one screen");
+            }
         }
+        let body = Plate::Body;
+        assert!(
+            geo::content_h(body) > room,
+            "the body bands no longer fit — that is why it scrolls"
+        );
         let mut view = ui::ListView::default();
         let visible = |view: &ui::ListView, i: usize| {
-            let (y0, y1) = reveal_span(i);
+            let (y0, y1) = reveal_span(body, i);
             y0 >= view.offset() - 0.01 && y1 <= view.offset() + room + 0.01
         };
-        view.span(room, geo::content_h(), 2.0);
-        let mut at_ = at(Entry::Skill(Id::Whirl));
+        view.span(room, geo::content_h(body), 2.0);
+        let mut at_ = at(Entry::Cell(Cell::EvenBreath));
         assert_eq!(view.offset(), 0.0);
-        // 아래로 끝까지: 걸음마다 그 칸이 보인다. 첫 두 줄은 창이 움직이지 않고(이미 보인다) 셋째 줄에서 내려간다.
-        let mut moved_at = None;
-        for step in 0..14 {
-            let next = walk(at_, 0, 1, false, 0);
+        for _ in 0..14 {
+            let next = walk(body, at_, 0, 1, false, 0);
             if next == at_ {
                 break;
             }
             at_ = next;
-            let before = view.offset();
-            let (y0, y1) = reveal_span(at_);
+            let (y0, y1) = reveal_span(body, at_);
             view.reveal(y0, y1);
             assert!(visible(&view, at_), "{:?}", ENTRIES[at_]);
-            if view.offset() != before && moved_at.is_none() {
-                moved_at = Some((step, ENTRIES[at_].row()));
-            }
         }
         assert_eq!(ENTRIES[at_].row(), sk::KEY_ROW, "down to the keys");
-        assert!(
-            moved_at.is_some_and(|m| m.1 >= 1),
-            "the veins and the first band need no scroll: {moved_at:?}"
-        );
-        assert_eq!(
-            view.offset(),
-            geo::content_h() - room,
-            "the bottom of the board"
-        );
-        // 다시 위로: 맨 위 칸에 서면 창도 맨 위(갈래 머리 아래 첫 이름표가 보인다).
+        assert_eq!(view.offset(), geo::content_h(body) - room, "the bottom");
         for _ in 0..14 {
-            at_ = walk(at_, 0, -1, false, 0);
-            let (y0, y1) = reveal_span(at_);
+            let next = walk(body, at_, 0, -1, false, 0);
+            if next == STRIP {
+                break;
+            }
+            at_ = next;
+            let (y0, y1) = reveal_span(body, at_);
             view.reveal(y0, y1);
             assert!(visible(&view, at_));
         }
-        assert_eq!(
-            ENTRIES[at_].row(),
-            sk::VEIN_ROW,
-            "the veins are the top band"
-        );
+        assert_eq!(ENTRIES[at_].row(), 0, "the first passives are the top band");
         assert_eq!(view.offset(), 0.0);
     }
 
+    /// 걷기(KB: 격자는 돌지 않는다): 몸의 판 — 옆 걸음은 같은 줄의 이웃으로, 아래는 아래 줄로, 맨 윗줄에서 위 = 판 줄,
+    /// 맨 아래에서 아래 = 되돌리기 단추(화로에서만), 오른쪽 걸음은 격자에서 끝난다(0261). 판 줄에서 아래 = 떠난 칸(이 판에 없으면
+    /// 왼쪽 위 칸), 단추에서 위 = 떠난 칸.
     #[test]
-    fn walking_follows_the_layout_never_wraps_and_reaches_every_cell() {
-        let whirl = at(Entry::Skill(Id::Whirl));
-        let cut = at(Entry::Skill(Id::Cut));
-        let brace = at(Entry::Skill(Id::Brace));
-        let gather = at(Entry::Skill(Id::Gather));
-        assert_eq!(walk(whirl, 1, 0, true, 0), cut);
-        assert_eq!(walk(cut, 1, 0, true, 0), brace);
-        assert_eq!(walk(brace, 1, 0, true, 0), gather);
-        assert_eq!(walk(gather, -1, 0, true, 0), brace);
-        assert_eq!(walk(cut, -1, 0, true, 0), whirl);
-        // 가장자리: 왼쪽 끝에서 왼쪽·맨 위에서 위·맨 아래에서 아래는 그대로(돌지 않는다).
-        assert_eq!(walk(whirl, -1, 0, true, 0), whirl);
-        let flurry = at(Entry::Ult(Ult::Flurry));
-        let measure = at(Entry::Key(crate::progression::Key::Measure));
-        // 결의 줄(0223 11절)은 맨 위(2026-11-23 사장 "속성 패시브가 가장 위쪽에") — 첫 줄 위로 오르면 거기, 거기서 위는 그대로.
-        // 맨 아래는 맺음 줄.
-        let ember = at(Entry::Vein(crate::progression::Vein::Ember));
-        let rift = at(Entry::Vein(crate::progression::Vein::Rift));
-        let up = walk(whirl, 0, -1, true, 0);
-        assert!(matches!(ENTRIES[up], Entry::Vein(_)), "{:?}", ENTRIES[up]);
-        assert_eq!(walk(ember, 0, -1, true, 0), ember);
-        assert!(matches!(ENTRIES[walk(ember, 0, 1, true, 0)].row(), 0));
-        assert_eq!(walk(measure, 0, 1, false, 0), measure);
-        assert_eq!(walk(rift, 1, 0, false, 0), rift);
+    fn walking_the_body_plate_follows_the_layout_and_never_wraps() {
+        let body = Plate::Body;
+        let w = |from, dx, dy| walk(body, from, dx, dy, true, 0);
+        let breath = at(Entry::Cell(Cell::EvenBreath));
+        let flow = at(Entry::Cell(Cell::FlowingBeat));
+        let catch = at(Entry::Cell(Cell::Catch));
+        let sidestep = at(Entry::Cell(Cell::Sidestep));
+        assert_eq!(w(breath, 1, 0), flow);
+        assert_eq!(w(flow, 1, 0), catch);
+        assert_eq!(w(catch, -1, 0), flow);
+        assert_eq!(w(breath, -1, 0), breath, "the left edge");
+        assert_eq!(w(sidestep, 1, 0), sidestep, "the right edge is the end");
+        // 맨 윗줄에서 위 = 판 줄, 판 줄에서 위·옆은 판 줄(옆 = 판 바꾸기는 부른 쪽이).
+        assert_eq!(w(breath, 0, -1), STRIP);
+        assert_eq!(w(sidestep, 0, -1), STRIP);
+        assert_eq!(w(STRIP, 0, -1), STRIP);
+        assert_eq!(w(STRIP, 1, 0), STRIP);
         assert_eq!(
-            walk(rift, 1, 0, true, 0),
-            rift,
-            "right ends on the board (0261)"
+            walk(body, STRIP, 0, 1, true, catch),
+            catch,
+            "back where it left"
         );
-        assert_eq!(walk(flurry, -1, 0, true, 0), flurry);
-        // 0214: 큰 기술 줄 아래로 넷째 줄(새 스킬 → 그 아래 패시브), 그 아래 맺음.
-        let swallow = at(Entry::Skill(Id::Swallow));
-        let held = at(Entry::Cell(Cell::HeldBreath));
-        assert_eq!(walk(flurry, 0, 1, true, 0), swallow);
-        assert_eq!(walk(swallow, 0, 1, true, 0), held);
-        assert_eq!(walk(held, 0, 1, true, 0), measure);
-        assert_eq!(walk(measure, 0, -1, true, 0), held);
         assert_eq!(
-            walk(measure, 1, 0, true, 0),
+            walk(body, STRIP, 0, 1, true, at(Entry::Skill(Id::Whirl))),
+            breath,
+            "not on this plate — the top left"
+        );
+        // 아래로: 첫 줄 → 둘째 줄 → … → 맺음.
+        let closing = at(Entry::Cell(Cell::ClosingBlow));
+        assert_eq!(w(breath, 0, 1), closing);
+        assert_eq!(w(closing, 0, -1), breath);
+        let measure = at(Entry::Key(crate::progression::Key::Measure));
+        let rooted = at(Entry::Key(crate::progression::Key::Rooted));
+        assert_eq!(
+            w(measure, 1, 0),
             at(Entry::Key(crate::progression::Key::Edge))
         );
-        // 아래로: 스킬 → 그 아래 패시브 → 다음 줄의 스킬 → … → 큰 기술.
-        let breath = at(Entry::Cell(Cell::EvenBreath));
-        assert_eq!(walk(whirl, 0, 1, true, 0), breath);
-        assert_eq!(walk(breath, 0, -1, true, 0), whirl);
-        let quake = at(Entry::Skill(Id::Quake));
-        assert_eq!(walk(breath, 0, 1, true, 0), quake);
-        let closing = at(Entry::Cell(Cell::ClosingBlow));
-        assert_eq!(walk(quake, 0, 1, true, 0), closing);
-        assert_eq!(walk(closing, 0, 1, true, 0), flurry);
+        assert_eq!(w(measure, 0, 1), RESPEC);
         assert_eq!(
-            walk(flurry, 1, 0, true, 0),
-            at(Entry::Cell(Cell::FinalMeasure))
-        );
-        // 되돌리기 단추(창 아래 오른쪽 — 화로에서만): 맨 아래에서 **아래**로만 닿는다 — 오른쪽 걸음은 격자에서 끝난다(0261).
-        // 단추에서 위는 내려오기 전의 칸(`back`)으로, 옆·아래는 그대로.
-        // 오른쪽 아래 칸은 맺음 줄의 끝(결의 줄이 맨 위로 간 뒤, 2026-11-23).
-        let rooted = at(Entry::Key(crate::progression::Key::Rooted));
-        let step = rooted;
-        assert_eq!(walk(step, 1, 0, true, 0), step);
-        assert_eq!(walk(step, 0, 1, true, 0), RESPEC);
-        assert_eq!(walk(measure, 0, 1, true, 0), RESPEC);
-        assert_eq!(walk(step, 1, 0, false, 0), step, "no button in the pause");
-        assert_eq!(walk(step, 0, 1, false, 0), step);
-        assert_eq!(
-            walk(gather, 1, 0, true, 0),
-            gather,
-            "the right edge is the end"
-        );
-        assert_eq!(
-            walk(RESPEC, 0, -1, true, measure),
+            walk(body, measure, 0, 1, false, 0),
             measure,
-            "back where it came from"
+            "no button in the pause"
         );
-        assert_eq!(walk(RESPEC, 0, -1, true, step), step);
+        assert_eq!(w(rooted, 1, 0), rooted);
+        assert_eq!(walk(body, RESPEC, 0, -1, true, measure), measure);
         for (dx, dy) in [(1, 0), (-1, 0), (0, 1)] {
-            assert_eq!(walk(RESPEC, dx, dy, true, measure), RESPEC);
+            assert_eq!(walk(body, RESPEC, dx, dy, true, measure), RESPEC);
         }
-        // 어느 칸에서도 오른쪽으로는 단추에 닿지 않는다.
-        for i in 0..NE {
-            assert_ne!(walk(i, 1, 0, true, 0), RESPEC, "{:?}", ENTRIES[i]);
+        for (i, _) in spots_on(body) {
+            assert_ne!(w(i, 1, 0), RESPEC, "{:?}", ENTRIES[i]);
+            assert_ne!(w(i, 1, 0), STRIP, "{:?}", ENTRIES[i]);
         }
-        assert_eq!(walk(whirl, 0, 0, true, 0), whirl);
-        // 모든 칸에 닿는다(네 쪽 걸음으로) — 어느 칸에서 떠나도.
-        for start in 0..NE {
-            let mut seen = vec![false; NE + 1];
-            let mut todo = vec![start];
-            seen[start] = true;
-            while let Some(i) = todo.pop() {
-                for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                    let j = walk(i, dx, dy, true, 0);
-                    assert!(j <= RESPEC);
-                    if !seen[j] {
-                        seen[j] = true;
-                        todo.push(j);
+        assert_eq!(w(breath, 0, 0), breath);
+    }
+
+    /// 무기 판(0270 C2)의 걷기: 같은 줄은 옆으로, 갈래에 칸이 빈 줄도 위아래로 막히지 않고(그쪽 줄의 가장 가까운 칸), 맨 윗줄에서 위 = 판 줄.
+    /// 어느 판에서든 어느 칸·판 줄·단추에서 떠나도 그 판의 모든 칸과 판 줄·단추에 닿는다.
+    #[test]
+    fn walking_reaches_every_cell_of_every_plate_from_anywhere() {
+        let duel = SWORD;
+        let w = |from, dx, dy| walk(duel, from, dx, dy, true, 0);
+        // 0274 ③: 한손검 판 = 왼쪽 충격(자루 치기 · 밀치기 · 결) · 가운데(휘돌이 · 끌어모으기 / — / 몰아치기) · 오른쪽 흡수(버팀 · 재기 · 결).
+        let whirl = at(Entry::Skill(Id::Whirl));
+        let (brace, rally, shove) = (
+            at(Entry::Skill(Id::Brace)),
+            at(Entry::Skill(Id::Rally)),
+            at(Entry::Skill(Id::Shove)),
+        );
+        let flurry = at(Entry::Ult(Ult::Flurry));
+        assert_eq!(w(whirl, 0, -1), STRIP);
+        assert_eq!(w(brace, 1, 0), brace, "the right edge");
+        assert_eq!(
+            w(brace, 0, 1),
+            rally,
+            "the right branch goes down its column"
+        );
+        // 셋째 줄 왼쪽은 충격의 결.
+        assert_eq!(
+            w(shove, 0, 1),
+            at(Entry::Vein(crate::progression::Vein::Shock)),
+            "the left branch goes down its column"
+        );
+        assert_eq!(w(flurry, 0, 1), RESPEC);
+        // 쌍단검 판(0274 ③) = 왼쪽 날카로움(바늘땀 · 제비걸음 · 결) · 가운데(끌어모으기 · 빠지며 베기 · 그림자 습격) · 오른쪽 균열
+        // (가로지르기 · 던지기 · 결) — 옛 한손검 판의 넷이 옮겨 와 세 줄이 다 찬다.
+        let dag = Plate::Class(Class::Dagger);
+        let d = |from, dx, dy| walk(dag, from, dx, dy, true, 0);
+        let (stitch, cut, swallow, throw, slip) = (
+            at(Entry::Skill(Id::Stitch)),
+            at(Entry::Skill(Id::Cut)),
+            at(Entry::Skill(Id::Swallow)),
+            at(Entry::Skill(Id::Throw)),
+            at(Entry::Skill(Id::Slip)),
+        );
+        assert_eq!(d(stitch, 0, -1), STRIP);
+        assert_eq!(d(cut, 0, -1), STRIP);
+        assert_eq!(d(cut, 1, 0), cut, "the right edge");
+        assert_eq!(d(cut, 0, 1), throw);
+        assert_eq!(d(swallow, 1, 0), slip);
+        assert_eq!(d(slip, 1, 0), throw);
+        assert_eq!(
+            d(swallow, 0, 1),
+            at(Entry::Vein(crate::progression::Vein::Sharp))
+        );
+        assert_eq!(d(at(Entry::Ult(Ult::Ambush)), 0, 1), RESPEC);
+        for plate in PLATES {
+            // 위아래 걸음은 줄을 건너뛰지 않는다: 어느 칸에서든 바로 다음 줄로. 옆 걸음은 줄을 떠나지 않는다.
+            let sp = spots_on(plate);
+            for &(i, here) in &sp {
+                for dx in [1, -1] {
+                    let to = spot_on(plate, walk(plate, i, dx, 0, true, 0)).unwrap();
+                    assert_eq!(
+                        to.c.y, here.c.y,
+                        "{plate:?} {:?} leaves its row",
+                        ENTRIES[i]
+                    );
+                }
+                for dy in [1, -1] {
+                    let next = sp
+                        .iter()
+                        .map(|(_, s)| (s.c.y - here.c.y) * dy as f32)
+                        .filter(|&d| d > 0.5)
+                        .fold(f32::INFINITY, f32::min);
+                    if let Some(&(_, to)) = sp
+                        .iter()
+                        .find(|(j, _)| *j == walk(plate, i, 0, dy, true, 0))
+                    {
+                        assert!(
+                            ((to.c.y - here.c.y) * dy as f32 - next).abs() < 0.5,
+                            "{plate:?} {:?} skips a row",
+                            ENTRIES[i]
+                        );
+                    } else {
+                        assert!(
+                            next.is_infinite(),
+                            "{plate:?} {:?} leaves the grid early",
+                            ENTRIES[i]
+                        );
                     }
                 }
             }
-            assert!(seen.iter().all(|s| *s), "from {:?}", ENTRIES[start]);
+            let cells: Vec<usize> = spots_on(plate).into_iter().map(|(i, _)| i).collect();
+            let mut starts = cells.clone();
+            starts.extend([STRIP, RESPEC]);
+            for &start in &starts {
+                let mut seen = vec![start];
+                let mut todo = vec![start];
+                while let Some(i) = todo.pop() {
+                    for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                        let j = walk(plate, i, dx, dy, true, 0);
+                        assert!(j == STRIP || j == RESPEC || cells.contains(&j));
+                        if !seen.contains(&j) {
+                            seen.push(j);
+                            todo.push(j);
+                        }
+                    }
+                }
+                assert_eq!(seen.len(), cells.len() + 2, "{plate:?} from {start}");
+            }
         }
+    }
+
+    /// 탭을 열 때 설 칸(0161 → 0270 C2 — 판마다): 화로에서는 그 판에서 지금 살 수 있는 첫 칸(읽는 차례), 살 것이 없거나 읽기
+    /// 전용(멈춤)이면 배운 첫 스킬, 그것도 없으면 왼쪽 위 칸.
+    #[test]
+    fn a_plate_opens_on_its_first_buyable_cell_or_first_learned_skill() {
+        let duel = SWORD;
+        let b = Board::default();
+        // 한손검 판의 첫 줄(읽는 차례: 왼쪽 자루 치기 → 가운데 휘돌이 · 끌어모으기 → 오른쪽 버팀 — 0274 ③).
+        let pommel = at(Entry::Skill(Id::Pommel));
+        assert_eq!(first_focus_on(duel, &b, 5, true), pommel);
+        assert_eq!(first_focus_on(duel, &b, 0, true), pommel, "nothing to buy");
+        assert_eq!(first_focus_on(duel, &b, 5, false), pommel, "view only");
+        let mut full = Board::default();
+        full.rank[Id::Pommel.index()] = sk::MAX_RANK;
+        full.rank[Id::Whirl.index()] = sk::MAX_RANK;
+        assert_eq!(
+            first_focus_on(duel, &full, 15, true),
+            at(Entry::Skill(Id::Gather))
+        );
+        assert_eq!(first_focus_on(duel, &full, 10, true), pommel, "all spent");
+        let mut gather = Board::default();
+        gather.rank[Id::Gather.index()] = 1;
+        assert_eq!(
+            first_focus_on(duel, &gather, 1, false),
+            at(Entry::Skill(Id::Gather))
+        );
+        // 몸의 판: 길이 이어진 칸이 없으면(스킬을 아직 모른다) 살 것이 없다 — 왼쪽 위 칸.
+        let breath = at(Entry::Cell(Cell::EvenBreath));
+        assert_eq!(first_focus_on(Plate::Body, &b, 5, true), breath);
+        assert_eq!(first_focus_on(Plate::Body, &started(), 5, true), breath);
+        assert_eq!(
+            first_focus_on(Plate::Body, &Board::maxed(Pick::A), 99, true),
+            breath
+        );
     }
 
     /// 확인의 목록에는 되는 일만: 화로에서 살 수 있으면 올리기·열기가 맨 앞(으뜸), 배운 스킬은 끼우지 않은 칸에 끼우기,
@@ -2265,11 +3188,12 @@ mod tests {
     fn the_action_list_holds_only_what_applies_with_the_primary_row_first() {
         let worn = sk::START;
         let kits = Kits {
-            main: (Grip::Duel, worn),
+            main: (Grip::Class(Class::Sword), worn),
             sub: None,
         };
         let b = started();
-        let acts = |b: &Board, total, e, edit| node_acts(b, total, &kits, Ult::Upend, e, edit);
+        let acts =
+            |b: &Board, total, e, edit| node_acts(on(e), b, total, &kits, Ult::Upend, e, edit);
         // 0166: 새 판에서는 끼워 둔 자리의 스킬도 안 배운 것 — 화로에서 배우기만, 멈춤에서는 "쉼터 화로에서"만(0173).
         let fresh = Board::default();
         assert_eq!(acts(&fresh, 2, Entry::Skill(Id::Whirl), true), [Do::Buy]);
@@ -2298,7 +3222,7 @@ mod tests {
         assert_eq!(acts(&b, 3, flow, true), [Do::Buy]);
         assert_eq!(acts(&b, 3, flow, false), [Do::Away]);
         assert!(
-            acts(&b, 3, Entry::Cell(Cell::Catch), true).is_empty(),
+            acts(&b, 3, Entry::Cell(Cell::ClosingBlow), true).is_empty(),
             "cut off"
         );
         let mut open = b;
@@ -2330,18 +3254,35 @@ mod tests {
         let all = Board::maxed(Pick::A);
         assert!(acts(&all, 99, Entry::Ult(Ult::Upend), true).is_empty());
         assert_eq!(acts(&all, 99, Entry::Ult(Ult::Line), false), [Do::WearUlt]);
-        assert!(node_acts(&all, 99, &kits, Ult::Line, Entry::Ult(Ult::Line), false).is_empty());
+        assert!(node_acts(
+            SWORD,
+            &all,
+            99,
+            &kits,
+            Ult::Line,
+            Entry::Ult(Ult::Line),
+            false
+        )
+        .is_empty());
         // 0223 V3: 스킬은 그 갈래의 무기 칸에만 — 한손 검으로는 땅울림(양손)을 끼울 줄이 없고 까닭 줄이 선다. 망치를 부무기로
         // 들면 부무기의 칸(2·3)에 끼우는 줄이 서고, 두 무기에 다 되는 스킬은 네 칸 모두.
         assert_eq!(
-            node_acts(&all, 99, &kits, Ult::Upend, Entry::Skill(Id::Quake), false),
+            node_acts(
+                SWORD,
+                &all,
+                99,
+                &kits,
+                Ult::Upend,
+                Entry::Skill(Id::Quake),
+                false
+            ),
             [Do::Unfit]
         );
         let both = Kits {
-            main: (Grip::Duel, worn),
-            sub: Some((Grip::Heavy, [Id::Quake, Id::Gather])),
+            main: (Grip::Class(Class::Sword), worn),
+            sub: Some((Grip::Class(Class::Hammer), [Id::Quake, Id::Gather])),
         };
-        let at = |id| node_acts(&all, 99, &both, Ult::Upend, Entry::Skill(id), false);
+        let at = |id| node_acts(SWORD, &all, 99, &both, Ult::Upend, Entry::Skill(id), false);
         assert_eq!(
             at(Id::Quake),
             [Do::Wear(3)],
@@ -2351,7 +3292,7 @@ mod tests {
             at(Id::Brace),
             [Do::Wear(0), Do::Wear(1), Do::Wear(2), Do::Wear(3)]
         );
-        assert_eq!(at(Id::Swallow), [Do::Wear(0), Do::Wear(1)], "one hand only");
+        assert_eq!(at(Id::Pommel), [Do::Wear(0), Do::Wear(1)], "one hand only");
     }
 
     /// 끼우기: 다른 칸에 끼어 있던 스킬이면 맞바꾼다 — 같은 스킬이 두 칸에 서지 않는다.
@@ -2371,25 +3312,70 @@ mod tests {
         // 0166: 새 판의 휘돌이는 살 수 있는 칸일 뿐이다.
         let fresh = Board::default();
         assert_eq!(
-            look(&fresh, 2, Entry::Skill(Id::Whirl)),
+            look(
+                on(Entry::Skill(Id::Whirl)),
+                &fresh,
+                2,
+                Entry::Skill(Id::Whirl)
+            ),
             (Look::Ready, true)
         );
         assert_eq!(
-            look(&fresh, 0, Entry::Skill(Id::Whirl)),
+            look(
+                on(Entry::Skill(Id::Whirl)),
+                &fresh,
+                0,
+                Entry::Skill(Id::Whirl)
+            ),
             (Look::Short, false)
         );
         let b = started();
-        assert_eq!(look(&b, 5, Entry::Skill(Id::Whirl)), (Look::Owned, true));
-        assert_eq!(look(&b, 0, Entry::Skill(Id::Whirl)), (Look::Owned, false));
-        assert_eq!(look(&b, 5, Entry::Skill(Id::Gather)), (Look::Ready, true));
-        assert_eq!(look(&b, 0, Entry::Skill(Id::Gather)), (Look::Short, false));
-        assert_eq!(look(&b, 5, Entry::Skill(Id::Quake)), (Look::Locked, false));
         assert_eq!(
-            look(&b, 5, Entry::Cell(Cell::EvenBreath)),
+            look(on(Entry::Skill(Id::Whirl)), &b, 5, Entry::Skill(Id::Whirl)),
+            (Look::Owned, true)
+        );
+        assert_eq!(
+            look(on(Entry::Skill(Id::Whirl)), &b, 0, Entry::Skill(Id::Whirl)),
+            (Look::Owned, false)
+        );
+        assert_eq!(
+            look(
+                on(Entry::Skill(Id::Gather)),
+                &b,
+                5,
+                Entry::Skill(Id::Gather)
+            ),
             (Look::Ready, true)
         );
         assert_eq!(
-            look(&b, 5, Entry::Cell(Cell::FinalMeasure)),
+            look(
+                on(Entry::Skill(Id::Gather)),
+                &b,
+                0,
+                Entry::Skill(Id::Gather)
+            ),
+            (Look::Short, false)
+        );
+        assert_eq!(
+            look(on(Entry::Skill(Id::Quake)), &b, 5, Entry::Skill(Id::Quake)),
+            (Look::Locked, false)
+        );
+        assert_eq!(
+            look(
+                on(Entry::Cell(Cell::EvenBreath)),
+                &b,
+                5,
+                Entry::Cell(Cell::EvenBreath)
+            ),
+            (Look::Ready, true)
+        );
+        assert_eq!(
+            look(
+                on(Entry::Cell(Cell::FinalMeasure)),
+                &b,
+                5,
+                Entry::Cell(Cell::FinalMeasure)
+            ),
             (Look::Locked, false)
         );
         let all = Board::maxed(Pick::A);
@@ -2399,7 +3385,7 @@ mod tests {
                 Entry::Key(k) if all.cells.key != Some(k) => (Look::Short, false),
                 _ => (Look::Owned, false),
             };
-            assert_eq!(look(&all, 99, e), want, "{e:?}");
+            assert_eq!(look(on(e), &all, 99, e), want, "{e:?}");
         }
     }
 
@@ -2410,54 +3396,104 @@ mod tests {
         let b = started();
         let whirl = Entry::Skill(Id::Whirl);
         assert_eq!(
-            state_line(&b, 5, whirl, true).0,
+            state_line(on(whirl), &b, 5, whirl, true).0,
             fill(s.sk_st_raise, &["1"])
         );
-        assert_eq!(state_line(&b, 5, whirl, false).0, s.sk_st_view);
+        assert_eq!(state_line(on(whirl), &b, 5, whirl, false).0, s.sk_st_view);
         assert_eq!(
-            state_line(&b, 0, whirl, true).0,
+            state_line(on(whirl), &b, 0, whirl, true).0,
             fill(s.sk_st_short, &["1"])
         );
         assert_eq!(
-            state_line(&b, 5, Entry::Skill(Id::Quake), true).0,
-            fill(s.sk_st_locked, &["2"]),
-            "two of the four are already spent"
+            state_line(
+                on(Entry::Skill(Id::Quake)),
+                &b,
+                5,
+                Entry::Skill(Id::Quake),
+                true
+            )
+            .0,
+            fill(s.sk_st_plate_locked, &["2"]),
+            "the hammer's second row opens at 3 spent on its board — whirl is 1"
+        );
+        // 몸의 판은 쓴 점수 합(0270 C2 — 바꾸지 않았다): 셋째 줄은 8부터, 처음의 둘이 2.
+        let last = Entry::Cell(Cell::FinalMeasure);
+        assert_eq!(
+            state_line(Plate::Body, &b, 5, last, true).0,
+            fill(s.sk_st_locked, &["6"])
         );
         let flow = Entry::Cell(Cell::FlowingBeat);
-        assert_eq!(state_line(&b, 5, flow, true).0, fill(s.sk_st_open, &["1"]));
-        // 0215: 길이 끊긴 칸 · 맺음은 그 갈래에 더.
+        assert_eq!(
+            state_line(on(flow), &b, 5, flow, true).0,
+            fill(s.sk_st_open, &["1"])
+        );
+        // 0215: 길이 끊긴 칸 · 맺음은 그 갈래에 더. 몸의 판의 첫 줄 패시브는 뿌리(0270 C3).
         let catch = Entry::Cell(Cell::Catch);
-        assert_eq!(state_line(&b, 5, catch, true).0, s.sk_st_cut);
+        assert_eq!(
+            state_line(on(catch), &b, 5, catch, true).0,
+            fill(s.sk_st_open, &["1"])
+        );
+        let mut deep = b;
+        deep.rank[Id::Whirl.index()] = 4;
+        let closing = Entry::Cell(Cell::ClosingBlow);
+        assert_eq!(
+            state_line(on(closing), &deep, 9, closing, true).0,
+            s.sk_st_cut
+        );
         let all = Board::maxed(Pick::A);
-        assert_eq!(state_line(&all, 99, whirl, true).0, s.board_full);
-        assert_eq!(state_line(&all, 99, catch, true).0, s.sk_st_open_cell);
+        assert_eq!(state_line(on(whirl), &all, 99, whirl, true).0, s.board_full);
+        assert_eq!(
+            state_line(on(catch), &all, 99, catch, true).0,
+            s.sk_st_open_cell
+        );
         let link = Entry::Link(crate::progression::Link::ParryStep);
-        assert_eq!(state_line(&all, 99, link, true).0, s.sk_st_open_cell);
+        assert_eq!(
+            state_line(on(link), &all, 99, link, true).0,
+            s.sk_st_open_cell
+        );
         let mut keyless = all;
         keyless.cells.key = None;
         keyless.rank[Id::Brace.index()] = 0;
         keyless.rank[Id::Echo.index()] = 0;
         keyless.rank[Id::Bash.index()] = 0;
+        keyless.rank[Id::Ram.index()] = 0;
+        keyless.rank[Id::Toll.index()] = 0;
+        keyless.rank[Id::Ripple.index()] = 0;
+        // 0274: 한손검의 자루 치기 · 재기도 맞받기 갈래.
+        keyless.rank[Id::Pommel.index()] = 0;
+        keyless.rank[Id::Rally.index()] = 0;
+        // 0274 ⑤: 낫의 생기 거두기도 맞받기 갈래.
+        keyless.rank[Id::Harvest.index()] = 0;
+        // 0274 ⑥: 완드의 저주 새기기 · 치른 값도 맞받기 갈래.
+        keyless.rank[Id::Hex.index()] = 0;
+        keyless.ult[Ult::Price.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
+        keyless.ult[Ult::Bell.index()] = 0;
+        keyless.rank[Id::Pin.index()] = 0;
+        keyless.ult[Ult::Gale.index()] = 0;
         let edge = Entry::Key(crate::progression::Key::Edge);
         // 맞받기에 남은 것은 패시브 일곱.
         assert_eq!(keyless.branch_spent(crate::progression::Branch::Riposte), 7);
         assert_eq!(
-            state_line(&keyless, 99, edge, true).0,
+            state_line(on(edge), &keyless, 99, edge, true).0,
             fill(s.sk_st_branch, &["3"])
         );
-        // 큰 기술을 배우는 첫 단은 2점.
+        // 큰 기술을 배우는 첫 단은 2점 — 지팡이 판의 셋째 줄(그 판에 쓴 점수 6).
+        let staff = Plate::Class(Class::Staff);
+        let line = Entry::Ult(Ult::Blizzard);
         let mut open = Board::default();
-        open.rank[Id::Whirl.index()] = 5;
-        open.rank[Id::Cut.index()] = 5;
-        // 줄 긋기까지의 길은 이미 있다(되울림 밑의 모은 맞받기 — 길을 묻지 않는 가진 칸).
-        open.cells.open_cell(Cell::GatheredRiposte);
+        open.rank[Id::Gather.index()] = 5;
         assert_eq!(
-            state_line(&open, 13, Entry::Ult(Ult::Line), true).0,
+            state_line(staff, &open, 13, line, true).0,
+            fill(s.sk_st_plate_locked, &["1"])
+        );
+        open.rank[Id::Brace.index()] = 1;
+        assert_eq!(
+            state_line(staff, &open, 8, line, true).0,
             fill(s.sk_st_raise, &["2"])
         );
         assert_eq!(
-            state_line(&open, 12, Entry::Ult(Ult::Line), true).0,
+            state_line(staff, &open, 7, line, true).0,
             fill(s.sk_st_short, &["2"])
         );
     }
@@ -2508,13 +3544,13 @@ mod tests {
         let mut b = Board::default();
         assert_eq!(
             kind_line(&b, Entry::Skill(Id::Whirl)),
-            fill(s.sk_kind_skill, &[s.tree_beat, "7"])
+            fill(s.sk_kind_skill, &[s.sk_physical, "7"])
         );
         b.rank[Id::Whirl.index()] = 5;
         assert!(kind_line(&b, Entry::Skill(Id::Whirl)).contains("6.3"));
         assert_eq!(
             kind_line(&b, Entry::Ult(Ult::Upend)),
-            fill(s.sk_kind_ult, &[s.tree_footing])
+            fill(s.sk_kind_ult, &[s.class_hammer])
         );
         assert_eq!(
             kind_line(&b, Entry::Cell(Cell::TurnItBack)),
@@ -2534,5 +3570,66 @@ mod tests {
             assert!(!n.is_empty() && !entry_text(ENTRIES[i]).1.is_empty());
             assert!(!names[i + 1..].contains(n), "{n} twice");
         }
+    }
+
+    /// 0278 R22: 줄 띠의 열림은 그리기 밖의 순수한 셈 — 몸의 판은 쓴 점수 합이 `ROW_NEEDS`에, 무기 판은 그 판에 쓴 점수가
+    /// `PLATE_ROWS`(0 · 3 · 6)에 닿은 줄.
+    #[test]
+    fn skill_rows_open_where_the_spent_points_reach_each_rows_need() {
+        let body = skill_rows(Plate::Body, &Board::default());
+        let n = geo::bands(Plate::Body).len();
+        assert_eq!(body.needs, sk::ROW_NEEDS[..n]);
+        assert_eq!(body.spent, 0);
+        for (r, &need) in body.needs.iter().enumerate() {
+            assert_eq!(body.open & (1 << r) != 0, need == 0, "row {r}");
+        }
+        let full = skill_rows(Plate::Body, &Board::maxed(Pick::A));
+        assert_eq!(full.open, (1u8 << n) - 1);
+        // 지팡이 판: 그 판에 쓴 점수로 셋째 줄까지 차례로.
+        let staff = Plate::Class(Class::Staff);
+        let mut b = Board::default();
+        let mask = |spent: u32| {
+            plates::PLATE_ROWS
+                .iter()
+                .enumerate()
+                .filter(|(_, &need)| spent >= need)
+                .fold(0u8, |m, (r, _)| m | 1 << r)
+        };
+        let mut seen = Vec::new();
+        for (id, rank) in [
+            (Id::Gather, 1),
+            (Id::Gather, 3),
+            (Id::Gather, 5),
+            (Id::Brace, 1),
+        ] {
+            b.rank[id.index()] = rank;
+            let rows = skill_rows(staff, &b);
+            assert_eq!(rows.needs, plates::PLATE_ROWS);
+            assert_eq!(rows.spent, staff.spent(&b));
+            assert_eq!(rows.open, mask(rows.spent), "spent {}", rows.spent);
+            seen.push(rows.open);
+        }
+        assert_eq!(seen.first(), Some(&0b001));
+        assert_eq!(seen.last(), Some(&0b111));
+    }
+
+    /// 0278 R22: 줄 열림 연출의 기억 — 처음 본 판의 열린 줄은 연출 없이 숨고(0), 새로 열린 줄만 그때부터 `ROW_FADE`초 동안 걷힌다,
+    /// 잠긴 줄은 늘 보인다. 판이 바뀌면(`reset`) 다시 연출 없이.
+    #[test]
+    fn a_row_that_opens_fades_out_once_and_rows_open_at_first_sight_stay_hidden() {
+        let mut f = RowFades::default();
+        f.note(0b001, 1.0);
+        assert_eq!(f.fade(0, true, 1.0), 0.0);
+        assert_eq!(f.fade(1, false, 1.0), 1.0);
+        f.note(0b011, 2.0);
+        assert_eq!(f.fade(1, true, 2.0), 1.0);
+        assert!((f.fade(1, true, 2.0 + ROW_FADE * 0.5) - 0.5).abs() < 1e-5);
+        assert_eq!(f.fade(1, true, 2.0 + ROW_FADE + 0.01), 0.0);
+        // 다시 봐도 열린 때는 그대로.
+        f.note(0b011, 2.5);
+        assert!((f.fade(1, true, 2.5) - (1.0 - 0.5 / ROW_FADE)).abs() < 1e-5);
+        f.reset();
+        f.note(0b111, 9.0);
+        assert_eq!(f.fade(2, true, 9.0), 0.0);
     }
 }

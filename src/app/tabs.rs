@@ -5,6 +5,7 @@
 use super::frame::Window;
 use super::menu::Hit;
 use super::*;
+use crate::det::Det;
 use flow::{Host, Tab};
 
 /// 몸의 두 칸(480×270 기준 px, 몸의 왼쪽 위가 원점 — 기술 화면이 먼저 쓴 자리 그대로): 왼쪽 칸의 폭, 오른쪽 칸의 자리와 폭.
@@ -13,7 +14,7 @@ pub(super) const LEFT_W: f32 = 270.0;
 pub(super) const RIGHT_X: f32 = 282.0;
 pub(super) const RIGHT_W: f32 = 166.0;
 /// 왼쪽 칸의 줄 목록이 오른쪽 끝에서 들이는 몫(그 틈에 굴림 ▲▼).
-const LIST_GUTTER: f32 = 6.0;
+pub(super) const LIST_GUTTER: f32 = 6.0;
 /// 오른쪽 칸의 머리: 그림 칸의 한 변, 머리의 높이(이름 · 갈래 한 줄 · 상태 한 줄 아래 몸이 시작한다).
 pub(super) const HEAD_ICON: f32 = 30.0;
 pub(super) const HEAD_H: f32 = 37.0;
@@ -56,7 +57,7 @@ pub(super) fn turn_by_hand(
 
 /// 손대지 않은 인형의 흔들림(라디안).
 fn doll_sway(t: f32) -> f32 {
-    0.55 * (t * 0.7).sin()
+    0.55 * (t * 0.7).sin_d()
 }
 
 /// 오른쪽 칸의 몸 한 줄.
@@ -107,7 +108,7 @@ pub(super) fn tab_marked(host: Host, tab: Tab, level: bool, skills: bool, journe
 }
 
 impl App {
-    fn tab_name(tab: Tab) -> &'static str {
+    pub(super) fn tab_name(tab: Tab) -> &'static str {
         let s = s();
         match tab {
             Tab::Status => s.menu_growth,
@@ -130,12 +131,11 @@ impl App {
         self.go(go);
         let scene = self.scene();
         if let Scene::Skills { host } = scene {
-            self.cursor = self
-                .board()
-                .first_focus(self.progress.skill_points(), self.can_edit(host));
+            // 든 무기의 판에서 연다(0270 C2).
+            self.open_plate(self.can_edit(host));
         }
         if let Some(tab) = flow::remembered(scene) {
-            self.pause_tab = tab;
+            self.this_run.pause_tab = tab;
         }
     }
 
@@ -155,8 +155,8 @@ impl App {
             }
             return true;
         }
-        if self.tab_strip.over(a.point) {
-            self.tab_strip.nudge(a.point, a.drag_x, a.wheel);
+        if self.tab.tab_strip.over(a.point) {
+            self.tab.tab_strip.nudge(a.point, a.drag_x, a.wheel);
             (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
         }
         let scene = self.scene();
@@ -171,7 +171,7 @@ impl App {
             return false;
         }
         self.show(go);
-        self.codex_view = Default::default();
+        self.tab.codex_view = Default::default();
         self.snd(crate::sfx::Id::UiMove);
         true
     }
@@ -185,15 +185,16 @@ impl App {
         let left = self.board().left(self.progress.skill_points());
         vec![
             (s.sk_purse_points, left.to_string()),
-            (s.sk_purse_embers, self.world.embers.to_string()),
+            (s.sk_purse_embers, self.world.embers().to_string()),
         ]
     }
 
     /// 탭의 창을 그린다: 틀 · 탭 줄(지금 탭 = 금빛, 할 일이 있는 탭 = 민트 점) · 지갑 · ✕ · 두 칸 사이 세로 선. 몸은 부른 쪽이.
     pub(super) fn draw_tab_window(&mut self, f: &Frame, scene: Scene) -> Window {
         let (host, _) = flow::tab_of(scene).unwrap_or((Host::Pause, Tab::Status));
-        let level = self.progress.level.can_raise(self.world.embers);
-        let skills = !self.dev_board_on() && self.board().can_buy(self.progress.skill_points());
+        let level = self.progress.level.can_raise(self.world.embers());
+        let skills = !self.dev_board_on()
+            && crate::plates::can_buy(&self.board(), self.progress.skill_points());
         // 기록 탭의 점(0265): 받을 여정 목표 또는 받을 도감 칸.
         let journey = crate::journey::any_ready(&self.progress) || self.codex_ready();
         let fresh = self.progress.bag.any_fresh();
@@ -275,9 +276,9 @@ impl App {
     pub(super) fn draw_left_list(&mut self, w: &Window, rows: &[ui::Row], top: f32) {
         // 줄은 칸의 오른쪽 끝에서 조금 들여 끝난다 — 그 틈(줄 끝 ~ 세로 선)에 ▲▼가 선다.
         let area = w.rect(0.0, top, LEFT_W - LIST_GUTTER, w.body_h - top);
-        let cursor = self.cursor.min(rows.len().saturating_sub(1));
-        let mut hits = self.ui.list_k(rows, cursor, &mut self.view, area, w.k);
-        let (up, down) = self.view.more(rows.len());
+        let cursor = self.menu.cursor.min(rows.len().saturating_sub(1));
+        let mut hits = self.ui.list_k(rows, cursor, &mut self.menu.view, area, w.k);
+        let (up, down) = self.menu.view.more(rows.len());
         let tk = 0.7 * w.k;
         let ax = w.at(LEFT_W, 0.0).x - self.ui.width("▼", tk) * 0.5;
         for (k, (on, glyph, y)) in [
@@ -316,16 +317,42 @@ impl App {
         let name = self.ui.fit(h.name, room, K_NAME * k);
         let ink = if h.gold { AMBER } else { INK };
         self.ui.text(&name, p.x, p.y, K_NAME * k, ink);
-        let kind = self.ui.fit(&h.kind, room, K_KIND * k);
-        self.ui.text(&kind, p.x, w.at(0.0, 15.0).y, K_KIND * k, DIM);
-        let (state, ink) = match &self.toast {
-            Some((t, _)) => (t.clone(), AMBER),
-            None => h.state.clone(),
-        };
-        let state = self.ui.fit(&state, room, K_KIND * k);
-        self.ui
-            .text(&state, p.x, w.at(0.0, 25.0).y, K_KIND * k, ink);
+        self.draw_head_lines(w, x, room, &h.kind, &h.state);
         icon
+    }
+
+    /// 머리의 갈래 줄과 상태 줄(`x` 기준 px부터 `room` 화면 px). 잠깐 뜨는 알림(산 것·올린 것·안 되는 까닭)은 상태 줄 자리에 —
+    /// 한 줄에 안 들면 자르지 않고 갈래 줄 자리까지 두 줄로 쓴다(0275).
+    pub(super) fn draw_head_lines(
+        &self,
+        w: &Window,
+        x: f32,
+        room: f32,
+        kind: &str,
+        state: &(String, Color),
+    ) {
+        let k = K_KIND * w.k;
+        let px = w.at(x, 0.0).x;
+        let (y1, y2) = (w.at(0.0, 15.0).y, w.at(0.0, 25.0).y);
+        if let Some((t, _)) = &self.notice.toast {
+            if self.ui.width(t, k) > room {
+                let lines = ui::wrap(&self.ui, t, room, k);
+                let rest = lines.get(1..).map(|l| l.join(" ")).unwrap_or_default();
+                let rest = self.ui.fit(&rest, room, k);
+                for (y, line) in [(y1, lines.first().cloned().unwrap_or_default()), (y2, rest)] {
+                    self.ui.text(&line, px, y, k, AMBER);
+                }
+                return;
+            }
+        }
+        let kind = self.ui.fit(kind, room, k);
+        self.ui.text(&kind, px, y1, k, DIM);
+        let (state, ink) = match &self.notice.toast {
+            Some((t, _)) => (t.clone(), AMBER),
+            None => state.clone(),
+        };
+        let state = self.ui.fit(&state, room, k);
+        self.ui.text(&state, px, y2, k, ink);
     }
 
     /// 머리의 그림 칸에 아이템을: 칸이 넉넉하면 도는 그림(`draw_item`), 좁으면(작은 화면) 찍어 둔 그림(`draw_icon`) — 정수배로만.
@@ -355,7 +382,7 @@ impl App {
         if spin {
             let t = get_time() as f32;
             self.renderer
-                .draw_item(item, dest, yaw.unwrap_or(0.7 * (t * 0.8).sin()));
+                .draw_item(item, dest, yaw.unwrap_or(0.7 * (t * 0.8).sin_d()));
         } else {
             self.renderer.draw_icon(item, dest);
         }
@@ -380,8 +407,8 @@ impl App {
         while max_first + 1 < lines.len() && heights[max_first..].iter().sum::<f32>() > room + 0.5 {
             max_first += 1;
         }
-        self.scroll = self.scroll.clamp(0.0, max_first as f32);
-        let first = self.scroll.round() as usize;
+        self.tab.scroll = self.tab.scroll.clamp(0.0, max_first as f32);
+        let first = self.tab.scroll.round() as usize;
         let (x0, x1) = (w.at(RIGHT_X, 0.0).x, w.at(RIGHT_X + RIGHT_W, 0.0).x);
         // 넘칠 때만 오른쪽 끝에 굴림 막대 자리를 비운다(0191 — 전에는 ▲▼ 글자였는데 값 바로 옆이라 "올라감 ▲"으로 읽혔다).
         let arrow_w = if max_first > 0 { u * 6.0 } else { 0.0 };
@@ -424,7 +451,8 @@ impl App {
             draw_rectangle(bx, y0, bw, y1 - y0, Color { a: 0.18, ..DIM });
             draw_rectangle(bx, at.round(), bw, len.round(), Color { a: 0.85, ..DIM });
         }
-        self.hits
+        self.menu
+            .hits
             .push((w.rect(RIGHT_X, top, RIGHT_W, room), Hit::Pane));
     }
 
@@ -435,12 +463,13 @@ impl App {
     /// 끌기는 여기서 먹는다(아래 목록·상세가 같이 굴러가지 않게).
     pub(super) fn turn_doll(&mut self, a: &mut Actions) {
         let u = self.ui.u(1.0);
-        turn_by_hand(a, self.doll_rect, &mut self.doll_yaw, u);
+        turn_by_hand(a, self.tab.doll_rect, &mut self.tab.doll_yaw, u);
     }
 
     /// 인형의 지금 각: 손으로 돌렸으면 그 각, 아니면 천천히 좌우로 흔든다.
     pub(super) fn doll_spin(&self) -> f32 {
-        self.doll_yaw
+        self.tab
+            .doll_yaw
             .unwrap_or_else(|| doll_sway(get_time() as f32))
     }
 
@@ -454,8 +483,8 @@ impl App {
             (0, 0.0)
         };
         let line = self.ui.u(LH_BODY).max(1.0);
-        self.scroll = super::equip::pane_step(
-            self.scroll,
+        self.tab.scroll = super::equip::pane_step(
+            self.tab.scroll,
             a.aim.y,
             TICK_DT,
             wheel,

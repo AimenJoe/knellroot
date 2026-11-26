@@ -1,4 +1,5 @@
 use super::*;
+use crate::det::Det;
 use crate::input::Actions;
 use crate::tuning::Tuning;
 use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
@@ -30,7 +31,7 @@ fn lock_on_takes_the_boss_while_it_is_still_waking() {
         w.player.pos + vec3(2.0, 0.0, 0.0),
     );
     w.enemies[mob].state = EState::Chase;
-    w.player.facing = (home - w.player.pos).x.atan2((home - w.player.pos).z);
+    w.player.facing = (home - w.player.pos).x.atan2_d((home - w.player.pos).z);
     w.step(&lock, &t);
     assert_eq!(w.lock, Some(b), "locked {:?}, boss is {b}", w.lock);
     // 다 깨면 깃발이 내려가고 락온은 그대로다.
@@ -347,7 +348,10 @@ fn the_stage_script_runs_from_entrance_to_clear() {
     assert_eq!(run.phase, Phase::Down);
     assert!(!run.gate_closed, "the way back out is open");
     assert_eq!(run.goal(), run.down_at);
-    assert!(w.enemies.iter().all(|e| !e.boss), "the warden is gone");
+    assert!(
+        w.enemies.iter().all(|e| !e.boss || e.field),
+        "the warden is gone"
+    );
     w.player.pos = run.down_at.unwrap();
     assert_eq!(step(&mut run, &mut w), StageOut::Descend);
 }
@@ -565,7 +569,7 @@ fn residents_talk_glance_and_stay_out_of_the_fight() {
     }
     assert_eq!(run.take_residents_seen(), vec![0], "seen once");
     assert!(run.take_residents_seen().is_empty());
-    let want = (w.player.pos.x - at.x).atan2(w.player.pos.z - at.z);
+    let want = (w.player.pos.x - at.x).atan2_d(w.player.pos.z - at.z);
     let off = |f: f32| {
         ((want - f + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI)
             .abs()
@@ -674,7 +678,7 @@ fn coming_back_up_finds_the_warden_gone_and_the_floor_open_even_after_a_fall() {
     let (mut run, mut w) = StageRun::start(STAGES[0]);
     run.arrive_from_below(&mut w);
     assert_eq!(run.phase, Phase::Down);
-    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
+    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss || e.field));
     assert!(!run.gate_closed);
     let d = run.down_at.unwrap();
     assert!(
@@ -685,7 +689,7 @@ fn coming_back_up_finds_the_warden_gone_and_the_floor_open_even_after_a_fall() {
     w.player.hp = 0;
     assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
     assert_eq!(run.phase, Phase::Down);
-    assert!(w.enemies.iter().all(|e| !e.boss), "still gone");
+    assert!(w.enemies.iter().all(|e| !e.boss || e.field), "still gone");
 }
 
 /// 문 장치 곁에서 상호작용(0113).
@@ -1415,7 +1419,7 @@ fn the_prologue_forest_sits_at_the_end_outside_the_run_order() {
     }
     let def = STAGES[PROLOGUE];
     let (run, w) = StageRun::start(def);
-    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss));
+    assert!(run.boss.is_none() && w.enemies.iter().all(|e| !e.boss || e.field));
     assert!(run.rests.is_empty() && run.chest.at.is_empty() && run.hidden.list.is_empty());
     assert!(run.stones.is_empty() && run.lever.is_none());
     assert!(run.level.gate.is_none());
@@ -1602,4 +1606,654 @@ fn rest_hearths_and_lamps_are_different_props() {
         assert_eq!(hearths, run.rests.len(), "{}", def.find_prefix);
     }
     assert!(HEARTH_LIGHT_R > 7.0);
+}
+
+/// 필드 보스(0270 D)를 찾는다.
+fn field_boss(w: &World) -> Option<&crate::enemy::Enemy> {
+    w.enemies.iter().find(|e| e.field)
+}
+
+/// 0270 D: 성소에만 필드 보스가 있다 — 지도의 `Q` 자리에 엎드려 기다린다(잠든 채: 맞지도 락온에 잡히지도 않는다). 다른 지역에는
+/// 표도 지도 글자도 없다. 문지기의 셈(번호 0·깨어남·핵)은 그대로다.
+#[test]
+fn the_sanctuary_alone_fields_a_boss_lying_at_its_mark() {
+    for (i, def) in STAGES.iter().enumerate() {
+        let (run, w) = StageRun::start(def);
+        let marks = run.level.marks_of(FIELD_GLYPH).count();
+        assert_eq!(marks, def.field.is_some() as usize, "stage {i}");
+        assert_eq!(def.field.is_some(), i == 0, "stage {i}");
+        assert_eq!(field_boss(&w).is_some(), i == 0, "stage {i}");
+        // 문지기는 그대로 번호 0(서막 숲에는 없다).
+        if let Some(b) = run.boss {
+            assert!(w.enemies[b].boss && !w.enemies[b].field);
+        }
+    }
+    let (run, w) = StageRun::start(&sanctuary::DEF);
+    let e = field_boss(&w).unwrap();
+    let home = run.level.marks_of(FIELD_GLYPH).next().unwrap();
+    assert_eq!(e.kind, sanctuary::DEF.field.as_ref().unwrap().kind);
+    assert!(e.lying() && !e.active() && !e.lockable());
+    assert!(e.pos.distance(home) < 1e-3 && e.home.is_some());
+    assert!(run.boss_bar(&w).is_none(), "no bar while it lies");
+}
+
+/// 0270 D: 필드 보스의 터 — 넓고(돌진하는 2.5m 몸: 가운데 둘레 16 × 16m가 다 걷는 평평한 바닥), 길에서 벗어나 있고(진행의
+/// 길목 — 시작·장치·문·문지기 — 에서 멀다), 화로 곁이 아니다. 닿을 수 있는지는 `every_floor_is_reachable…`가 본다.
+#[test]
+fn the_field_boss_waits_in_a_wide_flat_clearing_off_the_route_and_away_from_hearths() {
+    let (run, _) = StageRun::start(&sanctuary::DEF);
+    let lv = &run.level;
+    let home = lv.marks_of(FIELD_GLYPH).next().unwrap();
+    let g = lv.ground();
+    let (cx, cz) = (
+        (home.x / CELL + lv.w as f32 * 0.5 - 0.5).round() as i32,
+        lv.row_of(home).round() as i32,
+    );
+    // 터의 네모: 보스 자리에서 가로·세로로 벽까지 — 그 안이 다 같은 높이의 걷는 바닥이고 16 × 16m(8 × 8칸)를 넘는다.
+    let span = |from: (i32, i32), dx: i32, dz: i32| {
+        let mut n = 0;
+        while lv.walkable(
+            (from.0 + dx * (n + 1)) as usize,
+            (from.1 + dz * (n + 1)) as usize,
+        ) {
+            n += 1;
+        }
+        n
+    };
+    let (z0, z1) = (cz - span((cx, cz), 0, -1), cz + span((cx, cz), 0, 1));
+    // 가로는 맨 윗줄에서 잰다(보스의 줄은 곁길로 이어져 길까지 뚫려 있다).
+    let (x0, x1) = (cx - span((cx, z0), -1, 0), cx + span((cx, z0), 1, 0));
+    assert!(
+        x1 - x0 + 1 >= 8 && z1 - z0 + 1 >= 8,
+        "{x0}..{x1} × {z0}..{z1}"
+    );
+    // 벽에서 떨어져 엎드린다(돌진이 등 뒤 벽에 바로 막히지 않게 — 사방 6m 넘게).
+    assert!(cx - x0 >= 3 && x1 - cx >= 3 && cz - z0 >= 3 && z1 - cz >= 3);
+    for z in z0..=z1 {
+        for x in x0..=x1 {
+            let (xu, zu) = (x as usize, z as usize);
+            assert!(lv.walkable(xu, zu), "({x},{z}) is not floor");
+            let p = lv.at(xu, zu);
+            assert!(
+                (g.height(p) - home.y).abs() < 0.01,
+                "({x},{z}) is not level"
+            );
+            // 부딪히는 소품은 가장자리 줄에만(달릴 자리를 막지 않는다).
+            let edge = x == x0 || x == x1 || z == z0 || z == z1;
+            let blocked = lv.props.iter().any(|q| {
+                q.kind.half() != Vec2::ZERO
+                    && (q.pos.x - p.x).abs() < CELL * 0.5
+                    && (q.pos.z - p.z).abs() < CELL * 0.5
+            });
+            assert!(edge || !blocked, "({x},{z}) holds a prop");
+        }
+    }
+    let flat = |a: Vec3| vec2(a.x - home.x, a.z - home.z).length();
+    for r in &run.rests {
+        assert!(flat(*r) > 30.0, "a hearth {} m away", flat(*r));
+    }
+    // 길목에서 멀다: 깨어난 자리·문 장치·문·문지기 — 일어나는 거리(`FIELD_WAKE_R`)·끈(`FIELD_LEASH`)이 닿지 않는다.
+    let mut route = vec![lv.player_start, lv.gate.unwrap().1];
+    route.extend(run.lever);
+    route.extend(lv.marks_of(sanctuary::DEF.boss.0));
+    for p in route {
+        assert!(flat(p) > crate::tuning::FIELD_LEASH, "{p:?}");
+    }
+    // 떼 마당(0244)도 터를 비킨다.
+    for p in &run.horde_at {
+        assert!(flat(*p) >= 16.0, "the horde stands in the stag's ground");
+    }
+}
+
+/// 0270 D: 필드 보스는 그 판에 한 번 — 쓰러뜨리면 화로에서 쉬어도·쓰러져 다시 서도 다시 서지 않고, 다음 판(새로 세운 지역)에
+/// 다시 엎드려 있다. 쓰러뜨리지 않고 쉬면 처음부터(가득 차 엎드린 채). 앱이 "이 판에 이미 쓰러뜨렸다"고 알려도 서지 않는다.
+#[test]
+fn a_downed_field_boss_stays_down_through_rests_this_run_and_waits_again_next_run() {
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    let i = entrance_rest(&run);
+    // 다친 채 깨어 있다가 쉬면: 가득 차 엎드린 채 다시.
+    {
+        let e = w.enemies.iter_mut().find(|e| e.field).unwrap();
+        e.hp = e.max_hp / 2;
+        e.state = EState::Chase;
+    }
+    rest_now(&mut run, &mut w, i);
+    let e = field_boss(&w).expect("still there");
+    assert!(e.lying() && e.hp == e.max_hp);
+    // 쓰러뜨린다.
+    w.enemies.iter_mut().find(|e| e.field).unwrap().state = EState::Dead;
+    tick(&mut run, &mut w, Actions::default());
+    assert!(run.field.down);
+    assert!(run.take_field_down().is_some());
+    assert!(run.take_field_down().is_none(), "told once");
+    rest_now(&mut run, &mut w, i);
+    assert!(field_boss(&w).is_none(), "resting does not raise it");
+    // 쓰러져 쉼터에서 다시 서도.
+    w.player.hp = 0;
+    w.player.flask = 0;
+    assert_eq!(
+        tick(&mut run, &mut w, Actions::default()),
+        StageOut::Respawned
+    );
+    assert!(field_boss(&w).is_none(), "nor does falling");
+    // 엘리트·보통 적은 여느 때처럼 다시 섰다.
+    assert_eq!(
+        w.enemies.iter().filter(|e| e.elite.is_some()).count(),
+        sanctuary::DEF.elites.len()
+    );
+    // 다음 판.
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    assert!(field_boss(&w).is_some_and(|e| e.lying()));
+    // 같은 판을 잇거나 지역에 다시 들어설 때(앱이 알린다): 서지 않는다 — 쉬어도.
+    run.set_field_down(&mut w);
+    assert!(field_boss(&w).is_none());
+    rest_now(&mut run, &mut w, i);
+    assert!(field_boss(&w).is_none());
+}
+
+/// 0270 D: 처음 쓰러뜨리면 잔불을 더 흩고 앱에 "처음"이라 알린다(확정 떨굼·장신구·기록) — 기록에 있으면 덤 없이 "다시".
+#[test]
+fn a_field_boss_pays_extra_and_reports_first_only_once() {
+    let fell = |beaten: bool| {
+        let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+        run.set_field_beaten(beaten);
+        let at = {
+            let e = w.enemies.iter_mut().find(|e| e.field).unwrap();
+            e.state = EState::Dead;
+            e.pos
+        };
+        w.drops.clear();
+        tick(&mut run, &mut w, Actions::default());
+        let extra = w.drops.iter().map(|d| d.value).sum::<u32>();
+        let told = run.take_field_down().expect("told");
+        assert_eq!(told.0, at);
+        (told.1, extra)
+    };
+    let (first, with_bonus) = fell(false);
+    let (again, plain) = fell(true);
+    assert!(first && !again);
+    assert_eq!(with_bonus - plain, crate::tuning::FIELD_FIRST_EMBERS);
+    // 처음의 합(종의 잔불 + 덤)은 성소 문지기의 것보다 뚜렷이 많다.
+    let stag = crate::species::def(Kind::Stag).embers;
+    let warden = crate::species::def(Kind::Warden).embers;
+    assert!(stag + crate::tuning::FIELD_FIRST_EMBERS >= warden * 2);
+    assert!(stag < warden, "less on later runs");
+}
+
+/// 0270 D: 일어나기 시작하면 카드와 체력 띠(문지기와 같은 띠 — 이름은 그 보스), 다 서서 싸우는 동안에도. 제자리로 돌아가는
+/// 동안·엎드린 뒤에는 띠가 없다. 일어나기 시작한 틱을 앱에 한 번 알린다(낮은 땅울림 — 종은 울리지 않는다).
+#[test]
+fn the_field_boss_shows_its_bar_from_rising_until_it_gives_up_or_falls() {
+    let t = Tuning::default();
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    run.intro = 0.0;
+    let home = run.level.marks_of(FIELD_GLYPH).next().unwrap();
+    w.player.pos = home + vec3(-6.0, 0.0, 0.0);
+    w.player.prev = w.player.pos;
+    w.unhurt = true;
+    // (걸어서 왔다면 구역 카드는 이미 지났다.)
+    run.first_card = true;
+    run.zone = run.zone_at(w.player.pos);
+    assert!(!run.take_field_woke());
+    for _ in 0..3 {
+        w.step(&Actions::default(), &t);
+        run.tick(&mut w, 1.0 / 60.0);
+    }
+    assert!(field_boss(&w).unwrap().waking);
+    assert!(run.take_field_woke() && !run.take_field_woke(), "told once");
+    assert_eq!(
+        run.card.map(|c| crate::i18n::tr(c.0)),
+        Some(crate::i18n::tr(|s| s.stag_wakes))
+    );
+    let bar = run.bar_boss(&w).expect("a bar while it rises");
+    assert_eq!(bar.kind, Kind::Stag);
+    for _ in 0..(crate::tuning::FIELD_WAKE * 60.0) as usize + 5 {
+        w.step(&Actions::default(), &t);
+        run.tick(&mut w, 1.0 / 60.0);
+    }
+    assert!(field_boss(&w).unwrap().active());
+    assert_eq!(run.boss_bar(&w).map(|b| b.0), Some(1.0));
+    // 돌아가는 동안에는 띠가 없다.
+    w.enemies.iter_mut().find(|e| e.field).unwrap().state = EState::Return;
+    assert!(run.boss_bar(&w).is_none());
+    // 쓰러지면 없다.
+    w.enemies.iter_mut().find(|e| e.field).unwrap().state = EState::Dead;
+    assert!(run.boss_bar(&w).is_none());
+}
+
+/// 문지기를 지우면(핵을 거둔 뒤) 뒤의 적 번호가 하나씩 당겨진다 — 엘리트의 번호도 같이 당겨야 한다: 안 그러면 엘리트 곁의
+/// 보통 적이 쓰러질 때 엘리트가 쓰러진 것으로 셌다. 필드 보스(0270 D)는 문지기가 지워져도 남는다.
+#[test]
+fn taking_the_core_keeps_elite_numbers_and_the_field_boss() {
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    run.open_down(&mut w);
+    assert!(w.enemies.iter().all(|e| !e.boss || e.field));
+    assert!(field_boss(&w).is_some_and(|e| e.lying()), "the stag stays");
+    // 엘리트가 아닌 적을 다 쓰러뜨려도 엘리트는 쓰러진 것으로 세지 않는다.
+    for e in w
+        .enemies
+        .iter_mut()
+        .filter(|e| e.elite.is_none() && !e.boss)
+    {
+        e.state = EState::Dead;
+    }
+    tick(&mut run, &mut w, Actions::default());
+    assert!(run.take_elites_down().is_empty());
+    assert!(run.take_elites_new().is_empty());
+    // 엘리트 하나를 쓰러뜨리면 그것만.
+    let first = w.enemies.iter().position(|e| e.elite.is_some()).unwrap();
+    w.enemies[first].state = EState::Dead;
+    tick(&mut run, &mut w, Actions::default());
+    assert_eq!(run.take_elites_down().len(), 1);
+}
+
+/// 0272 2단계: 파수꾼의 창은 떠난 마을의 셋째 상자 — 골목 서쪽 파수꾼의 곁방(본길에서 비켜 둔 곳). 옛 상자 둘의 기록 번호(위 → 아래
+/// 차례)는 그대로다: 0 = 천 · 1 = 항아리 — 그 둘을 연 옛 기록은 창의 상자를 연 것으로 읽히지 않는다. 곁방은 걸어서 닿는다
+/// (`every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight`가 모든 바닥을 본다).
+#[test]
+fn the_watchmans_spear_waits_in_the_villages_third_chest() {
+    use crate::charms::Id as Charm;
+    let def = &village::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(Charm::Cloth),
+            Loot::Charm(Charm::Jar),
+            Loot::Weapon(crate::weapons::Id::Spear),
+            Loot::Weapon(crate::weapons::Id::Daggers),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 4);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (40, 23),
+        "the old chests keep their place"
+    );
+    assert_eq!(cell(run.chest.at[1]), (41, 39));
+    let (x, z) = cell(run.chest.at[2]);
+    assert!(x < 8 && (39..47).contains(&z), "west of the alley: {x} {z}");
+    run.set_opened(&[0, 1]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, false, false],
+        "an old record"
+    );
+}
+
+/// 0274 ③: 빈집의 쌍단검은 떠난 마을의 넷째 상자 — 거주지 동쪽 벽 너머 빈집의 뒷방(도착에서 가깝지만 본길에서 비켜 둔 곳). 옛 상자
+/// 셋의 기록 번호(위 → 아래 차례)는 그대로다: 셋을 연 옛 기록은 쌍단검의 상자를 연 것으로 읽히지 않는다. 뒷방은 걸어서 닿고 거주지와
+/// 같은 높이다(`every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight`가 모든 바닥을 본다).
+#[test]
+fn the_empty_house_daggers_wait_in_the_villages_fourth_chest() {
+    let def = &village::DEF;
+    assert_eq!(
+        def.chest_loot.last(),
+        Some(&Loot::Weapon(crate::weapons::Id::Daggers))
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 4);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[2]),
+        (3, 42),
+        "the spear's chest keeps its place"
+    );
+    let (x, z) = cell(run.chest.at[3]);
+    assert!(
+        x > 38 && (52..59).contains(&z),
+        "east of the homes: {x} {z}"
+    );
+    run.set_opened(&[0, 1, 2]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, true, false],
+        "an old record"
+    );
+}
+
+/// 0274 ④: 가지치기 대검은 잔뿌리의 정원의 셋째 상자 — 서쪽 샛길의 막다른 끝(되풀이 꼬투리 Y가 지키는 곳, 본길에서 비켜 둔 보상).
+/// 옛 상자 둘(장신구 · 잔뿌리 활)의 기록 번호(위 → 아래 차례)는 그대로다: 둘을 연 옛 기록은 대검의 상자를 연 것으로 읽히지 않는다.
+#[test]
+fn the_pruners_greatsword_waits_in_the_gardens_third_chest() {
+    let def = &garden::DEF;
+    // 0274 ⑤: 넷째 상자(정원지기의 낫)가 그 뒤에 붙었다 — 앞의 셋은 그대로.
+    assert_eq!(
+        def.chest_loot[..3],
+        [
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Bow),
+            Loot::Weapon(crate::weapons::Id::Greatsword),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 4);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (3, 23),
+        "the charm's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (40, 34),
+        "the bow's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[2]),
+        (3, 44),
+        "the end of the west side path"
+    );
+    run.set_opened(&[0, 1]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, false, false],
+        "an old record"
+    );
+}
+
+/// 0274 ⑤: 정원지기의 낫은 잔뿌리의 정원의 넷째 상자 — 물 고인 낮은터 동쪽 물웅덩이 너머 구석(이끼먹이가 뜯는 물가, 적대 개체가 없다).
+/// 옛 상자 셋(장신구 · 잔뿌리 활 · 가지치기 대검)의 기록 번호(위 → 아래 차례)는 그대로다: 셋을 연 옛 기록은 낫의 상자를 연 것으로
+/// 읽히지 않는다.
+#[test]
+fn the_gardeners_sickle_waits_in_the_gardens_fourth_chest() {
+    let def = &garden::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Bow),
+            Loot::Weapon(crate::weapons::Id::Greatsword),
+            Loot::Weapon(crate::weapons::Id::Scythe),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 4);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (3, 23),
+        "the charm's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (40, 34),
+        "the bow's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[2]),
+        (3, 44),
+        "the greatsword's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[3]),
+        (39, 50),
+        "the flooded hollow's eastern bank"
+    );
+    run.set_opened(&[0, 1, 2]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, true, false],
+        "an old record"
+    );
+}
+
+/// 0274 ⑥: 맡겨진 완드는 멈추지 않는 갱도(작업층)의 둘째 상자 — 운반 회랑 서쪽 끝 곁방(창고)의 구석(숫돌 곁). 옛 상자(장신구)의 기록
+/// 번호(위 → 아래 차례)는 그대로다: 그 상자를 연 옛 기록은 완드의 상자를 연 것으로 읽히지 않는다.
+#[test]
+fn the_pledged_wand_waits_in_the_workings_second_chest() {
+    let def = &workings::DEF;
+    // 0274 ⑦: 셋째 · 넷째 상자(쇠뇌 · 지팡이)가 그 뒤에 붙었다 — 앞의 둘은 그대로.
+    assert_eq!(
+        def.chest_loot[..2],
+        [
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Wand),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 4);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (6, 36),
+        "the charm's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (5, 47),
+        "the westernmost side room of the haulage gallery"
+    );
+    run.set_opened(&[0]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, false, false, false],
+        "an old record"
+    );
+    // 어느 지역의 상자에도 완드는 하나뿐이다(얻는 차례 — 작업층).
+    let n = crate::stage::STAGES
+        .iter()
+        .flat_map(|d| d.chest_loot.iter())
+        .filter(|l| **l == Loot::Weapon(crate::weapons::Id::Wand))
+        .count();
+    assert_eq!(n, 1);
+}
+
+/// 0274 ⑦: 화약 쇠뇌 · 순례자 지팡이는 작업층의 셋째 · 넷째 상자 — 서쪽 작업대(+2.5m)의 북서 구석 · 위층 회랑(+5m)의 동쪽 벽 밑. 옛
+/// 상자 둘(장신구 · 맡겨진 완드)의 기록 번호(위 → 아래 차례)는 그대로다: 둘을 연 옛 기록은 쇠뇌 · 지팡이의 상자를 연 것으로 읽히지 않는다.
+/// 상자 자리는 걸어서 닿는다(`every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight`가 모든 바닥을 본다).
+#[test]
+fn the_powder_crossbow_and_the_pilgrim_staff_wait_in_the_workings() {
+    let def = &workings::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Wand),
+            Loot::Weapon(crate::weapons::Id::Crossbow),
+            Loot::Weapon(crate::weapons::Id::Staff),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (5, 47),
+        "the wand's chest keeps its place"
+    );
+    assert_eq!(cell(run.chest.at[2]), (5, 49), "the west bench's corner");
+    assert_eq!(
+        cell(run.chest.at[3]),
+        (40, 50),
+        "under the upper gallery's east wall"
+    );
+    // 높이: 서쪽 작업대는 +2.5m, 위층 회랑은 +5m(지도 생성기의 층 — 도착 작업대와 같은 높이).
+    let y = |i: usize| g.height(run.chest.at[i]);
+    assert!((y(2) - 2.5).abs() < 0.01, "bench {}", y(2));
+    assert!((y(3) - 5.0).abs() < 0.01, "upper gallery {}", y(3));
+    run.set_opened(&[0, 1]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, false, false],
+        "an old record"
+    );
+}
+
+/// 0274 ⑦ 얻는 차례(단순하고 직관적인 것부터 — 사장 2026-11-25): 무기는 지역마다 이 표대로 상자에 하나씩 — 성소 망치 · 떠난 마을 창 ·
+/// 쌍단검 · 정원 활 · 대검 · 낫 · 작업층 완드 · 쇠뇌 · 지팡이(검은 깨어난 자리, 맨손은 처음부터, 방패는 가게). 어느 무기도 두 상자에 들지
+/// 않고, 상자에서 나오는 무기는 이것뿐이다.
+#[test]
+fn weapons_are_found_simplest_first_one_chest_each() {
+    use crate::weapons::Id as W;
+    let want: [(usize, W); 9] = [
+        (0, W::Hammer),
+        (1, W::Spear),
+        (1, W::Daggers),
+        (2, W::Bow),
+        (2, W::Greatsword),
+        (2, W::Scythe),
+        (3, W::Wand),
+        (3, W::Crossbow),
+        (3, W::Staff),
+    ];
+    let found: Vec<(usize, W)> = crate::stage::STAGES
+        .iter()
+        .enumerate()
+        .flat_map(|(n, d)| {
+            d.chest_loot.iter().filter_map(move |l| match l {
+                Loot::Weapon(w) => Some((n, *w)),
+                _ => None,
+            })
+        })
+        .collect();
+    let mut a = found.clone();
+    let mut b = want.to_vec();
+    a.sort_by_key(|(n, w)| (*n, *w as usize));
+    b.sort_by_key(|(n, w)| (*n, *w as usize));
+    assert_eq!(a, b);
+    // 검 · 맨손 밖의 무기는 모두 어느 상자에 있다(얻을 수 없는 무기가 없다).
+    for w in crate::weapons::IDS {
+        if w != W::Sword && w != W::Fists {
+            assert!(found.iter().any(|(_, x)| *x == w), "{w:?} has no chest");
+        }
+    }
+}
+
+/// 0274 ⑦: 성소의 옛 쇠뇌 · 지팡이 상자는 자리와 번호(기록 `chests` = 1 · 2)를 그대로 두고 든 것만 바꿨다 — 성벽길(문 장치로 가는 길)은
+/// 숫돌, 뜰 남동 단은 여벌. 두 상자를 연 옛 기록은 두 상자가 열린 채로 읽힌다(새로 든 것을 다시 주지 않는다 — 가진 쇠뇌 · 지팡이는 기록의
+/// `weapons`가 지닌다: `save::tests::an_old_record_that_opened_the_sanctuary_weapon_chests_keeps_its_weapons`). 상자의 숫돌은 숫돌로
+/// 세고(벼리기), 지도 `O`의 셈(숨은 물건 · 여정)에는 들지 않는다.
+#[test]
+fn the_sanctuarys_old_weapon_chests_keep_their_place_and_hold_a_whetstone_and_a_spare() {
+    let def = &sanctuary::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Ear),
+            Loot::Stone,
+            Loot::Spare,
+            Loot::Weapon(crate::weapons::Id::Hammer),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    let at: Vec<(usize, usize)> = run.chest.at.iter().map(|p| cell(*p)).collect();
+    assert_eq!(at, OLD_SANCTUARY_CHESTS, "the chests keep their place");
+    // 성벽길(+3m)의 상자.
+    assert!((g.height(run.chest.at[1]) - 3.0).abs() < 0.01);
+    run.set_opened(&[1, 2]);
+    assert_eq!(
+        run.chest.open,
+        vec![false, true, true, false],
+        "an old record"
+    );
+    // 상자의 숫돌: 벼리는 셈은 센다 — 숨은 물건 이름(`find_id`)과 겹치지 않는다.
+    let id = crate::stage::chest_stone_id(def.find_prefix, 1);
+    assert_eq!(id, "sanctuary.stone.chest1");
+    assert_eq!(crate::forge::stones(std::slice::from_ref(&id)), 1);
+    let o = def.map.chars().filter(|c| *c == 'O').count();
+    assert!((0..o + 8).all(|k| crate::stage::find_id(def.find_prefix, Find::Stone, k) != id));
+    // 어느 지역의 상자에도 쇠뇌 · 지팡이는 작업층에만.
+    for (n, d) in crate::stage::STAGES.iter().enumerate() {
+        for w in [crate::weapons::Id::Crossbow, crate::weapons::Id::Staff] {
+            assert_eq!(
+                d.chest_loot.contains(&Loot::Weapon(w)),
+                n == 3,
+                "{w:?} in stage {n}"
+            );
+        }
+    }
+}
+
+/// 성소 상자 넷의 칸(탑 · 성벽길 · 뜰 남동 단 · 뿌리 굴) — 0274 ⑦ 전과 같다(기록 `chests`의 번호가 이 자리를 가리킨다).
+const OLD_SANCTUARY_CHESTS: [(usize, usize); 4] = [(40, 17), (2, 18), (34, 29), (2, 49)];
+
+/// 시험용: 수류탄(쇠뇌의 평타) · 신성한 빛(망치의 RB)을 차례로 — 둘 다 아직 놓여 있다. `rest`면 던진 몸짓이 끝나 손이 빌
+/// 때까지(쉬려면 서 있어야 한다), 아니면 창도 던진다(날고 있다 — 손에 돌아오기 전).
+fn throw_things(w: &mut World, rest: bool) {
+    let t = Tuning::default();
+    let go = |w: &mut World, a: Actions, ticks: usize| {
+        for k in 0..ticks {
+            let a = if k == 0 { a } else { Actions::default() };
+            w.step(&a, &t);
+        }
+    };
+    w.set_weapon(crate::weapons::Id::Crossbow);
+    w.player.ranged.grenades = 2.0;
+    w.player.stamina = 100.0;
+    go(
+        w,
+        Actions {
+            attack: true,
+            ..Default::default()
+        },
+        (t[crate::tuning::P::ThrowTime] / (1.0 / 60.0)) as usize + 2,
+    );
+    let rb = Actions {
+        cast: true,
+        cast_held: true,
+        ..Default::default()
+    };
+    // RB는 누른 뒤 손을 떠날 때까지 몇 틱 — 놓일 때까지만 걷는다.
+    let until = |w: &mut World, done: &dyn Fn(&World) -> bool| {
+        for k in 0..60 {
+            if done(w) {
+                return;
+            }
+            let a = if k == 0 { rb } else { Actions::default() };
+            w.step(&a, &t);
+        }
+    };
+    w.set_weapon(crate::weapons::Id::Hammer);
+    until(w, &|w| !w.smites.is_empty());
+    if rest {
+        for _ in 0..60 {
+            if matches!(w.player.state, PState::Idle) {
+                break;
+            }
+            w.step(&Actions::default(), &t);
+        }
+    } else {
+        w.set_weapon(crate::weapons::Id::Spear);
+        until(w, &|w| w.rb_out());
+        assert!(w.rb_out(), "the javelin is in the air");
+    }
+    let n = w.placed_counts();
+    assert!(n[1] > 0 && n[2] > 0, "smite · bomb {n:?}");
+}
+
+/// 0278 고침: 쉬기 · 쉰 화로에서 다시 서기 · 서막 숲에서 다시 서기는 방랑자가 놓거나 던진 것을 모두 치운다 — 쉬기 전 · 쓰러지기 전에
+/// 던진 수류탄 · 꽂히기 전의 신성한 빛이 다시 선 뒤에 터지지 않고, 날던 창은 손에 있다(RB가 막히지 않는다).
+#[test]
+fn resting_and_rising_again_clear_what_the_wanderer_threw() {
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    let i = entrance_rest(&run);
+    w.player.pos = run.rests[i] + vec3(0.0, 0.0, 1.0);
+    w.player.prev = w.player.pos;
+    throw_things(&mut w, true);
+    rest_now(&mut run, &mut w, i);
+    assert_eq!(run.rest_at.map(|r| r.0), Some(i), "rested");
+    assert_eq!(w.placed_counts(), [0; 11], "rest");
+    assert!(!w.rb_out());
+    // 쉰 화로에서 다시 선다.
+    throw_things(&mut w, false);
+    w.player.hp = 0;
+    assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
+    assert_eq!(w.placed_counts(), [0; 11], "respawn at the hearth");
+    assert!(!w.rb_out());
+    // 서막 숲(쉼터가 없다)에서 깨어난 자리로.
+    let (mut run, mut w) = StageRun::start(STAGES[PROLOGUE]);
+    throw_things(&mut w, false);
+    w.player.hp = 0;
+    assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
+    assert_eq!(w.placed_counts(), [0; 11], "respawn in the forest");
+    assert!(!w.rb_out());
 }

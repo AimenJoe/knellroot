@@ -1,5 +1,6 @@
 //! 바닥 예고(모양마다 옅은 면 + 테두리, nail 0186~0188)와 적 발밑의 것들(그림자·퍼지는 고리·뿌리 가시·엘리트 표지).
 use super::*;
+use crate::det::Det;
 
 /// 예고 색(붉은 계열 하나 — 붉은색은 위험에만, 그림 팔레트에는 없다).
 pub(super) const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
@@ -44,7 +45,7 @@ pub(super) fn telegraph(
 ) {
     // 줄지은 원(0133 뿌리 기둥): 원 하나하나를 같은 규칙으로(원 = 피할 것).
     if let TeleShape::Row { n, r, step, start } = shape {
-        let (sn, cs) = facing.sin_cos();
+        let (sn, cs) = facing.sin_cos_d();
         let dir = vec3(sn, 0.0, cs);
         for i in 0..n {
             let c = p + dir * (start + i as f32 * step);
@@ -72,7 +73,7 @@ pub(super) fn telegraph(
             d.ring(p, r, facing, arc, ink);
         }
         TeleShape::Lane { len, w } => {
-            let (s, c) = facing.sin_cos();
+            let (s, c) = facing.sin_cos_d();
             let dir = vec3(s, 0.0, c);
             d.lane(p, dir, len, w, bg);
             d.lane(p, dir, len, w * k, ink);
@@ -110,7 +111,7 @@ fn telegraph_density(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, 
             d.ring(p, r, facing, arc, edge);
         }
         TeleShape::Lane { len, w } => {
-            let (s, c) = facing.sin_cos();
+            let (s, c) = facing.sin_cos_d();
             let dir = vec3(s, 0.0, c);
             d.lane(p, dir, len, w, ink);
             d.lane_edge(p, dir, len, w, edge);
@@ -155,6 +156,18 @@ pub(super) fn ground_marks(v: &View, w: &World, alpha: f32) {
                     v.tells / TELLS_BASE,
                     v.tell_timing,
                 );
+                // 덧그릴 모양(0270 D — 내려 딛기의 뿌리 줄: 한 줄 또는 세 줄 부채꼴).
+                for (yaw, more) in en.tele_more() {
+                    telegraph(
+                        &drape,
+                        at,
+                        en.facing + yaw,
+                        k,
+                        more,
+                        v.tells / TELLS_BASE,
+                        v.tell_timing,
+                    );
+                }
             }
         }
         // 아래 셋은 공격 자체(퍼지는 고리·솟는 뿌리 줄·날아가는 갈고리) — 예고 설정과 상관없이 늘 그린다(0074·0269).
@@ -222,7 +235,7 @@ fn wave_spikes(wc: Vec3, front: f32, drape: &Drape, body: Color, tip: Color) {
         let off = j as f32 * 0.61;
         for i in 0..n {
             let a = off + i as f32 * std::f32::consts::TAU / n as f32;
-            let out = vec3(a.sin(), 0.0, a.cos());
+            let out = vec3(a.sin_d(), 0.0, a.cos_d());
             let h = WAVE_SPIKE_H * rise * [1.0, 0.7, 0.85][(i + j as usize) % 3];
             let at = drape.at(wc.x + out.x * r, wc.z + out.z * r, wc.y, 0.0);
             // 바깥으로 기운다(밀려 나오는 쪽 — 꼴은 +z로 기울이고 `turn`이 바깥으로 돌린다).
@@ -280,15 +293,19 @@ const HOOK_EDGE: Color = Color::new(0.86, 0.88, 0.96, 1.0);
 
 fn root_spikes(en: &Enemy, p: Vec3, drape: &Drape) {
     // 뿌리 기둥 줄(0133): 앞머리까지 기둥이 솟고(지나간 자리일수록 다 솟음), 쉬는 동안 가라앉는다.
+    use crate::enemy::Atk;
     let sink_k = match (en.state, en.atk) {
-        (EState::Recover { t }, crate::enemy::Atk::Roots) => Some(1.0 - t / ROOTS_SINK),
+        (EState::Recover { t }, Atk::Roots | Atk::Stomp) => Some(1.0 - t / ROOTS_SINK),
         _ => None,
     };
-    if let Some(front) = en
-        .roots_front()
-        .or(sink_k.filter(|k| *k > 0.0).map(|_| en.charge.len))
-    {
-        let f = en.facing_dir();
+    let sinking = sink_k.is_some_and(|k| k > 0.0);
+    let Some(raw) = en.roots_front().or(sinking.then_some(f32::MAX)) else {
+        return;
+    };
+    // 줄마다(0270 D — 내려 딛기 2단계는 세 줄 부채꼴): 그 줄의 끝까지만.
+    for (yaw, len) in en.root_lines() {
+        let front = raw.min(len);
+        let f = en.dir_at(yaw);
         let mut s = en.radius + 0.5;
         let mut i = 0;
         while s <= front {
@@ -358,7 +375,7 @@ pub(super) fn cart_tells(v: &View, w: &World) {
         telegraph(
             &drape,
             p,
-            head.x.atan2(head.z),
+            head.x.atan2_d(head.z),
             k,
             TeleShape::Lane {
                 len: len + crate::tuning::CART_HALF_L,

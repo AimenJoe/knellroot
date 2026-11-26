@@ -3,8 +3,6 @@
 //   캔버스의 오른쪽 클릭 메뉴·휠 클릭 자동 스크롤이 막혔는지(web/index.html).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/mouse.js dist shots
 // 콘솔 에러·패닉이나 막히지 않은 브라우저 동작이 있으면 종료 코드 1. 눈으로 볼 것: m1·m2의 탄 방향, 조준 표시, m3 락온.
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -12,26 +10,19 @@ const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8133;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
-
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error' && !KNOWN_NOISE.some((k) => k.test(m.text()))) errors.push(m.text()); });
   page.on('pageerror', (e) => { if (!KNOWN_NOISE.some((k) => k.test(String(e)))) errors.push(String(e)); });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
-  const { press, until } = sceneKit(page, 60);
+  const { press, until, dev } = sceneKit(page, 60);
+  await sceneKit.cheap(page);
   await page.goto(`http://localhost:${PORT}/`);
   await until('Title', '타이틀', 60000); await page.waitForTimeout(300);
   await page.locator('#glcanvas').click({ position: { x: 4, y: 4 } });
@@ -51,10 +42,8 @@ async function main() {
   await press('ArrowDown'); await press('Enter'); await until('Settings { host: Title', '타이틀 → 설정');
   await shot('m0-settings');
   await press('Escape'); await until('Title', '설정 → 타이틀');
-  // DEV → PoC 첫째(보스 아레나). 타이틀: 시작·설정·개발(0094) — 설정을 닫으면 커서는 "설정"에(0066) → 아래로 하나 = 개발.
-  await press('ArrowDown', 1); await press('Enter'); await until('Dev { tab: 0', '타이틀 → 개발 창');
-  // 개발 창(0083 → 2026-11-15 정리): 묶음 탭에서 오른쪽 넷 = 전투·적, 첫 줄 = 보스 아레나.
-  await press('ArrowRight', 4); await until('Dev { tab: 4', '전투·적 묶음'); await press('Enter'); await until('Sandbox', '보스 아레나'); await page.waitForTimeout(800);
+  // 보스 아레나(개발 명령 `Scenario(Boss)` — 0278 R13, 개발 창을 세어 누르지 않는다).
+  await dev('Scenario(Boss)'); await until('Sandbox', '보스 아레나'); await page.waitForTimeout(800);
   const cast = async (x, y, name) => {
     // 커서를 옮겨 "만졌다"로 만들고 바로 오른쪽 클릭(쉼 시간 1초 안).
     await page.mouse.move(x - 40, y); await page.waitForTimeout(50);

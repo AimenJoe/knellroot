@@ -189,9 +189,31 @@ pub enum Vein {
     Knell,
     /// 금을 따라(균열): 금 간 적을 스킬이 아닌 타로 치면 휘두르기 한 번에 모든 스킬 대기가 `vein::RIFT_PULL`초 당겨진다.
     Rift,
+    /// 흔들린 머리(충격, 0270 C3): 기절한 적을 스킬이 아닌 타로 치면 휘두르기 한 번에 그 둘레 `vein::SHOCK_REACH` m의 다른 적들의
+    /// 자세가 `vein::SHOCK_RATTLE`만큼 깎인다(자원 = 둘레의 자세).
+    Shock,
+    /// 흐르는 걸음(날카로움, 0270 C3): 피 흘리는 적을 스킬이 아닌 타로 치면 `vein::SHARP_SECS`초 동안 걸음이 × `vein::SHARP_STRIDE`
+    /// (자원 = 빠르기).
+    Sharp,
+    /// 얼음 속 불씨(서리, 0270 C3): 언 적이 깨질 때마다 그 자리에 잔불 `vein::FROST_EMBERS`개가 흩어진다(한 틱에
+    /// `vein::FROST_SHARDS`번까지 — 자원 = 잔불).
+    Frost,
+    /// 한 모금씩(흡수, 0270 C3): 흡수가 걸린 적을 스킬이 아닌 타로 치면 휘두르기 한 번에 등잔이 `vein::DRAIN_SIP`만큼 찬다 —
+    /// 한 모금이 다 차면 등잔 하나(가득이면 넘치지 않는다 — 자원 = 등잔).
+    Drain,
 }
 
-pub const VEINS: [Vein; 4] = [Vein::Ember, Vein::Root, Vein::Knell, Vein::Rift];
+/// 결의 차례(`Vein::index` = 기록 비트 = `status::TYPED`의 자리 — 뒤에만 붙인다).
+pub const VEINS: [Vein; 8] = [
+    Vein::Ember,
+    Vein::Root,
+    Vein::Knell,
+    Vein::Rift,
+    Vein::Shock,
+    Vein::Sharp,
+    Vein::Frost,
+    Vein::Drain,
+];
 
 impl Vein {
     pub fn index(self) -> usize {
@@ -210,6 +232,10 @@ impl Vein {
             Vein::Root => "root",
             Vein::Knell => "knell",
             Vein::Rift => "rift",
+            Vein::Shock => "shock",
+            Vein::Sharp => "sharp",
+            Vein::Frost => "frost",
+            Vein::Drain => "drain",
         }
     }
 
@@ -220,9 +246,9 @@ impl Vein {
     /// 화면의 빛깔이 기대는 갈래(그 타입의 스킬이 많이 선 곳 — 갈래의 점수에는 세지 않는다).
     pub fn branch(self) -> Branch {
         match self {
-            Vein::Rift => Branch::Beat,
-            Vein::Knell => Branch::Riposte,
-            Vein::Ember | Vein::Root => Branch::Footing,
+            Vein::Rift | Vein::Shock | Vein::Sharp => Branch::Beat,
+            Vein::Knell | Vein::Drain => Branch::Riposte,
+            Vein::Ember | Vein::Root | Vein::Frost => Branch::Footing,
         }
     }
 
@@ -232,6 +258,25 @@ impl Vein {
             Vein::Root => |s| s.vein_root,
             Vein::Knell => |s| s.vein_knell,
             Vein::Rift => |s| s.vein_rift,
+            Vein::Shock => |s| s.vein_shock,
+            Vein::Sharp => |s| s.vein_sharp,
+            Vein::Frost => |s| s.vein_frost,
+            Vein::Drain => |s| s.vein_drain,
+        }
+    }
+
+    /// 고르기 II의 이름·한 줄(0274 ② — 0274 "울림이 터질 때 체력이 조금 돈다": 성직자의 표지). I = 결 자체(`name`·`desc`).
+    /// 지금은 울림만 고를 것이 있다.
+    pub fn pick_b(self) -> Option<(Tr, Tr)> {
+        match self {
+            Vein::Knell => Some((|s| s.vein_knell_b, |s| s.vein_knell_b_d)),
+            Vein::Ember
+            | Vein::Root
+            | Vein::Rift
+            | Vein::Shock
+            | Vein::Sharp
+            | Vein::Frost
+            | Vein::Drain => None,
         }
     }
 
@@ -241,6 +286,10 @@ impl Vein {
             Vein::Root => |s| s.vein_root_d,
             Vein::Knell => |s| s.vein_knell_d,
             Vein::Rift => |s| s.vein_rift_d,
+            Vein::Shock => |s| s.vein_shock_d,
+            Vein::Sharp => |s| s.vein_sharp_d,
+            Vein::Frost => |s| s.vein_frost_d,
+            Vein::Drain => |s| s.vein_drain_d,
         }
     }
 }
@@ -255,6 +304,21 @@ pub mod vein {
     pub const KNELL_TOLLS: u8 = 2;
     /// 금을 따라: 금 간 적을 맞힌 휘두르기 한 번에 당겨지는 스킬 대기(초).
     pub const RIFT_PULL: f32 = 0.5;
+    /// 흔들린 머리(0270 C3): 닿는 둘레(m)와 둘레의 적마다 깎이는 자세.
+    pub const SHOCK_REACH: f32 = 3.5;
+    pub const SHOCK_RATTLE: f32 = 2.0;
+    /// 흐르는 걸음(0270 C3): 이어지는 초와 걸음의 배.
+    pub const SHARP_SECS: f32 = 1.5;
+    pub const SHARP_STRIDE: f32 = 1.2;
+    /// 얼음 속 불씨(0270 C3): 깨질 때마다 흩어지는 잔불, 한 틱에 세는 깨짐의 수.
+    pub const FROST_EMBERS: u32 = 1;
+    pub const FROST_SHARDS: u8 = 3;
+    /// 한 모금씩(0270 C3): 흡수 걸린 적을 맞힌 휘두르기 한 번에 차는 등잔의 몫(1 = 등잔 하나).
+    pub const DRAIN_SIP: f32 = 0.1;
+    /// 울려서 되찾기(0274 ② — 울림의 고르기 II): 울림 하나마다 도는 체력(한 틱에 `KNELL_TOLLS`번까지 — 게이지와 같은 상한),
+    /// 그리고 되찾은 뒤 다음 되찾기까지 쉬는 초(떼가 차례로 울려도 체력이 줄줄이 돌지 않게 — 초당 상한 = 2 × 2 ÷ 0.5 = 8).
+    pub const KNELL_MEND: i32 = 2;
+    pub const KNELL_MEND_REST: f32 = 0.5;
 }
 
 impl Link {
@@ -690,6 +754,8 @@ pub struct Tree {
     pub picks: [u8; 3],
     /// 연 결의 칸(0223 11절 — 비트 = `Vein::index`, 기록 `tree.veins`).
     pub veins: u8,
+    /// 속성 패시브의 고르기 II(0274 ② — 비트 = `Vein::index`, 기록 `tree.vein_picks`): 고를 것이 있는 결(`Vein::pick_b`)만.
+    pub vein_picks: u8,
 }
 
 impl Tree {
@@ -735,6 +801,20 @@ impl Tree {
         self.veins |= 1 << v.index();
     }
 
+    /// 결을 열었고 그 고르기가 II인가(0274 ② — 울림의 "울려서 되찾기"). 고를 것이 없는 결은 늘 거짓.
+    pub fn vein_picked_b(&self, v: Vein) -> bool {
+        v.pick_b().is_some() && self.veined(v) && self.vein_picks & (1 << v.index()) != 0
+    }
+
+    /// 결의 고르기를 뒤집는다(값 없이 — 연 결 가운데 고를 것이 있는 것만, 숫자 칸과 같은 꼴).
+    pub fn flip_vein(&mut self, v: Vein) -> bool {
+        if v.pick_b().is_none() || !self.veined(v) {
+            return false;
+        }
+        self.vein_picks ^= 1 << v.index();
+        true
+    }
+
     /// 숫자 칸을 열었고 그 고르기가 ㄴ인가(0215). 고르기가 없는 칸은 늘 거짓.
     pub fn picked_b(&self, c: Cell) -> bool {
         let (b, d) = c.at();
@@ -762,6 +842,14 @@ impl Tree {
         self.cells[b] |= 1 << d;
     }
 
+    /// 칸 하나를 닫는다(0270 C5 — `skills::Board::forget`): 옛 꼴(앞에서부터 연 수)은 칸마다의 비트로 펴고 닫는다, 고르기도 지운다.
+    pub fn close_cell(&mut self, cell: Cell) {
+        let (b, d) = cell.at();
+        self.cells[b] = self.mask(b) & !(1 << d);
+        self.open[b] = 0;
+        self.picks[b] &= !(1 << d);
+    }
+
     /// 이 칸들만 연 나무(시험·월드 시험이 옮겨 올 자리 — 게임은 `open_cell`로 연다).
     #[cfg_attr(not(test), allow(dead_code))]
     pub fn with(cells: &[Cell]) -> Tree {
@@ -781,6 +869,7 @@ impl Tree {
             links: 0,
             picks: [0; 3],
             veins: 0,
+            vein_picks: 0,
         }
     }
 
@@ -790,7 +879,7 @@ impl Tree {
     pub fn full() -> Tree {
         Tree {
             links: (1 << LINKS.len()) - 1,
-            veins: (1 << VEINS.len()) - 1,
+            veins: u8::MAX >> (8 - VEINS.len()),
             ..Tree::from_counts([DEPTH; 3])
         }
     }
@@ -808,7 +897,14 @@ impl Tree {
             cells,
             key: self.key,
             links: self.links & ((1 << LINKS.len()) - 1),
-            veins: self.veins & ((1 << VEINS.len()) - 1),
+            veins: self.veins & (u8::MAX >> (8 - VEINS.len())),
+            // 결의 고르기는 연 결 가운데 고를 것이 있는 것에만.
+            vein_picks: VEINS
+                .into_iter()
+                .filter(|v| v.pick_b().is_some())
+                .fold(0u8, |m, v| m | 1 << v.index())
+                & self.veins
+                & self.vein_picks,
             // 고르기는 열린 숫자 칸에만.
             picks: [0, 1, 2].map(|b| {
                 let numbers = TREE[b]
@@ -1005,6 +1101,7 @@ mod tests {
             links: 0,
             picks: [0; 3],
             veins: 0,
+            vein_picks: 0,
         };
         assert_eq!(legacy.sane(), t);
         assert_eq!(legacy.count(), 2 + DEPTH as u32);
@@ -1023,6 +1120,7 @@ mod tests {
             links: 0,
             picks: [0; 3],
             veins: 0,
+            vein_picks: 0,
         };
         assert_eq!(odd.count(), DEPTH as u32);
         assert_eq!(odd.sane().cells[0], 0b111_1111);

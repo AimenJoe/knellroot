@@ -3,6 +3,7 @@
 //! 여기는 순수 규칙(시험): 시간표(떠남 → 굴 → 닿음)·지역을 바꾸는 순간·깊이 숫자·굴 속의 길과 카메라.
 //! 그림은 `render/descent.rs`(굴·뿌리·방랑자), 덮는 어둠과 깊이 글은 앱의 화면 패스.
 //! KB `conveying-descent`: 이동 자체를 보여 준다 · 깊이 숫자는 떠난 곳 → 닿을 곳으로 · 오르는 길은 조금 길게.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 /// 떠나는 곳이 어두워지는 초.
@@ -175,7 +176,7 @@ impl Passage {
 /// 큰 뿌리의 가운데 줄(굴 안의 자리, y = 0이 위 끝): `s` 0..1이 걷는 구간, 그 밖으로도 이어진다(뿌리는 화면 밖에서 오고 간다).
 pub fn path(s: f32) -> Vec3 {
     let a = SWEEP * s;
-    vec3(PATH_R * a.sin(), -DROP * s, PATH_R * a.cos())
+    vec3(PATH_R * a.sin_d(), -DROP * s, PATH_R * a.cos_d())
 }
 
 /// 굴 축 둘레의 각(라디안) — `path(s)`가 선 쪽.
@@ -188,7 +189,7 @@ pub fn walker(p: &Passage) -> (Vec3, f32) {
     let s = p.travel();
     let ahead = if p.up { -0.02 } else { 0.02 };
     let d = path(s + ahead) - path(s);
-    (path(s) + Vec3::Y * ROOT_R, d.x.atan2(d.z))
+    (path(s) + Vec3::Y * ROOT_R, d.x.atan2_d(d.z))
 }
 
 /// 카메라: (자리, 보는 곳). 방랑자의 맞은편 벽 쪽에서 조금 비켜, 조금 위에서 — 가는 쪽(내려가면 아래)을 살짝 앞서 본다.
@@ -196,7 +197,7 @@ pub fn eye(p: &Passage) -> (Vec3, Vec3) {
     let s = p.travel();
     let (feet, _) = walker(p);
     let a = angle(s) + std::f32::consts::PI - EYE_OFF;
-    let pos = vec3(EYE_R * a.sin(), feet.y + EYE_UP, EYE_R * a.cos());
+    let pos = vec3(EYE_R * a.sin_d(), feet.y + EYE_UP, EYE_R * a.cos_d());
     let lead = if p.up { 0.5 } else { -0.3 };
     (pos, feet + Vec3::Y * (0.9 + lead))
 }
@@ -295,7 +296,7 @@ mod tests {
                 }
                 // 바라보는 쪽 = 걷는 쪽.
                 if moved.length() > 1e-4 {
-                    let dir = vec3(yaw.sin(), 0.0, yaw.cos());
+                    let dir = vec3(yaw.sin_d(), 0.0, yaw.cos_d());
                     assert!(dir.dot(vec3(moved.x, 0.0, moved.z).normalize()) > 0.95);
                     n += 1;
                 }
@@ -332,7 +333,7 @@ mod tests {
                 // 방랑자의 몸통이 시야 한가운데 가까이.
                 let fwd = (look - pos).normalize();
                 let to = (feet + Vec3::Y * 0.9 - pos).normalize();
-                assert!(fwd.dot(to) > (EYE_FOV * 0.3).cos(), "{}", fwd.dot(to));
+                assert!(fwd.dot(to) > (EYE_FOV * 0.3).cos_d(), "{}", fwd.dot(to));
                 assert!(pos.distance(prev) < 0.2, "no jump: {}", pos.distance(prev));
                 prev = pos;
                 p.step(DT);

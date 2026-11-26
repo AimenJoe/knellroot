@@ -8,19 +8,20 @@ use flow::SlotDo;
 
 impl App {
     fn filled(&self) -> [bool; crate::save::SLOTS] {
-        std::array::from_fn(|i| self.slots[i].is_some())
+        std::array::from_fn(|i| self.book.slots[i].is_some())
     }
 
     /// 슬롯 창을 연다: 요약을 새로 읽고, 처음 포커스는 KB대로(이어하기 = 마지막 슬롯, 새로 시작 = 첫 빈 슬롯).
     pub(super) fn open_slots(&mut self, load: bool) {
-        self.slots = crate::save::summaries();
+        self.book.slots = crate::save::summaries();
         self.go(Go::Open(Scene::Slots { load }));
-        self.cursor = flow::slot_focus(load, &self.filled(), self.slot);
+        self.menu.cursor = flow::slot_focus(load, &self.filled(), self.book.slot);
     }
 
     pub(super) fn slots_menu(&self, load: bool) -> Menu {
         let s = s();
         let rows = self
+            .book
             .slots
             .iter()
             .enumerate()
@@ -41,11 +42,11 @@ impl App {
                     ),
                     None => name,
                 };
-                let here = i == self.cursor;
+                let here = i == self.menu.cursor;
                 match (load, sum.is_some()) {
                     (true, false) => ui::Row::value(label, s.slot_empty).dimmed(true),
                     (true, true) => {
-                        let act = if here && self.col == 1 {
+                        let act = if here && self.tab.col == 1 {
                             s.slot_erase
                         } else {
                             s.slot_continue
@@ -62,23 +63,23 @@ impl App {
 
     /// 슬롯 창 한 틱: 몰이꾼 입력 + 줄을 옮기면 단추를 이어하기로 + 이어하기 창은 빈 줄을 건너뛴다.
     pub(super) fn tick_slots(&mut self, a: &Actions, load: bool) {
-        let before = self.cursor;
+        let before = self.menu.cursor;
         let m = self.slots_menu(load);
         let out = self.menu_input(a, &m);
         if self.scene() != (Scene::Slots { load }) {
             return;
         }
-        if self.cursor != before {
-            self.col = 0;
+        if self.menu.cursor != before {
+            self.tab.col = 0;
             let filled = self.filled();
-            if load && !filled[self.cursor] {
+            if load && !filled[self.menu.cursor] {
                 let dir = if a.menu_up { -1 } else { 1 };
-                self.cursor = flow::slot_step(before, dir, &filled);
+                self.menu.cursor = flow::slot_step(before, dir, &filled);
             }
         }
         match out {
             Some(Out::Step(i, _)) if load && self.filled()[i] => {
-                self.col = 1 - self.col.min(1);
+                self.tab.col = 1 - self.tab.col.min(1);
             }
             Some(Out::Pick(i)) => self.slot_do(load, i),
             _ => {}
@@ -87,7 +88,7 @@ impl App {
 
     fn slot_do(&mut self, load: bool, i: usize) {
         let filled = self.filled();
-        match flow::slot_pick(load, filled[i], self.col, i) {
+        match flow::slot_pick(load, filled[i], self.tab.col, i) {
             SlotDo::Nothing => {}
             SlotDo::Ask(k) => self.go(Go::Open(Scene::Ask(k))),
             SlotDo::Fresh => self.overwrite_slot(i),
@@ -104,11 +105,11 @@ impl App {
     /// 묻는 창에서 지우기를 고른 뒤(0192): 이미 슬롯 창으로 돌아와 있다 — 지우고, 다른 기록으로 커서를, 마지막 기록이었으면 타이틀로(KB).
     pub(super) fn erase_slot(&mut self, i: usize) {
         crate::save::wipe(i);
-        self.slots = crate::save::summaries();
-        self.col = 0;
+        self.book.slots = crate::save::summaries();
+        self.tab.col = 0;
         let filled = self.filled();
         if filled.iter().any(|&f| f) {
-            self.cursor = flow::slot_step(i, 1, &filled);
+            self.menu.cursor = flow::slot_step(i, 1, &filled);
         } else {
             self.go(Go::Back);
         }
@@ -118,7 +119,7 @@ impl App {
     pub(super) fn slot_label(&self, i: usize) -> String {
         let s = s();
         let name = fill(s.slot_name, &[&(i + 1).to_string()]);
-        match self.slots.get(i).and_then(|m| m.as_ref()) {
+        match self.book.slots.get(i).and_then(|m| m.as_ref()) {
             Some(m) => format!(
                 "{name}({})",
                 fill(
@@ -141,16 +142,16 @@ impl App {
             self.dev.run = false;
             self.dev.board = None;
         }
-        self.slot = i;
+        self.book.slot = i;
         crate::save::set_last_slot(i);
         self.weapon = progress
             .weapon
             .filter(|&w| progress.owns_weapon(w))
             .unwrap_or(weapons::Id::Fists);
-        self.saved = progress.clone();
+        self.book.saved = progress.clone();
         self.progress = progress;
         self.journey_told = None;
-        self.slots = crate::save::summaries();
+        self.book.slots = crate::save::summaries();
         crate::screen::touch_enter();
         self.continue_run();
         self.go(Go::Root(Scene::Play));

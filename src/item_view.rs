@@ -21,29 +21,23 @@ pub struct View {
     pub yaw: f32,
     pub pitch: f32,
     pub roll: f32,
+    /// 짝으로 그린다(0277 — 쌍단검): 같은 부위를 눕힌 각만 거울로(`-roll`) 한 번 더 — 두 날이 가운데에서 엇갈린다.
+    pub twin: bool,
 }
 
 pub fn view(item: Item) -> View {
     match item {
-        // 무기는 방랑자 모델의 오른손 부위(0051). 모델 공간에서 날·자루는 +z로 길고 넓은 면이 위(+y)를 본다
-        // (`wanderer.py`: 블렌더 -y로 긴 상자, 내보내면 glTF +z) — 앞으로 세워(숙이기 −80°: 넓은 면이 카메라 쪽) 대각선으로 눕힌다.
-        // 쇠뇌는 T자(개머리 세로 · 활 가로)가 읽히게 눕히지 않는다.
+        // 무기는 방랑자 모델의 오른손 부위(0051) — 각과 짝은 무기 표의 줄(`Weapon::view` · `twin`).
         Item::Weapon(w) => {
-            let (yaw, pitch, roll) = match w {
-                Weapon::Sword | Weapon::Staff => (0.0, -80.0, -45.0),
-                Weapon::Hammer => (0.0, -75.0, -40.0),
-                Weapon::Crossbow => (0.0, -70.0, 0.0),
-                // 활(0231): 활대가 세로로 길다 — 옆으로 눕혀 활대의 휨과 시위가 보이게.
-                Weapon::Bow => (0.0, -80.0, -90.0),
-                // 맨손은 그림이 없다(`has_view` 거짓 — 장비 창이 빈 칸처럼 둔다).
-                Weapon::Fists => (0.0, 0.0, 0.0),
-            };
+            let d = w.def();
+            let (yaw, pitch, roll) = d.view;
             View {
                 model: "wanderer",
-                node: w.def().node,
+                node: d.node,
                 yaw,
                 pitch,
                 roll,
+                twin: d.twin,
             }
         }
         // 장신구는 `charms.glb`의 부위 하나씩(이름 = 기록 키) — 위에서 비스듬히.
@@ -53,6 +47,7 @@ pub fn view(item: Item) -> View {
             yaw: 30.0,
             pitch: 25.0,
             roll: 0.0,
+            twin: false,
         },
         Item::Garb(g) => View {
             model: "garbs",
@@ -60,6 +55,7 @@ pub fn view(item: Item) -> View {
             yaw: 30.0,
             pitch: 25.0,
             roll: 0.0,
+            twin: false,
         },
         // 방패는 넓은 면이 카메라를 보게(납작한 물건 — KB `action-rpg-stats-and-equipment` "넓은 면이 카메라를").
         Item::Shield(s) => View {
@@ -68,6 +64,7 @@ pub fn view(item: Item) -> View {
             yaw: SHIELD_VIEW.0,
             pitch: SHIELD_VIEW.1,
             roll: SHIELD_VIEW.2,
+            twin: false,
         },
     }
 }
@@ -135,6 +132,19 @@ mod tests {
                 .node(v.node)
                 .unwrap_or_else(|| panic!("{item:?}: no part {} in {}", v.node, v.model));
             assert!(m.rest_bounds_under(i).is_some(), "{item:?} has no mesh");
+        }
+    }
+
+    /// 0277: 쌍단검만 짝으로(두 날이 엇갈린다 — 거울로 눕힐 각이 있어야 X가 된다), 다른 아이템은 하나.
+    #[test]
+    fn only_the_daggers_draw_as_a_crossed_pair() {
+        for item in all() {
+            let v = view(item);
+            let pair = item == Item::Weapon(Weapon::Daggers);
+            assert_eq!(v.twin, pair, "{item:?}");
+            if pair {
+                assert!(v.roll.abs() >= 30.0, "a pair needs a slant to cross");
+            }
         }
     }
 }

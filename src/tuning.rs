@@ -63,8 +63,49 @@ pub const BLOCK_WALK: f32 = 0.5;
 pub const BLOCK_PUSH: f32 = 0.5;
 pub const BLOCK_BREAK_STUN: f32 = 0.8;
 pub const BLOCK_HITSTOP: f32 = 1.2;
+
+/// 방패 — 하데스처럼(0276): 던진 방패가 맞힌 적에서 다음 적으로 튕기는 수(첫 적 + 이만큼)와 다음 적을 찾는 둘레(m, 맞힌 자리에서).
+pub const SHIELD_BOUNCES: u8 = 2;
+pub const SHIELD_BOUNCE_R: f32 = 5.0;
+/// 들이받기(0276): 막는 동안 힘이 가득 차는 초 · 놓았을 때 들이받는 데 드는 가장 작은 힘(그 아래는 그냥 내린다 — 톡 막기가
+/// 들이받기로 새지 않게) · 내달리는 거리(m, 가장 작은 힘 → 가득) · 내달리는 초 · 선 뒤의 짧은 굳음(초).
+pub const RUSH_FULL: f32 = 1.0;
+pub const RUSH_MIN: f32 = 0.25;
+pub const RUSH_DIST: (f32, f32) = (2.0, 5.0);
+pub const RUSH_TIME: f32 = 0.32;
+pub const RUSH_RECOVER: f32 = 0.25;
+/// 들이받기의 타(모인 힘 0 → 1로 사이를 잇는다): 피해 · 자세 피해 · 잡몹이 밀려 넘어지는 초 · 밀림(넉백 배). 문지기는 자세만.
+pub const RUSH_DAMAGE: (i32, i32) = (10, 30);
+pub const RUSH_POISE: (f32, f32) = (2.0, 8.0);
+pub const RUSH_TOPPLE: (f32, f32) = (0.6, 1.4);
+pub const RUSH_KNOCK: (f32, f32) = (2.0, 4.0);
+/// 들이받기가 적을 찾는 몸 앞의 덤(m — 내 몸 + 적의 몸 + 이만큼).
+pub const RUSH_REACH: f32 = 0.45;
+
+/// 기도하는 손(0276 — 망치의 빈 손): 한 모금을 삼킨 순간 둘레(m)의 적에게 쌓는 울림 게이지 · 밀림(넉백 배, 문지기는 4분의 1).
+pub const PRAYER_RADIUS: f32 = 3.0;
+pub const PRAYER_KNELL: f32 = 0.6;
+pub const PRAYER_KNOCK: f32 = 2.5;
+
+/// 쇠 덫(0276 — 쇠뇌의 빈 손): 수류탄 자리에 놓는 덫 — 둘레(m) · 놓여 있는 초 · 피해 · 자세 피해 · 뿌리 게이지(덤 — 둘이면 속박),
+/// 한 번에 놓여 있을 수 있는 수(넘으면 가장 오래된 것이 사라진다).
+pub const SNARE_RADIUS: f32 = 1.0;
+pub const SNARE_SECS: f32 = 20.0;
+pub const SNARE_DAMAGE: i32 = 10;
+pub const SNARE_POISE: f32 = 1.0;
+pub const SNARE_ROOT: f32 = 0.5;
+/// 쇠 덫이 문 잡몹이 걷지 못하는 초(문지기는 그만큼 느려지기만 — 오금과 같은 `ROOT_BOSS_SLOW`).
+pub const SNARE_BIND: f32 = 1.5;
+pub const SNARE_MAX: usize = 2;
 /// 주/부무기 바꾸기 버튼(0261)을 다른 동작 중에 눌렀을 때 받아 두는 초 — 공격의 받아 두기(`attack.buffer s` 기본)와 같은 폭.
 pub const SWAP_BUFFER: f32 = 0.3;
+/// 교체 공격(0272 1b — Nioh 2의 섬광 공격 착상): 내 타(평타·강공격·탄)가 닿았거나 받아친 뒤 이 초 안의 바꾸기는 들어오는 무기의
+/// 한 타와 함께 나간다(반격 창 `RIPOSTE_WINDOW`와 같은 폭 — 어느 무기의 어느 타든 맞힌 뒤 그 동작의 캔슬 시점이 이 안에 온다:
+/// 가장 늦은 망치 둘째 타가 0.45초). 히트스톱 동안은 흐르지 않는다(로직 시계).
+pub const SWAP_LINK: f32 = 0.6;
+/// 교체 공격 뒤 다음 교체 공격까지(초): 그동안의 바꾸기는 그냥 바꾼다 — 바꾸기만 되풀이해 대시 공격을 줄줄이 잇지 못하게
+/// (잠금 없이 검 ↔ 망치를 번갈으면 0.7초에 40 = 57/초, 검 콤보의 곱절이었다).
+pub const SWAP_STRIKE_LOCK: f32 = 2.5;
 pub const PARRY_CHAIN: f32 = 0.2;
 /// 이어 패링 쌓기(0086, 사장 "연장 중에 또 성공하면 남은 창이 또 늘되 늘어나는 몫은 50%씩 줄고, 범위는 늘어나게 — 둘러싸였을 때도
 /// 빠져나가게"): 이어지는 동안 n번째 더 튕기면 남은 창에 `PARRY_CHAIN × PARRY_CHAIN_DECAY^n`을 더하고(0.2 → +0.1 → +0.05 …),
@@ -171,6 +212,28 @@ pub const TOLL_RIFT_SECS: f32 = 2.0;
 /// 겹침(화상 중에 묶임): 터지는 둘레(m) · 쓴 겹마다의 피해.
 pub const BURST_RADIUS: f32 = 2.5;
 pub const BURST_DMG: i32 = 10;
+/// 충격(0270 B): 기절한 초(보스는 짧게) · 걸린 적이 받는 자세 피해의 배(망치가 큰 적을 꺾는다).
+pub const STUN_SECS: f32 = 1.4;
+pub const STUN_BOSS_SECS: f32 = 0.5;
+pub const SHOCK_POISE: f32 = 1.6;
+/// 날카로움: 피가 새는 초 · 움직인 이 m마다 한 번 · 한 번의 피해(타마다의 덤 없음 — 화상처럼 `flat`).
+pub const BLEED_SECS: f32 = 6.0;
+pub const BLEED_STEP: f32 = 1.5;
+pub const BLEED_DMG: i32 = 4;
+/// 날카로움의 덤(0270 C5 — 사장 2026-11-24 "치명타 대신 벤 적에게 더"): 피 흘리는 적을 결투로 쥔 손(한손 · 방패 없이 — 맨손도)이 치면
+/// 그 타의 피해 ×. 보스도(면역 없음). 새는 피(`BLEED_DMG`)·화상 같은 타입이 스스로 낸 피해에는 붙지 않는다(`world::hurt_by`).
+pub const SHARP_CUT_MULT: f32 = 1.15;
+/// 서리: 게이지가 가득일 때 걸음이 이만큼 줄어든다(쌓인 만큼) · 얼어붙은 초(보스는 짧게) · 언 적을 깨는 한 대의 배 ·
+/// 타는 적에게 서리가 붙는 배(녹는다).
+pub const FROST_SLOW: f32 = 0.5;
+pub const FREEZE_SECS: f32 = 1.8;
+pub const FREEZE_BOSS_SECS: f32 = 0.6;
+pub const SHATTER_MULT: f32 = 1.6;
+pub const FROST_EMBER: f32 = 0.5;
+/// 흡수: 표지의 초 · 표지가 붙은 적을 치면 돌아오는 체력(눈금의 몫 — `HP_UNIT` 10 가운데)과 기력, 한 틱에 한 번.
+pub const DRAIN_SECS: f32 = 6.0;
+pub const DRAIN_HP: i32 = 2;
+pub const DRAIN_STAMINA: f32 = 6.0;
 /// 제비걸음(0214): 걸음의 앞 이만큼(몫)이 뛰는 걸음(그 끝에 벤다), 적의 몸에서 이만큼(m) 앞에 선다, 적이 없으면 이만큼(m) 앞으로.
 pub const HOP_DASH: f32 = 0.6;
 pub const HOP_GAP: f32 = 0.5;
@@ -181,6 +244,13 @@ pub const BASH_CUT_STAGGER: f32 = 2.0;
 /// 뿌리 솟기(0214): 둘레로(ㄱ)의 반지름 상한(m), 마지막 가시가 터지기까지(초).
 pub const ERUPT_RING_MAX: f32 = 3.0;
 pub const SPIRE_DELAY: f32 = 0.12;
+/// 종 치기(0270 C3): 종을 걸 적을 찾는 앞 쪽의 폭(cos — 0.5 = ±60°).
+pub const BELL_CONE: f32 = 0.5;
+/// 불길의 타는 땅(0270 C3 ㄴ): 불티가 태우는 사이(초). 뿌리 덫의 두 알(ㄱ): 겨눈 자리에서 양옆으로 벌린 거리(m).
+pub const SCORCH_EVERY: f32 = 1.0;
+pub const TRAP_TWIN_GAP: f32 = 1.4;
+/// 뿌리 덫이 솟을 때 둘레에 솟는 뿌리 수(그림 — 가운데 하나 더).
+pub const TRAP_SPIKES: u8 = 5;
 /// 던지기(0158 G2): 던진 것이 나는 높이(m — 가슴), 돌아와 손에 잡히는 거리(m).
 pub const BLADE_HEIGHT: f32 = 1.0;
 pub const BLADE_CATCH: f32 = 0.5;
@@ -273,6 +343,18 @@ pub const AIR_SHOT_REACH: f32 = 4.0;
 pub const AIR_SHOT_MIN: f32 = 1.5;
 pub const AIR_VOLLEY: usize = 3;
 pub const AIR_VOLLEY_SPREAD_DEG: f32 = 18.0;
+/// 신성한 빛(0274 ②b — 망치의 RB): 겨눈 자리에 이 초 뒤 내려 꽂힌다(그동안 바닥에 빛이 모인다 — 피할 틈이 아니라 "온다"는 신호),
+/// 빛기둥의 반지름(m — 탄 표의 `scale`이 곱한다), 겨눈 줄 위의 첫 적을 찾는 반 폭(m, 몸 반지름에 더한다).
+pub const SMITE_DELAY: f32 = 0.35;
+pub const SMITE_RADIUS: f32 = 1.4;
+pub const SMITE_SEEK: f32 = 0.6;
+/// 꽂힌 빛기둥이 남아 옅어지는 초(그림만).
+pub const SMITE_SHOW: f32 = 0.25;
+/// 던진 창(0274 ②b): 멈춘 자리에서 손으로 돌아오는 빠르기(m/s — 오는 길은 치지 않는다), 손에 닿았다고 보는 거리(m).
+pub const JAVELIN_BACK: f32 = 30.0;
+pub const JAVELIN_CATCH: f32 = 0.6;
+/// 오금 쏘기(0274 ②b — 끝까지 당긴 화살): 맞은 잡몹이 걷는 빠르기의 배(문지기는 `ROOT_BOSS_SLOW` — 묶임·기절과 같은 규칙).
+pub const HAMSTRING_SLOW: f32 = 0.5;
 /// 알아차림(0113): 지도에 서 있는 적은 제자리에서 제 일을 하다가 플레이어가 시야(m, 벽·턱 너머는 못 봄) 안에 들거나
 /// 아주 가까이(m, 벽 너머도 — 발소리) 오거나 맞으면 쫓는다. 높이 차가 이보다 크면 못 본다. 깨면 곁(m)의 잠든 동료도 깬다.
 /// 제자리에서 끈(m)보다 멀어지고 플레이어도 그만큼 멀면 제자리로 돌아가 가득 찬다.
@@ -2271,3 +2353,26 @@ pub const SHELL_TURN: f32 = 0.7;
 pub const SHELL_OPEN: f32 = 1.4;
 /// 이끼 덮인 문지기의 틈새 돌진 뒤 늦게 도는 쉼(0185) — 종의 `recover`에 곱한다.
 pub const MOSS_DASH_RECOVER: f32 = 1.6;
+
+// 필드 보스(0270 D — 지역마다 하나, 길에서 벗어난 터에 엎드려 기다린다). 종마다의 수치는 `species.rs` 표, 여기는 꼴이 같은 값.
+/// 엎드린 필드 보스가 일어나는 거리(m — 보이는 자리에서, 벽 너머는 아니다) · 일어서는 초(`wake` 동작의 길이) · 제자리로 돌아와
+/// 다시 엎드리는 초 · 끈(m — 방랑자가 터에서 이만큼 멀어지면 제자리로 돌아가 엎드린다: 체력 가득, 타입 게이지 지움).
+pub const FIELD_WAKE_R: f32 = 9.0;
+pub const FIELD_WAKE: f32 = 2.4;
+pub const FIELD_SETTLE: f32 = 1.6;
+pub const FIELD_LEASH: f32 = 24.0;
+/// 엎드린 몸에 방랑자의 탄·던진 것이 이만큼(m, 몸 가장자리부터) 안으로 오면 일어난다(잠든 몸은 맞지 않는다 — 맞힌 것으로 친다).
+pub const FIELD_STIR_R: f32 = 0.6;
+/// 필드 보스를 처음 쓰러뜨렸을 때 더 흩는 잔불(종의 `embers`에 더해 — 성소 문지기 30보다 뚜렷이 많게).
+pub const FIELD_FIRST_EMBERS: u32 = 45;
+/// 고요한 사슴(0270 D)의 내려 딛기(`Atk::Stomp`): 몸 둘레 원판의 반지름(m, 몸 가운데부터 — 받지 못한다, 물러난다) ·
+/// 2단계의 뿌리 줄 셋이 벌어지는 각(도, 가운데 줄에서 양옆으로 — 45°면 원판 바로 밖부터 줄 사이에 설 틈이 있다:
+/// 3.8m × sin 45° = 2.7m ≥ 맞는 폭 2.6m) · 딛고 난 뒤의 쉼(종의 `recover`에 곱한다).
+pub const STOMP_R: f32 = 3.4;
+pub const STOMP_FAN_DEG: f32 = 45.0;
+pub const STOMP_RECOVER: f32 = 1.2;
+/// 고요한 사슴의 돌진: 이보다 가까우면 달리지 않는다(m) · 긁는 동안 몸이 도는 빠르기(rad/s — 2단계에 돌아서 한 번 더 이을 때
+/// 뒤로 돌 만큼) · 돌진 뒤의 긴 틈(종의 `recover`에 곱한다).
+pub const STAG_CHARGE_MIN: f32 = 5.0;
+pub const STAG_CHARGE_TURN: f32 = 6.0;
+pub const STAG_DASH_RECOVER: f32 = 1.7;

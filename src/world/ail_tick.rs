@@ -7,8 +7,8 @@ use super::*;
 use crate::progression::{vein, Vein};
 use crate::status::{Kind, NO_DOSE};
 use crate::tuning::{
-    BURN_DMG, BURST_DMG, BURST_RADIUS, ROOT_BOSS_SLOW, TOLL_DMG, TOLL_RADIUS, TOLL_RIFT_SECS,
-    TOLL_SHARE, TOLL_STACK,
+    BLEED_DMG, BURN_DMG, BURST_DMG, BURST_RADIUS, DRAIN_HP, DRAIN_STAMINA, ROOT_BOSS_SLOW,
+    TOLL_DMG, TOLL_RADIUS, TOLL_RIFT_SECS, TOLL_SHARE, TOLL_STACK,
 };
 
 impl World {
@@ -18,7 +18,33 @@ impl World {
         let mut bursts = Vec::new();
         // 타다가 쓰러진 적의 남은 불(자리·겹) — 옮겨붙는 불(결, 0223 11절)이 쓴다. 쓰러진 몸의 불은 여기서 꺼진다(한 번만 옮는다).
         let mut cinders = Vec::new();
+        // 흡수(0270 B): 표지가 붙은 적을 이번 틱(앞 틱의 타 — 타는 `tick_ails` 뒤에 들어온다)에 쳤나 — 틱에 한 번만 돌아온다.
+        let mut drained: Option<Vec3> = None;
+        let mut shattered: Vec<Vec3> = Vec::new();
+        // 되살아나는 숨(0274 ⑤ — 낫의 주특성 `Art::sap`): 묶인 적을 쳐도 흡수처럼 되돌아온다, 되돌아오는 몫 × 배.
+        let sap = self.player.weapon.art().sap();
         for (i, en) in self.enemies.iter_mut().enumerate() {
+            let struck = std::mem::take(&mut en.struck_now);
+            if struck && en.alive() {
+                // 언 적은 친 그 틱의 타가 크게 들어간 뒤(`hurt_by`) 깨진다.
+                if en.ail.shatter() {
+                    ev.push(Event::Shatter {
+                        at: en.pos + Vec3::Y * en.height * 0.5,
+                    });
+                    // 얼음 속 불씨(결, 0270 C3): 깨진 자리를 적어 둔다 — 잔불은 아래에서(한 틱에 몇 번까지).
+                    shattered.push(en.pos);
+                    if matches!(en.state, EState::Stagger { .. }) {
+                        en.state = EState::Chase;
+                    }
+                }
+                let bound = sap > 1.0 && (en.ail.bound > 0.0 || en.marks.bind > 0.0);
+                if (en.ail.drain > 0.0 || bound) && drained.is_none() {
+                    drained = Some(en.pos + Vec3::Y * en.height * 0.6);
+                }
+            }
+            // 얼린 그 타(앞 틱)는 얼음을 깨지 않는다 — 깨기를 본 뒤에 굳힌다(0270 C3: 맞음이 모두 `struck`을 지나며 눈발의 타가
+            // 얼리자마자 깨던 것).
+            en.ail.settle_ice();
             if !en.alive() {
                 if en.ail.burn > 0 {
                     cinders.push((en.pos, std::mem::take(&mut en.ail.burn)));
@@ -26,6 +52,32 @@ impl World {
                 continue;
             }
             let out = en.ail.tick(dt);
+            // 서리(0270 B): 쌓인 만큼 느리다(얼어붙음은 휘청이 세운다). 문지기는 쌓이는 서리에 느려지지 않고, 기절·얼어붙은 짧은 초
+            // 동안만 묶인 것처럼 느려진다(휘청이지 않는다).
+            if en.boss {
+                if en.ail.stun > 0.0 || en.ail.frozen > 0.0 {
+                    en.marks.slow = en.marks.slow.min(ROOT_BOSS_SLOW);
+                }
+            } else {
+                en.marks.slow = en.marks.slow.min(en.ail.chill());
+            }
+            // 날카로움: 움직인 만큼 샌다(맞아 밀린 것도 움직임이다 — 서 있으면 멎는다).
+            let (leaks, dx, dz) = en.ail.walked_to(en.pos.x, en.pos.z);
+            let moved = vec3(dx, 0.0, dz);
+            if leaks > 0 && en.active() {
+                en.hp -= hurt_by(en, BLEED_DMG * leaks as i32, false, 0, Knack::NONE, t);
+                ev.push(Event::Bleed {
+                    at: en.pos + Vec3::Y * en.height * 0.5,
+                    dir: moved.normalize_or_zero(),
+                });
+                if en.hp <= 0 {
+                    en.state = EState::Dead;
+                    self.kills += 1;
+                    self.notes.skill_hit = true;
+                    ev.push(Event::EnemyDown { at: en.pos });
+                    continue;
+                }
+            }
             // 묶임: 걷지 못한다(공격은 그대로 — 패링할 것은 남는다). 보스는 묶이지 않고 느려지기만.
             if en.ail.bound > 0.0 {
                 en.marks.slow = if en.boss {
@@ -36,14 +88,14 @@ impl World {
             }
             if out.burn > 0 && en.active() {
                 // 화상: 겹마다 `BURN_DMG` — 타마다의 덤(힘)은 붙지 않고, 금·깨진 자세의 배는 받는다.
-                en.hp -= hurt_by(en, BURN_DMG * out.burn as i32, false, 0, t);
+                en.hp -= hurt_by(en, BURN_DMG * out.burn as i32, false, 0, Knack::NONE, t);
                 ev.push(Event::Burn {
                     at: en.pos + Vec3::Y * en.height * 0.6,
                 });
                 if en.hp <= 0 {
                     en.state = EState::Dead;
                     self.kills += 1;
-                    self.skill_hit_tick = true;
+                    self.notes.skill_hit = true;
                     ev.push(Event::EnemyDown { at: en.pos });
                     continue;
                 }
@@ -55,6 +107,12 @@ impl World {
                 bursts.push((en.pos, out.burst));
             }
         }
+        if let Some(from) = drained {
+            let pl = &mut self.player;
+            pl.hp = (pl.hp + (DRAIN_HP as f32 * sap).round() as i32).min(pl.max_hp);
+            pl.stamina = (pl.stamina + DRAIN_STAMINA * sap).min(t[P::StaminaMax]);
+            ev.push(Event::Drain { from });
+        }
         // 한꺼번에 울리는 떼: 한 적이 받는 울림의 피해는 `TOLL_STACK` 번까지(떼가 클수록 한 번의 스킬이 곱절로 세지지 않게 —
         // 게이지 나눔·겹침은 그대로 번진다).
         let mut rung = vec![0u8; self.enemies.len()];
@@ -63,10 +121,25 @@ impl World {
                 self.catch_fire(&mut ev, at, stacks);
             }
         }
+        // 얼음 속 불씨(결, 0270 C3): 깨진 자리마다 잔불 — 한 틱에 `FROST_SHARDS`번까지(떼를 한꺼번에 깨도 곱절이 되지 않게).
+        if self.tree.veined(Vein::Frost) {
+            for at in shattered
+                .into_iter()
+                .take(crate::progression::vein::FROST_SHARDS as usize)
+            {
+                let seed = (self.time * 1000.0) as u32 ^ (at.x.to_bits() >> 7);
+                self.drops.extend(crate::ember::scatter(
+                    at,
+                    crate::progression::vein::FROST_EMBERS,
+                    seed,
+                ));
+                self.veins.shards = self.veins.shards.saturating_add(1);
+            }
+        }
         for i in tolls {
             // 울림 모으기(결): 실제로 울린 수 — 틱 끝의 셈이 큰 기술 게이지에 더한다.
             if self.toll(t, &mut ev, i, &mut rung) {
-                self.vein_tolls = self.vein_tolls.saturating_add(1);
+                self.veins.tolls = self.veins.tolls.saturating_add(1);
             }
         }
         // 겹침: 화상 중에 묶인 적은 쓴 겹만큼 둘레를 터뜨린다.

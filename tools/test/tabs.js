@@ -5,8 +5,6 @@
 //   탭 줄(화로 창 — 탭이 가장 많다, 0263)을 손가락으로 왼쪽으로 끌어(CDP 터치) 가려진 탭을 드러내고, 드러난 끝 탭을 눌러 고른다 — 몸의 목록은 굴리지 않는다.
 //   F4 넘침 검사의 `[ui-check]` 줄이 있으면 실패.
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/tabs.js dist shots
-const { chromium } = require('playwright');
-const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const sceneKit = require('./scene');
@@ -14,20 +12,11 @@ const sceneKit = require('./scene');
 const DIST = path.resolve(process.argv[2] || 'dist');
 const OUT = path.resolve(process.argv[3] || 'shots');
 const PORT = 8141;
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.wasm': 'application/wasm',
-  '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.txt': 'text/plain' };
 const KNOWN_NOISE = [/ReferenceError: register_plugin is not defined/];
 const KEY = 'knell.save.0';
 const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nmigrated.v04=1\n';
 const HEARTH_TABS = 6; // 화로(0263): 성장 · 장비 · 가방 · 기술 · 가게 · 설정
 const PAUSE_TABS = 5; // 멈춤(0261): 장비 · 가방 · 기술 · 기록 · 설정
-
-const server = http.createServer((req, res) => {
-  const f = path.join(DIST, req.url === '/' ? 'index.html' : decodeURIComponent(req.url.split('?')[0]));
-  if (!f.startsWith(DIST) || !fs.existsSync(f)) { res.writeHead(404); return res.end(); }
-  res.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' });
-  fs.createReadStream(f).pipe(res);
-});
 
 async function run(browser, lang, size) {
   const [w, h] = size;
@@ -44,6 +33,7 @@ async function run(browser, lang, size) {
   const shot = (name) => page.screenshot({ path: path.join(OUT, `tabs-${lang}-${w}-${name}.png`) });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
   const { press, until, flip } = sceneKit(page, 90);
+  await sceneKit.cheap(page);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
@@ -100,6 +90,7 @@ async function touchRun(browser) {
   const shot = (name) => page.screenshot({ path: path.join(OUT, `tabs-touch-${name}.png`) });
   // 장면이 바뀌는 누름 뒤에는 장면을 기다린다(tools/test/scene.js).
   const { press, until, flip } = sceneKit(page, 90);
+  await sceneKit.cheap(page);
   const ready = () => page.waitForFunction(() => !document.getElementById('knell-load'), null, { timeout: 20000 });
   await page.goto(`http://localhost:${PORT}/`);
   await ready();
@@ -138,8 +129,8 @@ async function touchRun(browser) {
 
 async function main() {
   fs.mkdirSync(OUT, { recursive: true });
-  await new Promise((r) => server.listen(PORT, r));
-  const browser = await chromium.launch();
+  const server = await sceneKit.serve(DIST, { port: PORT });
+  const browser = await sceneKit.launch();
   let bad = false;
   for (const lang of ['ko', 'en']) {
     for (const size of [[1280, 720], [844, 390]]) {

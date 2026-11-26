@@ -9,6 +9,7 @@
 //!   (멀수록 하늘빛에 가깝게 — 공기 원근, 꼭대기에 달빛 테)와 가운데 겹의 거대한 뿌리 아치("뿌리에 먹힌 땅"을 한 장에).
 //!   먼저 그린다(땅·벽이 깊이로 가린다). 법선 패스에는 넣지 않는다 — 먼 것엔 선이 없다.
 //!   하늘 원통은 먼 클립(200m) 안에 들게 높이각 34°까지만, 그 위는 지우는 빛(`ZENITH`)이 이어 준다.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::ground::Ground;
@@ -306,9 +307,9 @@ fn fog_pixels(n: u16) -> Vec<u8> {
         for x in 0..n {
             let (u, v) = (x as f32 / n as f32, y as f32 / n as f32);
             let f = 0.5
-                + 0.22 * (tau * (2.0 * u + v)).sin()
-                + 0.16 * (tau * (3.0 * u - 2.0 * v) + 1.3).sin()
-                + 0.12 * (tau * (5.0 * v + u) + 2.1).sin();
+                + 0.22 * (tau * (2.0 * u + v)).sin_d()
+                + 0.16 * (tau * (3.0 * u - 2.0 * v) + 1.3).sin_d()
+                + 0.12 * (tau * (5.0 * v + u) + 2.1).sin_d();
             let a = if f > 0.74 {
                 1.0
             } else if f > 0.5 {
@@ -385,7 +386,7 @@ impl Backdrop {
         let col = Color::new(f.r, f.g, f.b, FOG_ALPHA);
         for (k, &y) in heights.iter().enumerate().rev() {
             let a = k as f32 * 2.4 + 0.7;
-            let shift = vec2(a.cos(), a.sin()) * FOG_DRIFT * time;
+            let shift = vec2(a.cos_d(), a.sin_d()) * FOG_DRIFT * time;
             let mut verts = Vec::new();
             let mut idx = Vec::new();
             fog_layer(
@@ -501,14 +502,14 @@ fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32, ground: Option<&Ground>) -> (Vec
     let base = vec3(h01(s, 1) * span, 0.0, h01(s, 2) * span);
     let ph = h01(s, 3) * std::f32::consts::TAU;
     let w = d.wobble_hz * std::f32::consts::TAU * t;
-    let wob = vec3((w + ph).sin(), 0.0, (w * 0.83 + ph * 1.7).cos()) * d.wobble;
+    let wob = vec3((w + ph).sin_d(), 0.0, (w * 0.83 + ph * 1.7).cos_d()) * d.wobble;
     let moved = base + d.flow * t * (0.7 + 0.6 * h01(s, 4)) + wob;
     // 가로는 상자에서 감고(플레이어 기준), 높이는 범위 안에서 감는다(가라앉으면 위에서 다시).
     let lo = vec2(c.x - d.half, c.z - d.half);
     let x = lo.x + (moved.x - lo.x).rem_euclid(span);
     let z = lo.y + (moved.z - lo.y).rem_euclid(span);
     let hspan = d.y.1 - d.y.0;
-    let y0 = h01(s, 5) * hspan + d.flow.y * t + 0.2 * (w * 1.3 + ph).sin();
+    let y0 = h01(s, 5) * hspan + d.flow.y * t + 0.2 * (w * 1.3 + ph).sin_d();
     // 높이는 그 자리의 바닥에서 잰다(마을은 구역마다 바닥이 −1 ~ +4m, 성소 성벽길 +3m — 월드 0에서 재면 바닥에 묻혔다).
     // 바닥이 없는 칸(벽·허공): 떨어지는 흙은 만들지 않고(`hide_off_ground`), 다른 것은 월드 0 기준(허공 위 먼지·반딧불).
     let floor = ground.and_then(|g| {
@@ -525,7 +526,7 @@ fn drift_at(d: &Drift, i: u32, c: Vec3, t: f32, ground: Option<&Ground>) -> (Vec
         |v: f32, a: f32, span: f32| ((v - a).min(a + span - v) / (span * 0.15)).clamp(0.0, 1.0);
     let mut k = edge(x, lo.x, span) * edge(z, lo.y, span) * edge(y, d.y.0, hspan);
     if d.blink_hz > 0.0 {
-        let b = (d.blink_hz * std::f32::consts::TAU * t + ph * 3.0).sin();
+        let b = (d.blink_hz * std::f32::consts::TAU * t + ph * 3.0).sin_d();
         k *= ((b - 0.1) / 0.5).clamp(0.0, 1.0);
     }
     (vec3(x, y, z), k)
@@ -833,7 +834,7 @@ const MOON_VALLEY_K: f32 = 0.25;
 /// 달이 뜬 둘레 각(라디안, x = cos·z = sin) — 달빛이 오는 쪽.
 fn moon_azimuth() -> f32 {
     let l = crate::render::LIGHT_DIR;
-    l.z.atan2(l.x)
+    l.z.atan2_d(l.x)
 }
 /// 산등성이 세 겹(스테이지 가운데 둘레): 반지름 = 스테이지 반폭 × 배, 땅 위 높이 범위(m). 빛은 `Env::ridges`.
 struct Ridge {
@@ -903,7 +904,7 @@ fn moon_mesh(
     let tau = std::f32::consts::TAU;
     let at = |o: Vec3, r: f32, k: usize| {
         let a = k as f32 / n as f32 * tau;
-        o + (right * a.cos() + up * a.sin()) * r
+        o + (right * a.cos_d() + up * a.sin_d()) * r
     };
     // 고리(r0..r1)를 띠로.
     let mut ring = |o: Vec3, r0: f32, r1: f32, col: Color| {
@@ -958,15 +959,15 @@ fn arch_quads(
     let n = 24;
     // 곡선 위 점(둘레 거리 x, 높이 y)과 위쪽 법선.
     let at = |s: f32| -> (Vec2, Vec2, f32) {
-        let p = vec2((s - 0.5) * len, (pi * s).sin() * h);
-        let t = vec2(len, pi * h * (pi * s).cos()).normalize();
+        let p = vec2((s - 0.5) * len, (pi * s).sin_d() * h);
+        let t = vec2(len, pi * h * (pi * s).cos_d()).normalize();
         let nrm = vec2(-t.y, t.x);
-        let th = w * (1.0 - 0.45 * (pi * s).sin());
+        let th = w * (1.0 - 0.45 * (pi * s).sin_d());
         (p, nrm, th)
     };
     let to3 = |q: Vec2| {
         let a = c.to_radians() + q.x / rad;
-        vec3(a.cos() * rad, q.y, a.sin() * rad)
+        vec3(a.cos_d() * rad, q.y, a.sin_d() * rad)
     };
     let edge = |s: f32| {
         let (p, nrm, th) = at(s);
@@ -1015,13 +1016,16 @@ impl Backdrop {
         let env = self.env;
         for (b, &(e0, e1)) in SKY_BANDS.iter().enumerate() {
             let col = env.sky[b];
-            let (y0, y1) = (SKY_R * e0.to_radians().tan(), SKY_R * e1.to_radians().tan());
+            let (y0, y1) = (
+                SKY_R * e0.to_radians().tan_d(),
+                SKY_R * e1.to_radians().tan_d(),
+            );
             for i in 0..SKY_SEGS {
                 let (a0, a1) = (
                     i as f32 / SKY_SEGS as f32 * tau,
                     (i + 1) as f32 / SKY_SEGS as f32 * tau,
                 );
-                let p = |a: f32, y: f32| eye + vec3(a.cos() * SKY_R, y, a.sin() * SKY_R);
+                let p = |a: f32, y: f32| eye + vec3(a.cos_d() * SKY_R, y, a.sin_d() * SKY_R);
                 quad(
                     &mut verts,
                     &mut idx,
@@ -1038,9 +1042,9 @@ impl Backdrop {
             return;
         }
         let az = moon_azimuth();
-        let flat = vec2(az.cos(), az.sin());
+        let flat = vec2(az.cos_d(), az.sin_d());
         let e = MOON_ELEV.to_radians();
-        let dir = vec3(flat.x * e.cos(), e.sin(), flat.y * e.cos());
+        let dir = vec3(flat.x * e.cos_d(), e.sin_d(), flat.y * e.cos_d());
         let mut mv = Vec::new();
         let mut mi = Vec::new();
         moon_mesh(
@@ -1070,7 +1074,7 @@ impl Backdrop {
                     i as f32 / RIDGE_SEGS as f32 * tau,
                     (i + 1) as f32 / RIDGE_SEGS as f32 * tau,
                 );
-                let at = |a: f32, y: f32| vec3(a.cos() * rad, y, a.sin() * rad);
+                let at = |a: f32, y: f32| vec3(a.cos_d() * rad, y, a.sin_d() * rad);
                 let (t0, t1) = (
                     ridge_top(r, a0) * env.ridge_h,
                     ridge_top(r, a1) * env.ridge_h,
@@ -1143,7 +1147,7 @@ impl Backdrop {
         let mut halo_idx = Vec::new();
         for (k, e) in drops.iter().enumerate() {
             let spin = time * 3.0 + k as f32 * 1.7;
-            let (sx, sz) = (spin.cos() * EMBER_SIZE, spin.sin() * EMBER_SIZE);
+            let (sx, sz) = (spin.cos_d() * EMBER_SIZE, spin.sin_d() * EMBER_SIZE);
             let ring = [
                 e.pos + vec3(sx, 0.0, sz),
                 e.pos + vec3(-sz, 0.0, sx),
@@ -1323,7 +1327,7 @@ mod tests {
             .map(|b| b.1)
             .fold(-90.0, f32::max)
             .to_radians();
-        assert!(SKY_R / top.cos() < 198.0);
+        assert!(SKY_R / top.cos_d() < 198.0);
         assert!(MOON_DIST + MOON_SIZE < SKY_R + 20.0 && MOON_DIST < SKY_R);
         // 산등성이는 겹마다 멀수록 높다(뒤 겹이 앞 겹 위로 보인다), 하늘 띠는 빈틈 없이 이어진다.
         assert!(RIDGES
@@ -1339,10 +1343,10 @@ mod tests {
     fn the_moon_rises_in_a_valley_above_every_ridge() {
         // 달 아래 끝(높이각 − 반지름)이 그 쪽 산등성이 꼭대기들보다 높다(카메라 높이 4.5m, 스테이지 가운데에서).
         let az = moon_azimuth();
-        let moon_low = MOON_ELEV - (MOON_SIZE * 0.2 / MOON_DIST).atan().to_degrees();
+        let moon_low = MOON_ELEV - (MOON_SIZE * 0.2 / MOON_DIST).atan_d().to_degrees();
         for r in &RIDGES {
             let rad = 37.0 * r.radius_k;
-            let top = ((ridge_top(r, az) - 4.5) / rad).atan().to_degrees();
+            let top = ((ridge_top(r, az) - 4.5) / rad).atan_d().to_degrees();
             assert!(
                 top < moon_low,
                 "ridge {} top {top}° vs moon {moon_low}°",

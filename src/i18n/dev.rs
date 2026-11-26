@@ -50,7 +50,7 @@ pub const LAB_NOW: Pair = ("지금", "now");
 pub const LAB_DEF: Pair = ("기본", "default");
 pub const LAB_STEP: Pair = ("한 걸음", "step");
 pub const LAB_CHANGED: Pair = ("기본값과 다름", "changed from default");
-pub const LAB_FAST: Pair = ("꾹 + 좌우 ×10", "hold + left/right x10");
+pub const LAB_FAST: Pair = ("홀드 + 좌우 ×10", "hold + left/right x10");
 pub const LAB_RESET: Pair = ("기본값으로", "reset");
 pub const LAB_COUNT: Pair = ("값 {0}개 · 바꾼 것 {1}", "{0} values · {1} changed");
 pub const LAB_ALL_DEFAULT: Pair = ("모두 기본값 그대로다.", "everything is at its default.");
@@ -128,6 +128,19 @@ pub const CHEST: Pair = (
     "둘째 지역 상자 곁에서(떨어진 아이템)",
     "region 2 beside a chest (dropped loot)",
 );
+pub const WEAPON_CHEST: Pair = ("{1}의 상자 곁에서({0})", "beside the chest of {1} ({0})");
+pub const WALL_CHEST: Pair = (
+    "첫 지역 성벽길의 상자 곁에서(숫돌)",
+    "region 1 beside the chest on the wall walk (a whetstone)",
+);
+pub const SPARE_CHEST: Pair = (
+    "첫 지역 뜰 남동쪽 단의 상자 곁에서(여벌)",
+    "region 1 beside the chest on the courtyard's southeast dais (a spare)",
+);
+pub const FIELD: Pair = (
+    "첫 지역 필드 보스의 터에서(고요한 사슴)",
+    "region 1 at the field boss's clearing (the Hushed Stag)",
+);
 pub const STAGE_NOTE: Pair = (
     "이 슬롯의 장신구·잔불로 진짜 스테이지를 돈다. 아무것도 저장하지 않는다.",
     "the real stage with this slot's charms and embers; nothing is saved",
@@ -150,9 +163,21 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
 pub const ARM_NOTE: Pair = (
-    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 맨손 → 활). 스킬은 무기 갈래를 탄다 — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
-    "cycle the held weapon (sword, hammer, staff, crossbow, fists, bow). Skills go by weapon grip: wear and enter arenas with this one. nothing is saved. now: {0}",
+    "지금: {0}. 든 무기를 다음 것으로 바꾼다({1}). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다.",
+    "now: {0}. cycle the held weapon ({1}). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved.",
 );
+pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
+pub const ARM_SUB_NOTE: Pair = (
+    "지금: {0}. 아레나의 보조무기를 다음 것으로 바꾼다({1}). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다.",
+    "now: {0}. cycle the arena's off-hand weapon ({1}); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved.",
+);
+pub const ARM_BARE: Pair = ("보조무기 비우기(켬/끔)", "empty the off hand (on/off)");
+pub const ARM_BARE_NOTE: Pair = (
+    "아레나의 보조무기 슬롯을 비운다(보조무기 · 방패를 내린다) — 든 무기 종류의 빈 손의 결로 선다. 다시 고르면 되돌린다. 저장하지 않는다. 지금: {0}",
+    "empty the arena's off-hand slot (no off-hand weapon, no shield) — the held weapon's empty-hand way. pick again to undo. nothing is saved. now: {0}",
+);
+pub const ARM_BARE_ON: Pair = ("빈 손", "empty");
+pub const ARM_BARE_OFF: Pair = ("그대로", "as set");
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
     "화면 아래에 fps·cpu·프레임 시간·정점 수를 띄운다(F3과 같다). 연구소의 render.resident를 0·1로 바꿔 지형 상주를 견준다.",
@@ -219,6 +244,10 @@ pub const PAIRS: &[Pair] = &[
     RESIDENTS,
     STONES,
     CHEST,
+    WEAPON_CHEST,
+    WALL_CHEST,
+    SPARE_CHEST,
+    FIELD,
     STAGE_NOTE,
     LAB_START,
     LAB_NOTE,
@@ -230,6 +259,12 @@ pub const PAIRS: &[Pair] = &[
     SKILLS_FLIP_NOTE,
     ARM,
     ARM_NOTE,
+    ARM_SUB,
+    ARM_SUB_NOTE,
+    ARM_BARE,
+    ARM_BARE_NOTE,
+    ARM_BARE_ON,
+    ARM_BARE_OFF,
     PERF_LINE,
     PERF_LINE_NOTE,
     BOARD_SLOT,
@@ -259,6 +294,7 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("heavy", ("강타", "heavy")),
     ("hammer1", ("평타 1", "hit 1")),
     ("hammer2", ("평타 2", "hit 2")),
+    ("hammer3", ("평타 3", "hit 3")),
     ("hammer_charge", ("강타 모으기", "heavy charge")),
     ("hammer_slam", ("강타", "heavy")),
     ("staff1", ("평타 1", "hit 1")),
@@ -309,6 +345,118 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("ult_upend", ("큰 기술 — 쟁반 뒤집기", "ult: upend")),
     ("ult_flurry", ("큰 기술 — 몰아치기", "ult: flurry")),
     ("ult_line", ("큰 기술 — 한 줄기", "ult: line")),
+    // 0270 C3
+    ("sk_stitch", ("기술 — 바늘땀", "skill: needle stitch")),
+    ("sk_ram", ("기술 — 방패 돌진", "skill: shield rush")),
+    ("sk_toll", ("기술 — 종 치기", "skill: toll the bell")),
+    ("sk_swat", ("기술 — 후려치기", "skill: swat")),
+    ("sk_ripple", ("기술 — 파문", "skill: ripple")),
+    ("sk_snow", ("기술 — 눈발", "skill: snowfall")),
+    ("sk_flare", ("기술 — 불길", "skill: flare")),
+    ("sk_snare", ("기술 — 뿌리 덫", "skill: root snare")),
+    ("ult_bell", ("큰 기술 — 큰 종", "ult: great bell")),
+    ("ult_blizzard", ("큰 기술 — 눈보라", "ult: blizzard")),
+    // 0272
+    ("sk_fuse", ("기술 — 심지 볼트", "skill: fuse bolt")),
+    ("sk_mine", ("기술 — 화약 덫", "skill: powder trap")),
+    ("ult_rain", ("큰 기술 — 화살비", "ult: arrow rain")),
+    // 0272 2단계 — 창
+    ("spear1", ("창 — 1타 찌르기", "spear: thrust 1")),
+    ("spear2", ("창 — 2타 찌르기", "spear: thrust 2")),
+    (
+        "spear3",
+        ("창 — 3타 내디뎌 찌르기", "spear: lunging thrust 3"),
+    ),
+    (
+        "spear_dash",
+        ("창 — 달리며 찌르기", "spear: running thrust"),
+    ),
+    ("spear_charge", ("창 — 모으기", "spear: charge")),
+    (
+        "spear_lunge",
+        ("창 — 내달려 꿰뚫기", "spear: piercing lunge"),
+    ),
+    ("sk_skewer", ("기술 — 꿰뚫기", "skill: skewer")),
+    ("sk_pole", ("기술 — 장대 휩쓸기", "skill: pole sweep")),
+    ("sk_pin", ("기술 — 못 박기", "skill: pinning thrust")),
+    (
+        "ult_gale",
+        ("큰 기술 — 질풍 찌르기", "ult: gale of thrusts"),
+    ),
+    // 0274 — 한손검의 전투 기술
+    ("sk_pommel", ("기술 — 자루 치기", "skill: pommel strike")),
+    ("sk_shove", ("기술 — 밀치기", "skill: shove")),
+    ("sk_rally", ("기술 — 재기", "skill: rally")),
+    // 0274 ③ — 쌍단검
+    (
+        "dagger1",
+        ("쌍단검 — 1타 왼손 찌르기", "daggers: left stab 1"),
+    ),
+    (
+        "dagger2",
+        ("쌍단검 — 2타 오른손 찌르기", "daggers: right stab 2"),
+    ),
+    ("dagger3", ("쌍단검 — 3타 가로 베기", "daggers: slash 3")),
+    (
+        "dagger4",
+        ("쌍단검 — 4타 올려 베기", "daggers: rising cut 4"),
+    ),
+    (
+        "dagger_dash",
+        ("쌍단검 — 달려들며 찌르기", "daggers: running stab"),
+    ),
+    ("dagger_charge", ("쌍단검 — 모으기", "daggers: charge")),
+    (
+        "dagger_lunge",
+        ("쌍단검 — 꿰뚫고 지나가기", "daggers: lunge through"),
+    ),
+    ("sk_slip", ("기술 — 빠지며 베기", "skill: slip away")),
+    (
+        "ult_ambush",
+        ("큰 기술 — 그림자 습격", "ult: shadow ambush"),
+    ),
+    // 0274 ④ — 대검
+    (
+        "gs1",
+        ("대검 — 1타 오른쪽에서 휩쓸기", "greatsword: sweep 1"),
+    ),
+    (
+        "gs2",
+        ("대검 — 2타 되받아 휩쓸기", "greatsword: back sweep 2"),
+    ),
+    ("gs3", ("대검 — 3타 다시 휩쓸기", "greatsword: sweep 3")),
+    (
+        "gs4",
+        ("대검 — 4타 크게 휩쓸기", "greatsword: wide sweep 4"),
+    ),
+    ("gs5", ("대검 — 5타 내려찍기", "greatsword: overhead 5")),
+    (
+        "gs_dash",
+        ("대검 — 달려들며 올려 베기", "greatsword: running cut"),
+    ),
+    ("gs_charge", ("대검 — 모으기", "greatsword: charge")),
+    (
+        "gs_heavy",
+        ("대검 — 두 손 내려베기", "greatsword: great cleave"),
+    ),
+    ("sk_sunder", ("기술 — 땅 가르기", "skill: sunder")),
+    ("sk_sear", ("기술 — 불씨 휩쓸기", "skill: cinder sweep")),
+    ("ult_tempest", ("큰 기술 — 칼바람", "ult: bladestorm")),
+    // 0274 ⑤ — 낫
+    (
+        "scythe3",
+        ("낫 — 3타 걸어 당기며 베기", "sickle: hook and drag 3"),
+    ),
+    ("sk_reap", ("기술 — 걸어 당기기", "skill: hook and drag")),
+    ("sk_harvest", ("기술 — 생기 거두기", "skill: reap life")),
+    ("ult_grove", ("큰 기술 — 깨어나는 숲", "ult: waking grove")),
+    // 0274 ⑥ — 완드
+    ("sk_hex", ("기술 — 저주 새기기", "skill: etch a curse")),
+    (
+        "sk_blight",
+        ("기술 — 시드는 그늘", "skill: withering shade"),
+    ),
+    ("ult_price", ("큰 기술 — 치른 값", "ult: the price paid")),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).
@@ -337,6 +485,21 @@ pub fn spec_label(name: &'static str) -> &'static str {
 
 /// 개발 시나리오(`scenario::LIST`의 영어 이름) → (한국어 이름, 무엇을 보나). F3 아레나 줄은 기본 글꼴이라 영어 그대로.
 pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
+    (
+        "hushed stag",
+        "고요한 사슴",
+        "0270 D 터에 엎드려 기다린다(다가가거나 쏘면 일어난다), 뿔 쓸기, 돌진과 긴 틈, 뒷발로 일어섰다 내려 딛기: 원판 + 뿌리 줄",
+    ),
+    (
+        "hushed stag phase two",
+        "고요한 사슴 2단계",
+        "0270 D 시작하자마자 전환, 쉬는 틈이 짧다, 돌아서 한 번 더 돌진, 뿌리 줄 셋이 부채꼴로",
+    ),
+    (
+        "a line of husks",
+        "한 줄로 선 잔재",
+        "0272 창: 찌르기가 줄을 꿰뚫는다, 옆이 빈다, 내달려 꿰뚫기가 뚫고 지나간다",
+    ),
     (
         "chained winchkeeper",
         "사슬에 묶인 권양지기",

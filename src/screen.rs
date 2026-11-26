@@ -13,6 +13,8 @@ mod js {
         pub fn knell_scene(ptr: *const u8, len: usize);
         #[cfg(feature = "dev")]
         pub fn knell_test_flags() -> u32;
+        #[cfg(feature = "dev")]
+        pub fn knell_dev_next(ptr: *mut u8, cap: usize) -> usize;
     }
 }
 
@@ -31,6 +33,9 @@ pub fn report_scene(name: &str) {
 
 /// 헤드리스 시험이 페이지에 건 깃발(`window.knellTestFlags`, 웹만 — 그 밖은 0). 1 = 방랑자가 맞지 않는다(`World::unhurt`).
 /// 2 = 새 기록도 서막 숲을 건너뛰고 성소에서 연다(0262 — `tools/test/scene.js`가 기본으로 건다, `sceneKit.prologue`가 푼다).
+/// 4 = 서막 숲길을 저절로 걷는다(`App::prologue_autopilot`). 8 = 싸게 그리기(줄 수 270·2배 그리기 끔 — `Renderer`의 프레임 들머리,
+/// `sceneKit.cheap`: 흐름만 보는 스크립트용, 그림을 보는 `shot.js`는 걸지 않는다). 16 = 적을 세워 둔다(`sceneKit.still` —
+/// 동작·이펙트를 틱마다 찍는 `swap.js`: 앱이 틱마다 적을 쉬는 상태로 되돌린다, 월드의 규칙은 그대로).
 /// 개발판에만 있다.
 #[cfg(feature = "dev")]
 pub fn test_flags() -> u32 {
@@ -39,6 +44,21 @@ pub fn test_flags() -> u32 {
     return unsafe { js::knell_test_flags() };
     #[cfg(not(target_arch = "wasm32"))]
     0
+}
+
+/// 헤드리스 시험이 페이지에 쌓은 개발 명령 하나(`window.knellDev`의 앞에서 꺼낸다 — 웹 개발판만, 그 밖은 늘 없음). 이름의 뜻은
+/// `app::dev::DevCmd`(0278 R13 — 개발 창을 세어 누르지 않고 이름으로 연다). PC의 짝은 환경 변수 `KNELL_BOOT`.
+#[cfg(feature = "dev")]
+pub fn dev_command() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut buf = [0u8; 128];
+        // SAFETY: JS 함수(web/index.html)가 넘긴 칸 안에만 바이트를 쓰고 그 길이를 돌려준다(넘치면 0).
+        let n = unsafe { js::knell_dev_next(buf.as_mut_ptr(), buf.len()) }.min(buf.len());
+        (n > 0).then(|| String::from_utf8_lossy(&buf[..n]).into_owned())
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    None
 }
 
 #[cfg(not(any(target_arch = "wasm32", target_os = "android", target_os = "ios")))]

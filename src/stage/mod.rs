@@ -8,6 +8,7 @@ pub mod sanctuary;
 pub mod village;
 pub mod workings;
 
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::ground::{Cell, Ground};
@@ -145,7 +146,7 @@ pub struct StageDef {
     pub obj_gate: Tr,
     pub obj_core: Tr,
     pub boss_wakes: Tr,
-    /// 상자(지도 `C`, 위에서부터 차례)마다 든 것(0064 M3 → 0117: 장신구 또는 무기). 이미 가졌으면 잔불 `CHEST_EMBERS`.
+    /// 상자(지도 `C`, 위에서부터 차례)마다 든 것(0064 M3 → 0117: 장신구 또는 무기 → 0274 ⑦: 숫돌 · 여벌도). 이미 가졌으면 잔불 `CHEST_EMBERS`.
     pub chest_loot: &'static [Loot],
     /// 문지기를 처음 이겼을 때 주는 장신구.
     pub boss_charm: Option<crate::charms::Id>,
@@ -180,7 +181,23 @@ pub struct StageDef {
     /// 서막 지역(0262 — 숲): 표의 끝에 붙고 판의 차례(내려가는 `D`·오르는 `U`) 밖이다. 문지기·핵·문·화로·상자·숨은 물건이 없고,
     /// 끝의 표지(`EXIT_GLYPH`)를 밟으면 "성소에 들다"(`StageOut::Onward`), 쓰러지면 깨어난 자리에서 다시 선다. 종소리는 그 표지에서.
     pub prologue: bool,
+    /// 필드 보스(0270 D): 길에서 벗어난 터(지도 `FIELD_GLYPH`)에 홀로 엎드려 기다린다 — 진행(문·핵)에는 필요 없다. 없는 지역은 `None`.
+    pub field: Option<FieldBoss>,
 }
+
+/// 지역의 필드 보스(0270 D — "강해지기 위한·강함을 시험하는" 보스): 종 · 일어날 때의 카드 · 처음 쓰러뜨리면 떨구는 장신구.
+/// 그 판에 한 번 쓰러뜨리면 쉬어도 다시 서지 않고, 다음 판에 다시 선다. 처음 쓰러뜨림은 기록 `fields`(지역의 `find_prefix`).
+/// 새 지역의 필드 보스 = 이 한 줄 + 지도의 `Q`(생성기) + 종(`species`·`enemy`) + 장신구 + 도감·여정의 줄.
+pub struct FieldBoss {
+    pub kind: Kind,
+    pub wakes: Tr,
+    pub charm: Option<crate::charms::Id>,
+    /// 엎드려 바라보는 쪽(rad — 0 = 남(+z), π = 북): 터의 들머리 쪽을 본다.
+    pub face: f32,
+}
+
+/// 필드 보스의 자리(0270 D — 지도 글자). 지도마다 하나까지.
+pub const FIELD_GLYPH: char = 'Q';
 
 /// 판의 차례(0118, v0.5.0 T1): 성소 → 떠난 마을. 지도 `D`(내려가는 길, 핵을 거둔 뒤)로 다음, `U`(오르는 길)로 앞.
 /// 서막 숲(0262)은 표의 **끝**에 붙는다 — 기록의 지역 번호(`run.stage`)·상자 번호(`지역 × 1000`)·바닥 아이템의 지역이 그대로다.
@@ -348,6 +365,18 @@ pub const CHEST_EMBERS: u32 = 10;
 pub enum Loot {
     Charm(crate::charms::Id),
     Weapon(crate::weapons::Id),
+    /// 숫돌 하나(0274 ⑦ — 무기를 얻는 차례를 다시 짜며 성소의 옛 쇠뇌 상자에): 숨은 물건 숫돌과 같은 것이라 벼리는 셈(`forge::stones`)이
+    /// 그대로 센다 — 기록 이름은 `chest_stone_id`(지도 `O`의 차례 이름과 섞이지 않는다). 가방의 칸이 들지 않는다.
+    Stone,
+    /// 여벌 하나(0274 ⑦ — 성소의 옛 지팡이 상자에): 가진 바탕 가운데 하나의 **고급**(`Sturdy` — 옵션 한 줄 확정) — 엘리트의 여벌과 같은 굴림에
+    /// 등급만 정해 준다. 가진 것이 없으면(맨손뿐) 잔불. 가방의 칸이 든다.
+    Spare,
+}
+
+/// 상자에서 나온 숫돌의 기록 이름(0274 ⑦): `sanctuary.stone.chest1` — 가운데 칸이 `stone`이라 숫돌로 세고(`forge::stones`),
+/// 끝이 지도 `O`의 차례(수)가 아니라 숨은 물건·여정의 셈(`find_id`의 0..n)에는 들지 않는다. 바꾸지 않는다.
+pub fn chest_stone_id(prefix: &str, chest: usize) -> String {
+    format!("{prefix}.{}.chest{chest}", Find::Stone.key())
 }
 /// 상자 부딪힘 상자 반폭(가로·세로 m).
 const CHEST_HALF: Vec3 = Vec3::new(0.45, 0.5, 0.3);
@@ -540,6 +569,22 @@ pub struct StageRun {
     pub exit_at: Option<Vec3>,
     /// 남은 주민(0122 — `Folk`).
     pub folk: Folk,
+    /// 필드 보스(0270 D — `Fielded`).
+    pub field: Fielded,
+}
+
+/// 필드 보스의 판 안 상태(0270 D): 적 번호는 들고 있지 않는다(다른 적이 지워지면 밀린다 — 월드에서 `Enemy::field`로 찾는다).
+#[derive(Default)]
+pub struct Fielded {
+    /// 이 판에 쓰러뜨렸다 — 쉬어도 다시 서지 않는다(앱이 판에서 알려 주기도 한다: 지역을 떠났다 와도·이어 해도 `set_field_down`).
+    pub down: bool,
+    /// 기록에서 이미 쓰러뜨린 적 있다(앱이 `set_field_beaten` — 처음의 덤·확정 떨굼은 한 번만).
+    beaten: bool,
+    /// 이번 틱에 쓰러진 자리와 기록에서 처음인가(앱이 가져가 그 자리에 떨군다).
+    loot: Option<(Vec3, bool)>,
+    /// 지난 틱에 일어나는 중이었나 · 이번 틱에 일어나기 시작했나(앱이 가져가 소리를 낸다).
+    waking: bool,
+    woke: bool,
 }
 
 /// 바닥에 떨어진 아이템 하나(0226). `wait` = 방랑자가 한 번 곁을 떠나야 주울 수 있다 — 발치에 내려놓은 것이 곧바로 "줍기"가 되어
@@ -672,6 +717,7 @@ impl StageRun {
             passage_armed: true,
             exit_at: None,
             folk: Folk::default(),
+            field: Fielded::default(),
         };
         // 주민(0122): 표지마다 — 처음엔 제 일 쪽을 본다(0132), 몸은 방랑자만 밀어낸다.
         for (c, p) in run.level.marks.clone() {
@@ -736,6 +782,12 @@ impl StageRun {
             avoid.extend(run.rests.iter().map(|p| (*p, HORDE_AWAY_REST)));
             avoid.extend(run.folk.list.iter().map(|(_, p)| (*p, HORDE_AWAY_RESIDENT)));
             avoid.extend(run.level.marks_of(def.boss.0).map(|p| (p, HORDE_AWAY_BOSS)));
+            // 필드 보스의 터(0270 D)도 비킨다 — 홀로 기다리는 자리에 떼를 세우지 않는다.
+            avoid.extend(
+                run.level
+                    .marks_of(FIELD_GLYPH)
+                    .map(|p| (p, HORDE_AWAY_BOSS)),
+            );
             for c in [LEVER_GLYPH, DOWN_GLYPH, UP_GLYPH, 'C', 'N'] {
                 avoid.extend(run.level.marks_of(c).map(|p| (p, HORDE_AWAY_SPOT)));
             }
@@ -794,9 +846,12 @@ impl StageRun {
     fn respawn_at_start(&mut self, w: &mut World) {
         w.lingers.clear();
         w.shards.clear();
+        // 방랑자가 놓거나 던진 것도(0278 고침 — 쉬기 전 · 쓰러지기 전에 던진 수류탄 · 신성한 빛 · 마당이 다시 선 뒤에 터지거나 남았다).
+        w.clear_placed();
         w.lock = None;
         w.hitstop = 0.0;
         let full = w.stats.max_stamina();
+        let charges = w.cast_charges();
         let pl = &mut w.player;
         pl.pos = self.level.player_start;
         pl.prev = pl.pos;
@@ -806,7 +861,7 @@ impl StageRun {
         pl.hurt.left = 1.0;
         pl.hp = pl.max_hp;
         pl.flask = pl.flask_max;
-        pl.ranged.mana = crate::tuning::CAST_CHARGES;
+        pl.ranged.mana = charges;
         pl.stamina = full;
         self.populate(w);
         self.zone = self.zone_at(w.player.pos);
@@ -832,12 +887,31 @@ impl StageRun {
     /// 이 판에 이 지역 문지기를 이겼다(0118): 문지기를 지우고 문을 열고 바닥 길 단계로.
     pub fn open_down(&mut self, w: &mut World) {
         self.down_open = true;
-        w.enemies.retain(|e| !e.boss);
+        self.drop_keeper(w);
         self.boss = None;
         self.core = None;
         self.phase = Phase::Down;
         self.objective = Some(|s| s.obj_descend);
         self.set_gate(w, false);
+    }
+
+    /// 문지기를 월드에서 지운다(필드 보스 0270 D는 남는다). 뒤의 적 번호가 당겨지니 엘리트의 번호도 같이 당긴다 — 안 그러면
+    /// 핵을 거둔 뒤 엘리트의 번호가 옆의 적을 가리켜, 그 적이 쓰러질 때 엘리트가 쓰러진 것으로 셌다.
+    fn drop_keeper(&mut self, w: &mut World) {
+        let keeper = |e: &crate::enemy::Enemy| e.boss && !e.field;
+        let gone: Vec<usize> = (0..w.enemies.len())
+            .filter(|&i| keeper(&w.enemies[i]))
+            .collect();
+        w.enemies.retain(|e| !keeper(e));
+        for (i, _) in &mut self.elite_ids {
+            *i -= gone.iter().filter(|g| **g < *i).count();
+        }
+    }
+
+    /// 문지기만 남기고 다른 적을 지운다(문지기는 번호 0) — 필드 보스(0270 D)도 지운다: 다시 세울지는 `populate`가 정한다.
+    fn keep_keeper(&mut self, w: &mut World) {
+        w.enemies.retain(|e| e.boss && !e.field);
+        self.boss = (!w.enemies.is_empty()).then_some(0);
     }
 
     fn zone_at(&self, p: Vec3) -> usize {
@@ -892,15 +966,16 @@ impl StageRun {
         if !self.def.waves.is_empty() {
             return;
         }
-        w.enemies.retain(|e| e.boss);
-        self.boss = (!w.enemies.is_empty()).then_some(0);
+        self.keep_keeper(w);
         w.lock = None;
         w.lingers.clear();
         w.shards.clear();
+        // 방랑자가 놓거나 던진 것도(0278 고침 — 쉬기 전 · 쓰러지기 전에 던진 수류탄 · 신성한 빛 · 마당이 다시 선 뒤에 터지거나 남았다).
+        w.clear_placed();
         self.elite_ids.clear();
         // 바라보는 쪽은 자리마다 정해진 값(자리로 섞는다) — 늘어선 적이 한 쪽만 보지 않게.
         let face = |p: Vec3| {
-            let h = (p.x * 12.9898 + p.z * 78.233).sin() * 43758.547;
+            let h = (p.x * 12.9898 + p.z * 78.233).sin_d() * 43758.547;
             (h - h.floor()) * std::f32::consts::TAU
         };
         for &(mark, kind) in self.def.spawns {
@@ -936,6 +1011,73 @@ impl StageRun {
                 self.elite_ids.push((i, elite_id(self.def.find_prefix, k)));
             }
         }
+        // 필드 보스(0270 D): 이 판에 쓰러뜨리지 않았으면 제 터에 엎드려 기다린다 — 쉬면 처음부터(가득 차 엎드린 채). 맨 끝에
+        // 세운다(지울 때 다른 적의 번호가 밀리지 않게).
+        if let (Some(f), false) = (&self.def.field, self.field.down) {
+            if let Some(p) = self.level.marks_of(FIELD_GLYPH).next() {
+                let i = w.spawn(f.kind, p);
+                w.enemies[i].lie_in_wait(f.face);
+            }
+        }
+        self.field.waking = false;
+    }
+
+    /// 필드 보스(0270 D)를 지켜본다: 일어나기 시작하면 카드, 쓰러지면 한 번 — 처음이면 잔불 `FIELD_FIRST_EMBERS`를 더 흩고
+    /// 앱에 알린다(기록·떨굼).
+    fn tick_field(&mut self, w: &mut World) {
+        let Some(f) = &self.def.field else { return };
+        let Some(e) = w.enemies.iter().find(|e| e.field) else {
+            return;
+        };
+        if e.waking && !self.field.waking {
+            self.card = Some((f.wakes, CARD_TIME));
+            self.field.woke = true;
+        }
+        self.field.waking = e.waking;
+        if e.alive() || self.field.down {
+            return;
+        }
+        let pos = e.pos;
+        self.field.down = true;
+        let first = !self.field.beaten;
+        self.field.loot = Some((pos, first));
+        if first {
+            self.field.beaten = true;
+            let seed = (self.time * 1000.0) as u32 ^ 0xf1e1_d0ff;
+            w.drops.extend(crate::ember::scatter(
+                pos,
+                crate::tuning::FIELD_FIRST_EMBERS,
+                seed,
+            ));
+        }
+    }
+
+    /// 이번 틱에 쓰러진 필드 보스(0270 D): (쓰러진 자리, 기록에서 처음인가) — 앱이 한 번 가져가 기록하고 떨군다.
+    pub fn take_field_down(&mut self) -> Option<(Vec3, bool)> {
+        self.field.loot.take()
+    }
+
+    /// 이번 틱에 필드 보스가 일어나기 시작했나(0270 D) — 앱이 한 번 가져가 낮은 땅울림을 낸다(종은 울리지 않는다).
+    pub fn take_field_woke(&mut self) -> bool {
+        std::mem::take(&mut self.field.woke)
+    }
+
+    /// 기록의 필드 보스(0270 D): 이미 쓰러뜨린 적 있으면 처음의 덤·확정 떨굼은 없다.
+    pub fn set_field_beaten(&mut self, beaten: bool) {
+        self.field.beaten = beaten;
+    }
+
+    /// 이 판에 이미 쓰러뜨린 필드 보스(0270 D — 지역을 떠났다 오거나 이어 할 때 앱이 알린다): 다시 서지 않는다.
+    pub fn set_field_down(&mut self, w: &mut World) {
+        self.field.down = true;
+        w.enemies.retain(|e| !e.field);
+    }
+
+    /// 싸우는 중인 필드 보스(0270 D — 일어나는 중부터 쓰러질 때까지, 제자리로 돌아가는 중은 아니다).
+    fn field_fight<'a>(&self, w: &'a World) -> Option<&'a crate::enemy::Enemy> {
+        w.enemies.iter().find(|e| {
+            e.field && e.alive() && (e.waking || (e.active() && e.state != EState::Return))
+        })
     }
 
     /// 기록의 문(0113): 이미 열었으면 처음부터 열린 채(지름길).
@@ -1019,6 +1161,7 @@ impl StageRun {
     pub fn tick(&mut self, w: &mut World, dt: f32) -> StageOut {
         self.time += dt;
         self.tick_elites(w);
+        self.tick_field(w);
         self.intro = (self.intro - dt).max(0.0);
         if let Some((tr, t)) = self.card {
             self.card = (t > dt).then_some((tr, t - dt));
@@ -1149,7 +1292,7 @@ impl StageRun {
             }
             let home = crate::residents::WORK_FACE;
             let want = if d <= crate::residents::GLANCE_RANGE {
-                (pp.x - at.x).atan2(pp.z - at.z)
+                (pp.x - at.x).atan2_d(pp.z - at.z)
             } else {
                 home
             };
@@ -1190,7 +1333,7 @@ impl StageRun {
             let c = self.chest.at[i];
             // 방랑자 쪽에서 옆으로 비껴(발밑에 떨어지면 몸에 가려 빛기둥이 안 보였다, 헤드리스).
             let to = vec3(pp.x - c.x, 0.0, pp.z - c.z).normalize_or(Vec3::Z);
-            let side = Quat::from_rotation_y(DROP_SIDE.to_radians()) * to;
+            let side = crate::det::turn_y(to, DROP_SIDE.to_radians());
             self.drops.push((c + side * DROP_OUT, i, 0.0));
         } else if let (true, true) = (self.near_lever, w.interact) {
             self.gate_opened = true;
@@ -1355,10 +1498,12 @@ impl StageRun {
     /// 쉬기(0032): 체력·등잔·스태미나 가득, 이 쉼터가 다시 일어설 곳. 되돌아갈 단계 = 지금(물결 중이면 물결 전부터).
     fn rest(&mut self, w: &mut World, i: usize) {
         let full = w.stats.max_stamina();
+        // RB 칸은 든 무기의 수만큼(0274 ⑥ — 완드는 다섯).
+        let charges = w.cast_charges();
         let pl = &mut w.player;
         pl.hp = pl.max_hp;
         pl.flask = pl.flask_max;
-        pl.ranged.mana = crate::tuning::CAST_CHARGES;
+        pl.ranged.mana = charges;
         pl.stamina = full;
         let back = match self.phase {
             Phase::Entrance | Phase::Waves(_) => Phase::Entrance,
@@ -1377,7 +1522,7 @@ impl StageRun {
         let at = self.rests[i];
         // 이 판에 이긴 문지기는 다시 서지 않는다(0118).
         if self.down_open {
-            w.enemies.retain(|e| !e.boss);
+            self.drop_keeper(w);
         }
         // 기록의 문(0113)이 열려 있으면 문 앞 단계로.
         let back = if self.gate_opened {
@@ -1385,8 +1530,7 @@ impl StageRun {
         } else {
             back
         };
-        w.enemies.retain(|e| e.boss);
-        self.boss = (!w.enemies.is_empty()).then_some(0);
+        self.keep_keeper(w);
         if let (Some(b), Some(home)) = (self.boss, self.level.marks_of(self.def.boss.0).next()) {
             let max = w.enemies[b].max_hp;
             let e = &mut w.enemies[b];
@@ -1405,6 +1549,8 @@ impl StageRun {
         self.elite_ids.clear();
         w.lingers.clear();
         w.shards.clear();
+        // 방랑자가 놓거나 던진 것도(0278 고침 — 쉬기 전 · 쓰러지기 전에 던진 수류탄 · 신성한 빛 · 마당이 다시 선 뒤에 터지거나 남았다).
+        w.clear_placed();
         w.lock = None;
         w.hitstop = 0.0;
         let pl = &mut w.player;
@@ -1504,11 +1650,10 @@ impl StageRun {
             .iter()
             .filter(|d| vec2(d.pos.x - at.x, d.pos.z - at.z).length() < DROP_APART * 3.0)
             .count();
-        let turn = Quat::from_rotation_y(n as f32 * 2.4);
         let pos = if n == 0 {
             at
         } else {
-            at + turn * Vec3::X * DROP_APART
+            at + crate::det::turn_y(Vec3::X, n as f32 * 2.4) * DROP_APART
         };
         self.item_drops.push(ItemDrop {
             pos,
@@ -1603,8 +1748,7 @@ impl StageRun {
     /// 개발: 물결·서 있는 적을 건너뛰고 문 앞으로(문이 열린 채) — 보스만 다시 볼 때. 보스 말고는 지운다(0113 — 문 앞 가시짐승이 바로 덮쳤다).
     #[cfg(feature = "dev")]
     pub fn dev_skip_to_gate(&mut self, w: &mut World) {
-        w.enemies.retain(|e| e.boss);
-        self.boss = (!w.enemies.is_empty()).then_some(0);
+        self.keep_keeper(w);
         self.elite_ids.clear();
         w.lock = None;
         self.intro = 0.0;
@@ -1619,15 +1763,19 @@ impl StageRun {
         self.zone = self.def.zones.len().saturating_sub(2);
     }
 
-    /// 보스 체력 띠를 띄울까(깨어나는 중부터 쓰러질 때까지).
-    pub fn boss_bar(&self, w: &World) -> Option<(f32, bool)> {
+    /// 체력 띠를 띄울 보스(깨어나는 중부터 쓰러질 때까지): 문지기, 아니면 싸우는 중인 필드 보스(0270 D).
+    pub fn bar_boss<'a>(&self, w: &'a World) -> Option<&'a crate::enemy::Enemy> {
         match self.phase {
-            Phase::Waking(_) | Phase::Duel => self
-                .boss
-                .and_then(|i| w.enemies.get(i))
-                .map(|b| (b.hp.max(0) as f32 / b.max_hp as f32, b.roused)),
+            Phase::Waking(_) | Phase::Duel => self.boss.and_then(|i| w.enemies.get(i)),
             _ => None,
         }
+        .or_else(|| self.field_fight(w))
+    }
+
+    /// 보스 체력 띠를 띄울까 — (남은 체력의 몫, 2단계인가).
+    pub fn boss_bar(&self, w: &World) -> Option<(f32, bool)> {
+        self.bar_boss(w)
+            .map(|b| (b.hp.max(0) as f32 / b.max_hp as f32, b.roused))
     }
 
     /// 지금 가야 할 곳(0060 W1 길 안내): 문이 열렸으면 문, 핵이 남았으면 핵. 싸우는 동안·입구 길은 없음 — 그때는 바깥에서

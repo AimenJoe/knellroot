@@ -1,4 +1,5 @@
 //! 개발 시나리오(nail 규칙): 같은 상황에 몇 초 만에 다시. 시나리오 설명에 그것이 검증하는 PoC 항목을 적는다.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::world::{Aabb, World};
@@ -32,6 +33,12 @@ pub enum Scenario {
     Workers,
     /// 스킬 연습(0151 S0 판정): 두 겹으로 둘러싼 떼 + 큰 기술 게이지 가득 — "모으고 → 쓸고"와 쟁반 뒤집기를 바로.
     Skills,
+    /// 고요한 사슴(0270 D — 성소의 필드 보스): 터에 엎드려 기다린다 — 다가가면 일어나 뿔 쓸기·돌진·내려 딛기.
+    Stag,
+    /// 고요한 사슴 2단계(0270 D): 체력 반 — 시작하자마자 전환, 돌진을 돌아서 한 번 더·뿌리 줄 셋.
+    StagTwo,
+    /// 한 줄(0272 2단계 — 창): 앞으로 줄지어 선 잔재 다섯과 몸 곁의 둘 — 찌르기의 꿰뚫음 · 옆의 빈틈 · 내달려 꿰뚫기.
+    Line,
 }
 
 pub struct Entry {
@@ -41,7 +48,7 @@ pub struct Entry {
     pub checks: &'static str,
 }
 
-pub const LIST: [Entry; 18] = [
+pub const LIST: [Entry; 21] = [
     Entry {
         scenario: Scenario::Boss,
         name: "boss arena",
@@ -134,6 +141,21 @@ pub const LIST: [Entry; 18] = [
         name: "skills: horde 24 + full gauge",
         checks: "0151 gather then sweep, momentum (kills bring skills back), both buttons = great skill",
     },
+    Entry {
+        scenario: Scenario::Stag,
+        name: "hushed stag",
+        checks: "0270 D lies in wait (walk up or shoot to wake), antler sweep, charge with a long opening, rear-up stomp: disc + root line",
+    },
+    Entry {
+        scenario: Scenario::StagTwo,
+        name: "hushed stag phase two",
+        checks: "0270 D rise at once, shorter rests, a second charge after turning, three root lines in a fan",
+    },
+    Entry {
+        scenario: Scenario::Line,
+        name: "a line of husks",
+        checks: "0272 spear: thrusts pierce the line, the side is open, the lunge drives through",
+    },
 ];
 
 /// 지금 시나리오의 줄(HUD가 이름·검증 항목을 보인다).
@@ -173,7 +195,7 @@ pub fn build(s: Scenario) -> World {
             for i in 0..20 {
                 let a = i as f32 / 20.0 * std::f32::consts::TAU;
                 let r = 9.0 + (i % 3) as f32 * 1.5;
-                w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
             }
             w
         }
@@ -237,17 +259,48 @@ pub fn build(s: Scenario) -> World {
             w.spawn(crate::species::Kind::Overseer, vec3(0.0, 0.0, -9.0));
             w
         }
+        // 고요한 사슴(0270 D): 터(스테이지의 것과 같은 넓이 — 반폭 10m 남짓)의 안쪽에 엎드려 이쪽을 본다. 두 걸음 다가가면
+        // (`FIELD_WAKE_R`) 일어난다 — 멀리 달아날 곳이 없는 아레나라 끈은 닿지 않는다.
+        Scenario::Stag => {
+            let mut w = World::new("hushed stag arena", 14.0);
+            let s = w.spawn(crate::species::Kind::Stag, vec3(0.0, 0.0, -11.0));
+            w.enemies[s].lie_in_wait(0.0);
+            w
+        }
         // 2단계(0133): 같은 아레나, 체력만 반 — 시작하자마자 전환(잠든 문지기는 깨어난 뒤).
-        Scenario::WardenTwo | Scenario::BellkeeperTwo | Scenario::MosswardTwo => {
+        Scenario::WardenTwo
+        | Scenario::BellkeeperTwo
+        | Scenario::MosswardTwo
+        | Scenario::StagTwo => {
             let mut w = build(match s {
                 Scenario::WardenTwo => Scenario::Boss,
                 Scenario::BellkeeperTwo => Scenario::Bellkeeper,
+                Scenario::StagTwo => Scenario::Stag,
                 _ => Scenario::Mossward,
             });
             for en in &mut w.enemies {
                 if en.boss {
                     en.hp = en.max_hp / 2;
                 }
+                // 엎드린 필드 보스(0270 D)는 서서 시작한다 — 전환부터 본다.
+                if en.lying() {
+                    en.state = crate::world::EState::Chase;
+                    en.stand = 1.0;
+                }
+            }
+            w
+        }
+        Scenario::Line => {
+            let mut w = World::new("line", 14.0);
+            // 줄의 첫째가 가장 가깝다(평타의 자동 조준이 줄을 고르게) — 곁의 둘은 그보다 조금 멀리, 몸 옆에.
+            for k in 0..5 {
+                w.spawn(
+                    crate::species::Kind::Husk,
+                    vec3(0.0, 0.0, -1.5 - 1.3 * k as f32),
+                );
+            }
+            for x in [-1.7, 1.7] {
+                w.spawn(crate::species::Kind::Husk, vec3(x, 0.0, 0.3));
             }
             w
         }
@@ -282,7 +335,7 @@ pub fn build(s: Scenario) -> World {
             for (n, r) in [(10, 8.0), (14, 11.0)] {
                 for i in 0..n {
                     let a = (i as f32 + 0.5) / n as f32 * std::f32::consts::TAU;
-                    w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                    w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
                 }
             }
             w.player.skill.gauge = 1.0;
@@ -294,7 +347,7 @@ pub fn build(s: Scenario) -> World {
             for (n, r) in [(4, 3.0), (6, 5.0), (8, 7.0)] {
                 for i in 0..n {
                     let a = (i as f32 + 0.5) / n as f32 * std::f32::consts::TAU;
-                    w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                    w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
                 }
             }
             for (x, z) in [(6.5, 6.5), (-6.5, 6.5), (6.5, -6.5), (-6.5, -6.5)] {
@@ -315,7 +368,7 @@ fn stress(n: usize) -> World {
         let per = n.div_ceil(rings);
         let a = (k as f32 + 0.5 * ring as f32) / per as f32 * std::f32::consts::TAU;
         let r = 8.0 + ring as f32 * 3.0;
-        w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+        w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
     }
     for (x, z) in [(10.0, 10.0), (-10.0, 10.0), (10.0, -10.0), (-10.0, -10.0)] {
         w.obstacles.push(pillar(x, z, 1.6, 4.0));
@@ -371,7 +424,7 @@ mod tests {
                 w.tree = full;
                 for i in 0..900u32 {
                     let a = Actions {
-                        move_dir: vec2(((i / 40) as f32).sin(), ((i / 40) as f32).cos()),
+                        move_dir: vec2(((i / 40) as f32).sin_d(), ((i / 40) as f32).cos_d()),
                         attack: i % 9 == 0,
                         attack_held: (i / 60) % 3 == 1,
                         dodge: i % 70 == 0,

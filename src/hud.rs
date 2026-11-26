@@ -1,12 +1,13 @@
 //! 싸움 화면의 글·막대(0019). 그린 화면(`render::Frame`) 안에 같은 정수 배율로 붙인다. 월드·스테이지를 읽기만 한다.
 //!
 //! 자리: 왼쪽 위 체력(막대, 0158 N0)·스태미나 · 오른쪽 위 목표 · 가운데 위 구역 카드 · 아래 가운데 보스 띠 · 가운데 시작 이야기.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::i18n::{self, tr};
 use crate::render::Frame;
 use crate::stage::{StageRun, CARD_TIME, INTRO_TIME};
-use crate::tuning::{idx, CAST_CHARGES, P, SPECS};
+use crate::tuning::{idx, P, SPECS};
 use crate::tutorial::Hint;
 use crate::ui::{Ui, AMBER, DIM, INK};
 use crate::weapons::Rb;
@@ -54,8 +55,8 @@ fn u(f: &Frame) -> f32 {
 /// 빛을 받는다: 호박색 = 갈 곳(0060 — 그 뜻은 이 색 하나가 끝까지 지닌다), 잿빛 `FOE_INK` = "저쪽에 적이 있다"(0170 — 튜토리얼이
 /// 벨 상대를 가리킬 때. 갈 길의 색을 쓰지 않는다).
 pub fn draw_edge_arrow(f: &Frame, at: Vec2, ang: f32, time: f32, ink: Color) {
-    let s = f.ui * (7.0 + 1.0 * (time * 4.0).sin());
-    let d = vec2(ang.cos(), ang.sin());
+    let s = f.ui * (7.0 + 1.0 * (time * 4.0).sin_d());
+    let d = vec2(ang.cos_d(), ang.sin_d());
     let n = vec2(-d.y, d.x);
     // 길쭉한 화살촉(길이 2 : 폭 1.1) — 작은 크기에서도 어느 쪽인지 읽히게.
     let tip = at + d * s * 1.2;
@@ -260,7 +261,7 @@ fn draw_fall_roots(f: &Frame, s: f32, grow: f32) {
         for i in 1..=SEG {
             let t = i as f32 / SEG as f32;
             let wig =
-                ((t * 7.0 + k as f32 * 1.7).sin() * 0.6 + (h(k, 10 + i as u32) - 0.5)) * 9.0 * s;
+                ((t * 7.0 + k as f32 * 1.7).sin_d() * 0.6 + (h(k, 10 + i as u32) - 0.5)) * 9.0 * s;
             p = vec2(bx, by) + to * len * t + side * wig * t;
             let w = width * (1.0 - 0.8 * t);
             draw_line(prev.x, prev.y, p.x, p.y, w.max(1.0), ink);
@@ -309,7 +310,7 @@ pub fn draw_knell(f: &Frame, at: Vec2, out: Option<f32>, k: f32) {
         const SEGS: usize = 24;
         let pt = |i: usize| {
             let t = mid - half + 2.0 * half * i as f32 / SEGS as f32;
-            c + vec2(t.cos(), t.sin()) * r
+            c + vec2(t.cos_d(), t.sin_d()) * r
         };
         for (w, col) in [(3.6 * s, shade(a)), (1.8 * s, ink(a))] {
             for i in 0..SEGS {
@@ -328,7 +329,7 @@ pub fn draw_knell(f: &Frame, at: Vec2, out: Option<f32>, k: f32) {
         match out {
             Some(ang) => {
                 // 소리의 샘은 화면 밖 — 가장자리 너머의 점에서 원이 자라 화면 안으로 들어온다.
-                let d = vec2(ang.cos(), ang.sin());
+                let d = vec2(ang.cos_d(), ang.sin_d());
                 let c = at + d * KNELL_BACK * s;
                 let r = (KNELL_BACK + 4.0 + t * KNELL_REACH) * s;
                 arc(c, r, ang + std::f32::consts::PI, KNELL_HALF, a);
@@ -476,6 +477,9 @@ pub fn low_hp(hp: i32, max_hp: i32) -> bool {
     hp > 0 && hp <= crate::tuning::LOW_HP && max_hp > crate::tuning::LOW_HP
 }
 
+/// 등잔 칸의 간격(480×270 기준 px) — 등잔 줄과 그 오른쪽에서 시작하는 원거리 칸이 같이 쓴다(0278 R25c).
+const FLASK_PITCH: f32 = 9.0;
+
 /// 체력 막대(0158 N0)의 높이·체력 1의 길이·길이 상한(UI px). 기본 체력(50)이 기본 스태미나 막대와 같은 60px이고,
 /// 최대 체력 +10마다 12px 길어진다(늘어난 몫이 눈에 보이게 — 스태미나 막대와 같은 꼴, 0104). 상한을 넘으면 더 길어지지 않는다.
 const HP_BAR_H: f32 = 5.0;
@@ -564,12 +568,20 @@ fn draw_skills(ui: &Ui, f: &Frame, w: &World, ready: [f32; 2]) {
     // 부무기(0223): 스킬 칸 왼쪽에 바꿔 들 무기의 그림(흐리게 — 지금 든 것이 아니다) + 바꾸기 버튼의 키캡(0261).
     if let Some(sub) = pl.sub {
         let x = x0 - 26.0 * s - side;
-        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, BAR_BG);
+        // 교체 공격의 창(0272 1b — 맞힌 직후·받아친 직후): 지금 바꾸면 들어오는 무기가 친다 — 테가 금빛으로, 그림이 밝게.
+        // (보조특성의 표지는 두지 않는다 — 15px 슬롯 곁의 점 하나는 읽히지 않는다. 특성은 장비 탭이 말한다.)
+        let strikes = w.swap_strikes();
+        let (rim, dim) = if strikes {
+            (GAUGE_FULL, 1.0)
+        } else {
+            (BAR_BG, 0.6)
+        };
+        draw_rectangle(x - s, y - s, side + 2.0 * s, side + 2.0 * s, rim);
         draw_rectangle(x, y, side, side, HP_OFF);
         let c = vec2(x + side * 0.5, y + side * 0.5);
         let r = crate::touch::ICON_N as f32 * s / 1.25 + 0.01;
         let tint = Color::new(1.0, 0.99, 0.95, 1.0);
-        crate::touch::icon(crate::touch::attack_icon(sub), c, r, 0.6, tint);
+        crate::touch::icon(crate::touch::attack_icon(sub), c, r, dim, tint);
         let cap = crate::ui::key(&input::bind_prompt(Bind::Swap));
         ui.text_center(&cap, x + side * 0.5, y + side + 2.5 * s, label, INK);
     } else if pl.shield.is_some() {
@@ -645,7 +657,7 @@ pub fn gauge_bar(gauge: f32, active: f32, time: f32) -> (f32, Color) {
     if active > 0.0 {
         (active.clamp(0.0, 1.0), GAUGE_FULL)
     } else if gauge >= 1.0 {
-        let p = 0.75 + 0.25 * (time * 5.0).sin();
+        let p = 0.75 + 0.25 * (time * 5.0).sin_d();
         (1.0, Color::new(1.0, 0.86 * p + 0.1, 0.45 * p, 1.0))
     } else {
         (gauge.clamp(0.0, 1.0), GAUGE)
@@ -838,19 +850,7 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         hint,
     } = *o;
     let s = u(f);
-    // 맞음 테(0143 — "맞았는지 잘 모르겠음"): 맞은 순간 화면 가장자리가 붉게 번쩍였다 사라지고, 체력이 한 대 몫만 남으면 옅게 숨 쉰다.
-    // HUD 글·막대보다 먼저 그려 그 아래에 깔린다.
-    {
-        use crate::tuning::HURT_EDGE_ALPHA;
-        let pl = &w.player;
-        let hit = hurt_edge_k(pl.hurt.since, pl.hurt.blow) * HURT_EDGE_ALPHA;
-        let low = if low_hp(pl.hp, pl.max_hp) {
-            0.1 + 0.08 * (0.5 + 0.5 * (w.time * 4.2).sin())
-        } else {
-            0.0
-        };
-        draw_edge(s, hit.max(low) * edge.clamp(0.0, 2.0));
-    }
+    draw_hurt_edge(w, s, edge);
     // 터치면 왼쪽 위 멈춤 버튼을 비킨다(2026-11-06).
     let touch = crate::input::device() == crate::input::Device::Touch;
     let inset = if touch {
@@ -868,17 +868,65 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         f.oy + 8.0 * s
     };
     let (x0, y0) = (f.ox + 8.0 * s + inset, f.oy + 8.0 * s);
+    draw_hp(w, x0, y0, s);
+    draw_stamina(w, x0, y0, s);
+    draw_flasks(w, x0, y0, s);
+    draw_embers(ui, w, x0, y0, s);
+    draw_ranged(w, x0, y0, s);
+
+    draw_skills(ui, f, w, skills);
+
+    let Some(run) = run else { return };
+    // 곁의 할 일(0105·0064 M3 → 0166 `StageRun::near` — 터치 버튼의 그림과 같은 답): "키 줍기"·"키 열기"·… ·"키 쉬기".
+    // 쉼터 곁인데 적이 가까우면 쉴 수 없다는 한 줄.
+    // 튜토리얼의 힌트 판(0171)이 떠 있으면 그 위로 비킨다. 보스 띠가 같은 자리를 쓰는 동안은 힌트를 그리지 않는다.
+    // 0209 T1: 몸의 걸음(걷기~패링) 동안인가 — 화로 곁의 "쉬기"를 흐리게 한다(판이 늦게 떠도).
+    let body_steps =
+        hint.is_some_and(|(h, _)| h.at.is_some_and(|a| a < crate::tutorial::AFTER_BASICS));
+    // 0209 T1: 시작 이야기·구역 카드가 뜬 동안은 판을 늦춘다(글 넷이 한꺼번에 겹쳤다).
+    let hint = hint.filter(|_| {
+        !under_menu && run.boss_bar(w).is_none() && run.intro <= 0.0 && run.card.is_none()
+    });
+    let hint_top = hint.map(|(h, _)| hint_box(ui, f, h).rect.y);
+    draw_near(ui, f, run, s, hint_top, body_steps, under_menu);
+    if let Some((h, fresh)) = hint {
+        draw_hint(ui, f, h, fresh);
+    }
+    let cx = f.ox + f.w * 0.5;
+    draw_objective(ui, f, run, s, top_right, under_menu);
+    draw_card(ui, f, run, s, cx, under_menu);
+    draw_intro(ui, f, run, cx, under_menu);
+    draw_boss_bar(ui, f, w, run, s, cx, under_menu);
+}
+
+/// 맞음 테(0143): 맞은 순간의 번쩍임 · 한 대 남았을 때의 숨(0278 R25c — `draw`의 구역).
+fn draw_hurt_edge(w: &World, s: f32, edge: f32) {
+    // 맞음 테(0143 — "맞았는지 잘 모르겠음"): 맞은 순간 화면 가장자리가 붉게 번쩍였다 사라지고, 체력이 한 대 몫만 남으면 옅게 숨 쉰다.
+    // HUD 글·막대보다 먼저 그려 그 아래에 깔린다.
+    use crate::tuning::HURT_EDGE_ALPHA;
+    let pl = &w.player;
+    let hit = hurt_edge_k(pl.hurt.since, pl.hurt.blow) * HURT_EDGE_ALPHA;
+    let low = if low_hp(pl.hp, pl.max_hp) {
+        0.1 + 0.08 * (0.5 + 0.5 * (w.time * 4.2).sin_d())
+    } else {
+        0.0
+    };
+    draw_edge(s, hit.max(low) * edge.clamp(0.0, 2.0));
+}
+
+/// 체력 막대(0158 N0 · 0143 — 0278 R25c `draw`의 구역).
+fn draw_hp(w: &World, x0: f32, y0: f32, s: f32) {
     // 체력: 막대(0158 N0 — 하트 칸에서). 길이 = 최대 체력, 어두운 바탕 위에 남은 몫.
     let pl = &w.player;
     let max_hp = pl.max_hp.max(pl.hp).max(1);
     // 맞으면(0143) 체력 막대가 잠깐 떨리고, 잃은 몫은 채움 끝에 밝게 남았다 줄어든다. 한 대 남으면 채움이 붉게 뛴다.
     use crate::tuning::HURT_HP_SHAKE;
     let jolt = (1.0 - pl.hurt.since / HURT_HP_SHAKE).clamp(0.0, 1.0);
-    let hx = x0 + (w.time * 80.0).sin() * 2.5 * s * jolt;
+    let hx = x0 + (w.time * 80.0).sin_d() * 2.5 * s * jolt;
     let (hy, hw, hh) = (y0 + 1.5 * s, hp_bar_w(max_hp) * s, HP_BAR_H * s);
     let per = hw / max_hp as f32;
     let beat = if low_hp(pl.hp, pl.max_hp) {
-        0.5 + 0.5 * (w.time * 4.2).sin()
+        0.5 + 0.5 * (w.time * 4.2).sin_d()
     } else {
         0.0
     };
@@ -902,6 +950,11 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
     if chip > 0.0 {
         draw_rectangle(hx + fill, hy, chip, hh, Color::new(1.0, 0.96, 0.9, 1.0));
     }
+}
+
+/// 기력 막대(0018 · 0088 · 박자 타의 금빛 0076 — 0278 R25c `draw`의 구역).
+fn draw_stamina(w: &World, x0: f32, y0: f32, s: f32) {
+    let pl = &w.player;
     // 스태미나(0018): 모자라서 막히면 잠깐 붉게 깜빡인다(막은 이유가 보이게 — KB action-reuse-gating).
     // 레벨 기력(0104)이 오르면 막대가 길어진다(소울류 — 늘어난 몫이 눈에 보이게, 0096 L2).
     let base = SPECS[idx(P::StaminaMax)].def.max(1.0);
@@ -910,10 +963,10 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
     let (bx, by, bw, bh) = (x0, y0 + 11.0 * s, 60.0 * s * smax / base, 2.0 * s);
     // 막혔을 때(0088): 깜빡임에 더해 막대가 좌우로 떨린다(줄어들며). 다 쓴 동안은 붉은 테가 천천히 숨 쉰다(지금 막히는 상태).
     let shake = (pl.stamina_denied / crate::tuning::STAMINA_DENIED_SHOW).clamp(0.0, 1.0);
-    let bx = bx + (w.time * 70.0).sin() * 2.0 * s * shake;
+    let bx = bx + (w.time * 70.0).sin_d() * 2.0 * s * shake;
     draw_rectangle(bx, by, bw, bh, BAR_BG);
     if pl.stamina <= 0.0 {
-        let p = 0.5 + 0.5 * (w.time * 5.0).sin();
+        let p = 0.5 + 0.5 * (w.time * 5.0).sin_d();
         let o = s;
         draw_rectangle_lines(
             bx - o,
@@ -933,10 +986,15 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         let col = Color::new(1.0, 0.92, 0.64, 0.7 * g);
         draw_rectangle(bx, by - s, bw * k, bh + 2.0 * s, col);
     }
+}
+
+/// 등잔(0031 — 0278 R25c `draw`의 구역).
+fn draw_flasks(w: &World, x0: f32, y0: f32, s: f32) {
+    let pl = &w.player;
     // 등잔(0031): 남은 것은 불 켠 등잔, 쓴 것은 꺼진 등잔. 못 마시면(가득·0) 잠깐 깜빡인다.
     let fblink = pl.flask_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
     for i in 0..pl.flask_max.max(pl.flask) {
-        let (lx, ly) = (x0 + i as f32 * 9.0 * s, y0 + 16.0 * s);
+        let (lx, ly) = (x0 + i as f32 * FLASK_PITCH * s, y0 + 16.0 * s);
         let lit = i < pl.flask;
         let body = match (fblink, lit) {
             (true, _) => DENIED,
@@ -955,8 +1013,12 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
             );
         }
     }
+}
+
+/// 잔불(0064 M1 — 0278 R25c `draw`의 구역).
+fn draw_embers(ui: &Ui, w: &World, x0: f32, y0: f32, s: f32) {
     // 잔불(0064 M1): 등잔 줄 아래에 호박 마름모 + 수. 주우면 잠깐 커진다. 하나도 없으면 그리지 않는다.
-    if w.embers > 0 {
+    if w.embers() > 0 {
         let pop = 1.0 + 0.35 * (1.0 - ((w.time - w.ember_at) / EMBER_POP).clamp(0.0, 1.0));
         let c = vec2(x0 + 3.0 * s, y0 + 33.0 * s);
         let r = 3.0 * s * pop;
@@ -974,17 +1036,22 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
         );
         let k = 0.8 * pop.min(1.15);
         ui.text(
-            &w.embers.to_string(),
+            &w.embers().to_string(),
             x0 + 9.0 * s,
             c.y - ui.px(k) * 0.55,
             k,
             EMBER,
         );
     }
+}
+
+/// 원거리 칸(0048 마법 칸 · 0051 탄창과 수류탄 · 0274 ②b 종류의 RB — 0278 R25c `draw`의 구역).
+fn draw_ranged(w: &World, x0: f32, y0: f32, s: f32) {
+    let pl = &w.player;
     // 마법 칸(0048): 등잔 오른쪽에 둥근 칸 셋 — 찬 만큼 채워지고, 못 쏘면 깜빡인다. 근접으로 맞히면 찬다.
     // 원거리 무기(0051)는 그 자리에 탄창(세운 막대 — 장전 중이면 아래에서 차오른다) + 수류탄(둥근 칸).
     let mblink = pl.ranged.cast_denied > 0.0 && (w.time * 16.0) as i32 % 2 == 0;
-    let mx0 = x0 + pl.flask_max.max(pl.flask) as f32 * 9.0 * s + 6.0 * s;
+    let mx0 = x0 + pl.flask_max.max(pl.flask) as f32 * FLASK_PITCH * s + 6.0 * s;
     let wpn = pl.weapon.def();
     let pip = |i: i32, fill: f32, col: Color| {
         let c = vec2(mx0 + 3.0 * s + i as f32 * 8.0 * s, y0 + 20.5 * s);
@@ -1009,6 +1076,9 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
                     1.0
                 } else if pl.ranged.reload > 0.0 {
                     1.0 - (pl.ranged.reload / reload.max(0.01)).clamp(0.0, 1.0)
+                } else if i as u8 == pl.ranged.ammo {
+                    // 쇠뇌의 덧장전(0274 ②b): 멈춰 서 있으면 다음 한 발이 아래에서 차오른다(셈은 월드의 것 — 0278 R25c).
+                    w.topup_share()
                 } else {
                     0.0
                 };
@@ -1044,42 +1114,44 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
                 }
             }
         }
-        (Rb::Magic(_), _) => {
-            for i in 0..CAST_CHARGES as i32 {
-                pip(i, (pl.ranged.mana - i as f32).clamp(0.0, 1.0), MANA);
+        (Rb::Toss, _) => {
+            // 종류의 RB(0274 ②b): 칸 셋 앞에 그 꼴의 그림(손도끼 · 빛 · 별 · 창 · 돌) — 던진 창이 날고 있으면 흐리게.
+            // 방패(0276)가 RB를 맡으면 방패 그림 하나(칸을 쓰지 않는다) — 날아가 있으면 흐리게. 두 손으로 엮는 지팡이는 칸 넷.
+            let away = w.rb_out();
+            let c = vec2(mx0 + 3.0 * s, y0 + 20.5 * s);
+            let tint = if mblink { DENIED } else { MANA };
+            crate::touch::icon(
+                crate::touch::rb_icon(w),
+                c,
+                crate::touch::ICON_N as f32 * s * 0.5,
+                if away { 0.35 } else { 1.0 },
+                tint,
+            );
+            if !w.shield_throws() {
+                for i in 0..w.cast_charges() as i32 {
+                    pip(i + 1, (pl.ranged.mana - i as f32).clamp(0.0, 1.0), MANA);
+                }
             }
         }
     }
+}
 
-    draw_skills(ui, f, w, skills);
-
-    let Some(run) = run else { return };
-    // 곁의 할 일(0105·0064 M3 → 0166 `StageRun::near` — 터치 버튼의 그림과 같은 답): "키 줍기"·"키 열기"·… ·"키 쉬기".
-    // 쉼터 곁인데 적이 가까우면 쉴 수 없다는 한 줄.
-    // 튜토리얼의 힌트 판(0171)이 떠 있으면 그 위로 비킨다. 보스 띠가 같은 자리를 쓰는 동안은 힌트를 그리지 않는다.
-    // 0209 T1: 몸의 걸음(걷기~패링) 동안인가 — 화로 곁의 "쉬기"를 흐리게 한다(판이 늦게 떠도).
-    let body_steps =
-        hint.is_some_and(|(h, _)| h.at.is_some_and(|a| a < crate::tutorial::AFTER_BASICS));
-    // 0209 T1: 시작 이야기·구역 카드가 뜬 동안은 판을 늦춘다(글 넷이 한꺼번에 겹쳤다).
-    let hint = hint.filter(|_| {
-        !under_menu && run.boss_bar(w).is_none() && run.intro <= 0.0 && run.card.is_none()
-    });
-    let hint_top = hint.map(|(h, _)| hint_box(ui, f, h).rect.y);
+/// 곁의 할 일(0166 `StageRun::near` — 0278 R25c `draw`의 구역): 힌트 판 위로 비킨다.
+fn draw_near(
+    ui: &Ui,
+    f: &Frame,
+    run: &StageRun,
+    s: f32,
+    hint_top: Option<f32>,
+    body_steps: bool,
+    under_menu: bool,
+) {
     if let (Some(near), false) = (run.near(), under_menu) {
         use crate::stage::Near;
         let y = f.oy + f.h * 0.78;
         let y = hint_top.map_or(y, |top| y.min(top - ui.px(1.0) - 3.0 * s));
         let cx = f.ox + f.w * 0.5;
-        let verb = match near {
-            Near::Pick => Some(i18n::s().find_verb),
-            Near::Open => Some(i18n::s().chest_verb),
-            Near::Pull => Some(i18n::s().lever_verb),
-            Near::Talk => Some(i18n::s().talk_verb),
-            Near::Read => Some(i18n::s().read_verb),
-            Near::Rest { safe: true } => Some(s_rest()),
-            Near::Rest { safe: false } | Near::Full => None,
-        };
-        match verb {
+        match near_button(near).verb {
             Some(verb) => {
                 let key = crate::input::prompt(crate::input::Act::Interact);
                 // 0209 T1: 몸의 걸음(걷기~패링) 동안 화로 곁의 "쉬기"는 흐리게 — 둘을 동시에 시키지 않는다(누르면 여전히 된다).
@@ -1091,16 +1163,44 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
             None => ui.text_center(i18n::s().rest_blocked, cx, y, 1.0, DIM),
         }
     }
-    if let Some((h, fresh)) = hint {
-        draw_hint(ui, f, h, fresh);
-    }
-    let cx = f.ox + f.w * 0.5;
+}
+
+/// 곁의 할 일에서 상호작용 버튼이 되는 것(0278 R22 — HUD의 글과 터치의 그림이 같이 읽는 한 곳, `_` 없이): 할 수 있으면 그 동사,
+/// 못 하면(적이 가까워 못 쉰다 · 가방이 가득이라 못 줍는다) 동사 없이 — 터치 버튼은 그때 쉬기 그림의 점프 그대로.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct NearButton {
+    pub verb: Option<&'static str>,
+    pub icon: crate::touch::Near,
+}
+
+pub fn near_button(near: crate::stage::Near) -> NearButton {
+    use crate::stage::Near;
+    use crate::touch::Near as Icon;
+    let s = i18n::s();
+    let (verb, icon) = match near {
+        Near::Pick => (Some(s.find_verb), Icon::Pick),
+        Near::Open => (Some(s.chest_verb), Icon::Open),
+        Near::Pull => (Some(s.lever_verb), Icon::Pull),
+        Near::Talk => (Some(s.talk_verb), Icon::Talk),
+        Near::Read => (Some(s.read_verb), Icon::Read),
+        Near::Rest { safe: true } => (Some(s_rest()), Icon::Rest),
+        Near::Rest { safe: false } | Near::Full => (None, Icon::Rest),
+    };
+    NearButton { verb, icon }
+}
+
+/// 목표 줄(오른쪽 위 — 0278 R25c `draw`의 구역).
+fn draw_objective(ui: &Ui, f: &Frame, run: &StageRun, s: f32, top_right: f32, under_menu: bool) {
     // 목표(오른쪽 위). 창 밑에서는 그리지 않는다 — 구역 카드·시작 이야기와 같다(0066, 장비 창 테두리를 넘었다 0104 F4).
     if let Some(o) = run.objective.filter(|_| !under_menu) {
         let text = format!("◇ {}", tr(o));
         let tw = ui.width(&text, 1.0);
         ui.text(&text, f.ox + f.w - tw - 8.0 * s, top_right, 1.0, INK);
     }
+}
+
+/// 구역 카드(가운데 위 — 0278 R25c `draw`의 구역).
+fn draw_card(ui: &Ui, f: &Frame, run: &StageRun, s: f32, cx: f32, under_menu: bool) {
     // 구역 카드(가운데 위): 이름 + 가는 줄.
     if let Some((name, left)) = run.card.filter(|_| !under_menu) {
         let a = fade_in_out(left, CARD_TIME.max(left), 0.5);
@@ -1120,6 +1220,10 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
             Color::new(AMBER.r, AMBER.g, AMBER.b, a * 0.7),
         );
     }
+}
+
+/// 시작 이야기(가운데 — 0278 R25c `draw`의 구역).
+fn draw_intro(ui: &Ui, f: &Frame, run: &StageRun, cx: f32, under_menu: bool) {
     // 시작 이야기(가운데): 스테이지 이름 + 두 줄.
     // 시작 이야기도 창 밑에서는 그리지 않는다(창 면이 비쳐 글이 겹쳤다, 0066).
     if run.intro > 0.0 && !under_menu {
@@ -1152,9 +1256,14 @@ pub fn draw(ui: &Ui, f: &Frame, w: &World, run: Option<&StageRun>, o: &Opts) {
             max_w,
         );
     }
+}
+
+/// 보스 띠(아래 가운데 — 0278 R25c `draw`의 구역).
+fn draw_boss_bar(ui: &Ui, f: &Frame, w: &World, run: &StageRun, s: f32, cx: f32, under_menu: bool) {
     // 보스 띠(아래 가운데): 이름 + 막대(깨어나면 색이 달아오른다).
     if let Some((k, roused)) = run.boss_bar(w).filter(|_| !under_menu) {
-        let boss = run.boss.and_then(|i| w.enemies.get(i));
+        // 문지기 또는 싸우는 중인 필드 보스(0270 D).
+        let boss = run.bar_boss(w);
         let name = boss.map(|b| tr(b.def().name)).unwrap_or("");
         let bw = f.w * 0.5;
         let bh = 3.0 * s;
@@ -1275,5 +1384,26 @@ mod tests {
         assert_eq!(fade_in_out(3.0, 3.0, 0.5), 0.0);
         assert_eq!(fade_in_out(1.5, 3.0, 0.5), 1.0);
         assert!(fade_in_out(0.1, 3.0, 0.5) < 0.3);
+    }
+
+    /// 0278 R22: 곁의 할 일 → 버튼은 한 곳(HUD의 동사 · 터치의 그림) — 할 수 있는 일마다 제 동사와 그림, 못 하는 일(적이 가까운 쉼터 ·
+    /// 가득 찬 가방)은 동사 없이 쉬기 그림(점프).
+    #[test]
+    fn each_near_thing_gives_the_button_one_verb_and_one_icon() {
+        use crate::stage::Near;
+        use crate::touch::Near as Icon;
+        let s = i18n::s();
+        for (near, verb, icon) in [
+            (Near::Pick, Some(s.find_verb), Icon::Pick),
+            (Near::Open, Some(s.chest_verb), Icon::Open),
+            (Near::Pull, Some(s.lever_verb), Icon::Pull),
+            (Near::Talk, Some(s.talk_verb), Icon::Talk),
+            (Near::Read, Some(s.read_verb), Icon::Read),
+            (Near::Rest { safe: true }, Some(s.rest_verb), Icon::Rest),
+            (Near::Rest { safe: false }, None, Icon::Rest),
+            (Near::Full, None, Icon::Rest),
+        ] {
+            assert_eq!(near_button(near), NearButton { verb, icon }, "{near:?}");
+        }
     }
 }

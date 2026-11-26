@@ -120,7 +120,14 @@ fn every_damage_formula_gives_ten_times_what_the_old_small_numbers_gave() {
                         d
                     };
                     w.enemies[i].stance.broken = if broken { 1.0 } else { 0.0 };
-                    let new = hurt_by(&w.enemies[i], base * HP_UNIT, crit, opened * HP_UNIT, &t);
+                    let new = hurt_by(
+                        &w.enemies[i],
+                        base * HP_UNIT,
+                        crit,
+                        opened * HP_UNIT,
+                        Knack::NONE,
+                        &t,
+                    );
                     assert_eq!(
                         new,
                         old * HP_UNIT,

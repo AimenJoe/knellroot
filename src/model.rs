@@ -381,6 +381,24 @@ impl Model {
             .map_or(Quat::IDENTITY, |m| m.to_scale_rotation_translation().1)
     }
 
+    /// 쉬는 자세의 꼭대기(모델 공간 y — 메시 정점 가운데 가장 높은 것). 메시가 없으면 없다. 도감의 그림이 판정의 키보다 큰 몸
+    /// (뿔)을 칸에 다 담을 때 쓴다(0270 D).
+    pub fn rest_top(&self) -> Option<f32> {
+        let mut pose = Vec::new();
+        self.pose(None, 0.0, &mut pose);
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(n, node)| node.mesh.map(|m| (pose[n], m)))
+            .flat_map(|(at, m)| {
+                self.meshes[m]
+                    .pos
+                    .iter()
+                    .map(move |p| at.transform_point3(*p).y)
+            })
+            .reduce(f32::max)
+    }
+
     pub fn rest_bounds_under(&self, i: usize) -> Option<(Vec3, f32)> {
         let mut pose = Vec::new();
         self.pose(None, 0.0, &mut pose);
@@ -480,6 +498,7 @@ pub const TEST_CRITTER: &str = include_str!("../assets/models/test_critter.gltf"
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::det::Det;
 
     fn critter() -> Model {
         Model::from_bytes(TEST_CRITTER.as_bytes()).unwrap()
@@ -519,7 +538,7 @@ mod tests {
         m.pose(walk, 0.2, &mut pose);
         let leg = m.nodes.iter().position(|n| n.name == "leg_l").unwrap();
         let foot = pose[leg].transform_point3(vec3(0.0, -0.7, 0.0));
-        let want = 0.7 * 30f32.to_radians().sin();
+        let want = 0.7 * 30f32.to_radians().sin_d();
         assert!((foot.z.abs() - want).abs() < 1e-3, "{foot:?}");
         // 고리: 0.8초 뒤 같은 자세.
         let mut later = Vec::new();

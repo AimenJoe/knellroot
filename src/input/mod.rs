@@ -23,6 +23,8 @@ use std::sync::Mutex;
 use crate::touch::{Overlay, Touch};
 use crate::tuning;
 
+mod collect;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Device {
     Keys,
@@ -215,12 +217,11 @@ impl Actions {
         }
     }
 
-    fn drop_pads(&mut self, bind: &Bindings, hit: [Option<Pad>; 2]) {
-        for p in hit.into_iter().flatten() {
-            for x in BINDS {
-                if bind.pad(x) == p {
-                    self.drop_press(x);
-                }
+    /// 패드의 큰 기술 조합이 이룬 버튼에 붙은 동작(`BINDS`의 자리 — `collect::Frame::chord`)의 눌림을 거둔다.
+    fn drop_chord(&mut self, chord: &[bool; NB]) {
+        for x in BINDS {
+            if chord[x as usize] {
+                self.drop_press(x);
             }
         }
     }
@@ -1016,451 +1017,26 @@ impl Input {
         (device() == Device::Touch).then(|| self.touch.overlay())
     }
 
-    /// 프레임마다 한 번. 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다. `menu`면 터치는 탭만.
+    /// 프레임마다 한 번(0278 R23 — 장치마다 모으고 `collect::merge`가 접는다). 눌림은 OR로 모으고, 이동(상태)은 마지막 값으로 덮는다.
+    /// `menu`면 터치는 탭만. 차례(키보드 → 패드 → 터치 → 마우스)는 옛 한 덩어리 그대로 — 마우스는 터치가 있었는지를 본다.
     pub fn poll(&mut self, menu: bool) {
-        let mut a = Actions::default();
-        // Android·iOS에 키보드를 붙이는 일은 드물고, 패드 버튼·D패드도 키로 들어온다 — 키보드로 세지 않는다(안내 글이 키 글자로 바뀌지 않게).
-        let used_keys = !cfg!(pad_keys) && get_last_key_pressed().is_some();
-        let mut used_pad = false;
-        // 키보드 이동.
-        let mut m = Vec2::ZERO;
-        #[allow(unused_mut)]
-        let mut aim = Vec2::ZERO;
-        // 화살표는 걷지 않는다(0181 — 패드의 십자 키와 같은 일): ↑·↓ = 시점 당기기·밀기, ←·→ = 자유 숄더뷰에서 시점 돌리기.
-        // Android·iOS에서는 화살표 키코드가 곧 패드의 십자 키다(0151).
-        if is_key_down(KeyCode::A) {
-            m.x -= 1.0;
-        }
-        if is_key_down(KeyCode::D) {
-            m.x += 1.0;
-        }
-        if is_key_down(KeyCode::W) {
-            m.y += 1.0;
-        }
-        if is_key_down(KeyCode::S) {
-            m.y -= 1.0;
-        }
-        if !menu {
-            a.zoom += is_key_pressed(KeyCode::Up) as i32 - is_key_pressed(KeyCode::Down) as i32;
-        }
-        #[cfg(not(pad_keys))]
-        if free_look() && !menu {
-            aim.x += is_key_down(KeyCode::Right) as i32 as f32
-                - is_key_down(KeyCode::Left) as i32 as f32;
-        }
-        // 게임 동작은 배치표에서(0024).
         let bind = bindings();
-        let kp = |x: Bind| bind.key(x).pressed();
-        a.attack = kp(Bind::Attack);
-        a.attack_held = bind.key(Bind::Attack).down();
-        a.dodge = kp(Bind::Dodge);
-        a.parry = kp(Bind::Parry);
-        a.jump = kp(Bind::Jump);
-        a.flask = kp(Bind::Flask);
-        a.cast = kp(Bind::Cast);
-        a.cast_held = bind.key(Bind::Cast).down();
-        a.dodge_held = bind.key(Bind::Dodge).down();
-        a.parry_held = bind.key(Bind::Parry).down();
-        a.lock = kp(Bind::Lock);
-        a.turn_left = kp(Bind::TurnLeft);
-        a.turn_right = kp(Bind::TurnRight);
-        a.skill1 = kp(Bind::Skill1);
-        a.skill2 = kp(Bind::Skill2);
-        a.swap = kp(Bind::Swap);
-        // 큰 기술의 따로 붙인 키(0255): 이룬 키의 제 동작은 이번 틱에 거둔다(조합의 둘째 키가 스킬·공격을 같이 내지 않게).
-        if let Some(hit) = chord_fired(
-            bind.ult.keys,
-            |k| Slot::of(k).pressed(),
-            |k| Slot::of(k).down(),
-        ) {
-            a.ult = true;
-            for k in hit.into_iter().flatten() {
-                for x in BINDS {
-                    if bind.keys[x as usize] == k {
-                        a.drop_press(x);
-                    }
-                }
-            }
-        }
-        a.tab_prev = a.skill1;
-        a.tab_next = a.skill2;
-        a.pressed_key = KEYS
-            .iter()
-            .position(|(k, _)| is_key_pressed(*k))
-            .or_else(|| {
-                MICE.iter()
-                    .position(|(m, _)| is_mouse_button_pressed(*m))
-                    .map(|i| KEYS.len() + i)
-            })
-            .map(|i| i as u8);
-        a.lab_toggle = is_key_pressed(KeyCode::F1);
-        // Tab은 배치표에 올릴 수 있는 키라, 게임 동작에 붙이지 않았을 때만 장비 창.
-        a.equip = is_key_pressed(KeyCode::Tab) && !bind.keys.contains(&key_index(KeyCode::Tab));
-        a.dev_overlay = is_key_pressed(KeyCode::F3);
-        a.ui_check = is_key_pressed(KeyCode::F4);
-        a.step_clock = is_key_pressed(KeyCode::F6);
-        a.menu_up = is_key_pressed(KeyCode::Up) || is_key_pressed(KeyCode::W);
-        a.menu_down = is_key_pressed(KeyCode::Down) || is_key_pressed(KeyCode::S);
-        a.menu_left = is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::A);
-        a.menu_right = is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::D);
-        a.confirm = is_key_pressed(KeyCode::Enter)
-            || is_key_pressed(KeyCode::KpEnter)
-            || is_key_pressed(KeyCode::Space)
-            || is_key_pressed(KeyCode::J);
-        a.back = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::Backspace);
-        a.pause = is_key_pressed(KeyCode::Escape) || is_key_pressed(KeyCode::P);
-        for (i, k) in [
-            KeyCode::Key1,
-            KeyCode::Key2,
-            KeyCode::Key3,
-            KeyCode::Key4,
-            KeyCode::Key5,
-            KeyCode::Key6,
-            KeyCode::Key7,
-            KeyCode::Key8,
-            KeyCode::Key9,
-        ]
-        .iter()
-        .enumerate()
-        {
-            if is_key_pressed(*k) {
-                a.scenario = Some(i as u8 + 1);
-            }
-        }
-
-        #[cfg(not(pad_keys))]
-        {
-            self.pads.poll();
-            for pad in self.pads.all() {
-                let st = stick(pad.left_stick());
-                if st.length() > tuning::STICK_DEADZONE {
-                    m = st;
-                    used_pad = true;
-                }
-                let r = stick(pad.right_stick());
-                if r.length() > tuning::STICK_DEADZONE {
-                    aim = r;
-                    used_pad = true;
-                }
-                let pj = |x: Bind| pad.is_just_pressed(bind.pad(x).button());
-                a.attack |= pj(Bind::Attack);
-                a.attack_held |= pad.is_currently_pressed(bind.pad(Bind::Attack).button());
-                a.dodge |= pj(Bind::Dodge);
-                a.dodge_held |= pad.is_currently_pressed(bind.pad(Bind::Dodge).button());
-                a.jump |= pj(Bind::Jump);
-                a.lock |= pj(Bind::Lock);
-                // 랩이 열려 있으면 어깨·트리거는 랩 단계(LB 10배·LT 담기·RT 바꾸기)다 — 패링·돌리기로 같이 읽지 않는다.
-                a.parry |= pj(Bind::Parry);
-                a.parry_held |= pad.is_currently_pressed(bind.pad(Bind::Parry).button());
-                a.flask |= pj(Bind::Flask);
-                a.cast |= pj(Bind::Cast);
-                a.cast_held |= pad.is_currently_pressed(bind.pad(Bind::Cast).button());
-                a.turn_left |= pj(Bind::TurnLeft);
-                a.turn_right |= pj(Bind::TurnRight);
-                a.skill1 |= pj(Bind::Skill1);
-                a.skill2 |= pj(Bind::Skill2);
-                a.swap |= pj(Bind::Swap);
-                if let Some(hit) = chord_fired(
-                    bind.ult.pads,
-                    |p| pad.is_just_pressed(p.button()),
-                    |p| pad.is_currently_pressed(p.button()),
-                ) {
-                    a.ult = true;
-                    a.drop_pads(&bind, hit);
-                }
-                a.tab_prev |= pad.is_just_pressed(Pad::L1.button());
-                a.tab_next |= pad.is_just_pressed(Pad::R1.button());
-                if a.pressed_pad.is_none() {
-                    a.pressed_pad = PADS
-                        .iter()
-                        .copied()
-                        .find(|p| p.bindable() && pad.is_just_pressed(p.button()));
-                }
-                a.equip |= pad.is_just_pressed(Button::LeftCenterCluster);
-                a.menu_up |= pad.is_just_pressed(Button::DPadUp);
-                a.menu_down |= pad.is_just_pressed(Button::DPadDown);
-                // 십자 ↑·↓ = 시점 당기기·밀기(0181 — 싸움 화면에서만 쓴다).
-                if !menu {
-                    a.zoom += pad.is_just_pressed(Button::DPadUp) as i32
-                        - pad.is_just_pressed(Button::DPadDown) as i32;
-                }
-                a.menu_left |= pad.is_just_pressed(Button::DPadLeft);
-                a.menu_right |= pad.is_just_pressed(Button::DPadRight);
-                a.confirm |= pad.is_just_pressed(Button::ActionDown);
-                a.back |= pad.is_just_pressed(Button::ActionRight);
-                // 0019: Start = 멈춤(예전엔 개발 시나리오 넘기기 — 키보드 1~7·터치 SC로 남김).
-                a.pause |= pad.is_just_pressed(Button::RightCenterCluster);
-                // 메뉴 스틱: 한 번 넘을 때만.
-                menu_from_stick(&mut self.menu_stick, stick(pad.left_stick()), &mut a);
-                used_pad |= pad.all_just_pressed().next().is_some();
-            }
-        }
-
-        // Android(0022)·iOS(0137) = `cfg(pad_keys)`: `gamepads`가 빠지고, 패치한 miniquad가 패드 버튼을 F13~F24 키로, 스틱·HAT을
-        // `joystick_axes`로 넘긴다(third_party/miniquad/PATCHED.md, 첫 게임 nail 0075·0143 — iOS는 GameController를 매 프레임 읽어 같은 꼴로).
-        // D패드가 키코드로 오는 Android 기기는 화살표 키 — 위의 키보드 줄이 받는다. iOS D패드는 HAT 축으로 온다.
-        // 버튼 배치는 데스크톱 패드와 같다.
-        #[cfg(pad_keys)]
-        {
-            let (mv, r, hat) = android_axes(macroquad::miniquad::native::joystick_axes());
-            if mv != Vec2::ZERO {
-                m = mv;
-                used_pad = true;
-            }
-            if r != Vec2::ZERO {
-                aim = r;
-                used_pad = true;
-            }
-            // 십자 키 좌·우: 키코드(Android) 또는 HAT 축이 새로 기운 프레임(iOS·일부 Android).
-            let was = std::mem::replace(&mut self.hat, hat);
-            used_pad |= hat != Vec2::ZERO;
-            let j = |p: Pad| {
-                is_key_pressed(p.key())
-                    || (p == Pad::DLeft && hat.x < 0.0 && was.x >= 0.0)
-                    || (p == Pad::DRight && hat.x > 0.0 && was.x <= 0.0)
-            };
-            let pj = |x: Bind| j(bind.pad(x));
-            a.attack |= pj(Bind::Attack);
-            a.attack_held |= is_key_down(bind.pad(Bind::Attack).key());
-            a.dodge |= pj(Bind::Dodge);
-            a.dodge_held |= is_key_down(bind.pad(Bind::Dodge).key());
-            a.jump |= pj(Bind::Jump);
-            a.lock |= pj(Bind::Lock);
-            a.parry |= pj(Bind::Parry);
-            a.parry_held |= is_key_down(bind.pad(Bind::Parry).key());
-            a.flask |= pj(Bind::Flask);
-            a.cast |= pj(Bind::Cast);
-            a.cast_held |= is_key_down(bind.pad(Bind::Cast).key());
-            a.turn_left |= pj(Bind::TurnLeft);
-            a.turn_right |= pj(Bind::TurnRight);
-            a.skill1 |= pj(Bind::Skill1);
-            a.skill2 |= pj(Bind::Skill2);
-            a.swap |= pj(Bind::Swap);
-            if let Some(hit) = chord_fired(bind.ult.pads, j, |p| is_key_down(p.key())) {
-                a.ult = true;
-                a.drop_pads(&bind, hit);
-            }
-            a.tab_prev |= j(Pad::L1);
-            a.tab_next |= j(Pad::R1);
-            if a.pressed_pad.is_none() {
-                a.pressed_pad = PADS.iter().copied().find(|p| p.bindable() && j(*p));
-            }
-            a.equip |= j(Pad::Select);
-            // 십자 ↑·↓ = 시점(0181): 키코드(Android — 위의 키보드 줄이 이미 받았다)가 아니면 HAT 축이 새로 기운 프레임(iOS).
-            if !menu {
-                a.zoom +=
-                    (hat.y > 0.0 && was.y <= 0.0) as i32 - (hat.y < 0.0 && was.y >= 0.0) as i32;
-            }
-            a.confirm |= j(Pad::South);
-            a.back |= j(Pad::East) || is_key_pressed(KeyCode::Back);
-            a.pause |= j(Pad::Start);
-            menu_from_stick(
-                &mut self.menu_stick,
-                if hat != Vec2::ZERO { hat } else { mv },
-                &mut a,
-            );
-            let arrows = [KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right];
-            used_pad |=
-                PADS.iter().any(|p| is_key_down(p.key())) || arrows.iter().any(|k| is_key_down(*k));
-        }
-
-        // 터치: 스틱은 키·패드가 0일 때만, 눌림은 OR.
-        let t = self.touch.read(menu);
-        a.pause |= t.pause;
-        a.tap = t.tap;
-        if m == Vec2::ZERO {
-            m = t.move_dir;
-        }
-        // 터치의 원거리 무기: 든 무기 그림의 공격 버튼 = 사격, 원거리 버튼 = 수류탄(0223 — 패드·키보드는 맞바꾸지 않는다, 0255).
-        let mut t = t;
-        if self.touch.ctx.ranged {
-            std::mem::swap(&mut t.attack, &mut t.cast);
-            std::mem::swap(&mut t.attack_held, &mut t.cast_held);
-        }
-        a.attack |= t.attack;
-        a.attack_held |= t.attack_held;
-        a.dodge |= t.dodge;
-        a.dodge_held |= t.dodge_held;
-        a.parry |= t.parry;
-        a.parry_held |= t.parry_held;
-        a.jump |= t.jump;
-        a.flask |= t.flask;
-        a.interact |= t.interact;
-        a.cast |= t.cast;
-        a.cast_held |= t.cast_held;
-        // 끌어 조준(0217): 터치의 조준은 오른쪽 스틱처럼 — 끈 쪽이 있으면 그것.
-        a.aim_drag |= t.aim_drag;
-        a.auto_aim |= t.auto_aim;
-        a.aim_hold |= t.aim_hold;
-        // 0048의 "마법 직후 돌리기 누름 버리기"(RB 바로 밑이 RT)는 걷었다(0151): RT는 이제 스킬이고 RB → RT로 잇는 것이 바라는 쓰임이다.
-        a.lock |= t.lock;
-        a.turn_right |= t.turn_right;
-        a.turn_left |= t.turn_left;
-        a.skill1 |= t.skill1;
-        a.skill2 |= t.skill2;
-        a.ult |= t.ult;
-        // 마우스(0058): 움직이거나 누르면 "만졌다". 터치 직후의 마우스 이벤트는 터치가 흉내 낸 것일 수 있어 세지 않는다.
-        let fdt = get_frame_time();
-        self.since_touch = if t.active {
-            0.0
-        } else {
-            (self.since_touch + fdt).min(f32::MAX)
-        };
-        let mp = Vec2::from(mouse_position());
-        let mouse_real = !cfg!(pad_keys) && self.since_touch > MOUSE_AFTER_TOUCH;
-        let clicked = MICE.iter().any(|(m, _)| is_mouse_button_pressed(*m));
-        // 첫 프레임의 자리는 기준만 잡는다(켜자마자 "만졌다"가 되지 않게).
-        let anchor = *self.mouse_anchor.get_or_insert(mp);
-        let used_mouse = mouse_real && ((mp - anchor).length() > MOUSE_MOVE_PX || clicked);
-        let prev_mouse = self.mouse_pos;
-        if mouse_real {
-            self.mouse_pos = mp;
-        }
-        if used_mouse {
-            self.since_mouse = 0.0;
-            self.mouse_anchor = Some(mp);
-        } else {
-            self.since_mouse = (self.since_mouse + fdt).min(f32::MAX);
-        }
-        // 메뉴 굴리기: 휠은 부호만 한 칸(기기마다 값 크기가 다르다, KB gamepad-and-android-input). 싸움에서는 시점 당기기·밀기(0181).
-        if mouse_real {
-            let wy = mouse_wheel().1;
-            if wy.abs() > 0.0 {
-                if menu {
-                    a.wheel = if wy > 0.0 { -1 } else { 1 };
-                    a.point = Some(mp);
-                } else {
-                    a.zoom += if wy > 0.0 { 1 } else { -1 };
-                }
-            }
-        }
-        // 자유 숄더뷰(0181): 마우스로 하는 사람이면 커서를 잡아(웹은 포인터 잠금) 움직임을 시점으로 — 패드·터치·메뉴에서는 놓는다.
-        let grab = free_look() && !menu && !cfg!(pad_keys) && device() == Device::Keys;
-        // 잡은 첫 프레임은 자리가 튈 수 있어 세지 않는다.
-        if grab && self.grabbed && mouse_real {
-            a.look += mp - prev_mouse;
-        }
-        if grab != self.grabbed {
-            self.grabbed = grab;
-            set_cursor_grab(grab);
-            show_mouse(!grab);
-        } else if grab && clicked {
-            // 웹: Esc는 브라우저가 포인터 잠금을 먼저 풀어 버린다(게임은 아직 잡은 줄 안다) — 누를 때마다 다시 청한다(누름 = 사용자 동작).
-            set_cursor_grab(true);
-        }
-        a.drag = t.drag;
-        a.drag_x = t.drag_x;
-        a.point = a.point.or(t.drag_at);
-        // 터치로 끈 거리는 dp로(Android는 화면 단위가 화소 — 같은 손가락 거리에 시점이 2~3배 돌았다, `screen::dp`).
-        a.look += t.look / crate::screen::dp();
-        a.zoom += t.zoom;
-        a.view |= t.view;
-        a.swap |= t.swap;
-        // 메뉴의 마우스 끌기(0235): 왼쪽을 쥐고 `MOUSE_DRAG_PX`를 넘게 움직이면 터치 끌기와 같은 가로 끌기(`drag_x` — 인형 돌리기·
-        // 탭 줄 굴리기). 끈 뒤 뗀 것은 탭이 아니다(터치와 같은 규칙).
-        if menu && mouse_real {
-            if is_mouse_button_pressed(MouseButton::Left) {
-                (self.mouse_down_at, self.mouse_dragged) = (Some(mp), false);
-            }
-            if let Some(at) = self
-                .mouse_down_at
-                .filter(|_| is_mouse_button_down(MouseButton::Left))
-            {
-                self.mouse_dragged |= (mp - at).length() > MOUSE_DRAG_PX;
-                if self.mouse_dragged {
-                    a.drag_x += prev_mouse.x - mp.x;
-                    a.point = a.point.or(Some(at));
-                }
-            }
-        }
-        // 메뉴는 마우스 왼쪽을 뗄 때 탭(터치와 같은 규칙, nail 0199).
-        if menu && mouse_real && a.tap.is_none() && is_mouse_button_released(MouseButton::Left) {
-            if !std::mem::take(&mut self.mouse_dragged) {
-                a.tap = Some(mp);
-            }
-            self.mouse_down_at = None;
-        }
-        // 지금 쓰는 장치 = 마지막으로 만진 것.
-        if t.active {
-            set_device(Device::Touch);
-        } else if used_pad {
-            set_device(Device::Pad);
-        } else if used_keys || used_mouse {
-            set_device(Device::Keys);
+        let keys = collect::keys_frame(menu, &bind);
+        let pads = self.pad_frames(menu, &bind);
+        let touch = self.touch_frame(menu);
+        let mouse = self.mouse_frame(menu, touch.active, touch.tap.is_some());
+        let (mut a, used) = collect::merge(&keys, &pads, &touch, &mouse, crate::screen::dp());
+        if let Some(d) = used {
+            set_device(d);
         }
         let ma = mouse_aim();
         a.cursor = (!self.grabbed)
-            .then(|| cursor_live(ma.on, device(), self.since_mouse, ma.rest_secs()).then_some(mp))
+            .then(|| {
+                cursor_live(ma.on, device(), self.since_mouse, ma.rest_secs()).then_some(mouse.pos)
+            })
             .flatten();
-
-        if m.length() > 1.0 {
-            m = m.normalize();
-        }
-        a.move_dir = m;
-        if t.aim != Vec2::ZERO {
-            aim = t.aim;
-        }
-        if aim.length() > 1.0 {
-            aim = aim.normalize();
-        }
-        // 끌어 조준(0217): 이번 프레임의 손가락 + 아직 틱이 안 가져간 지난 프레임의 것(뗀 프레임의 끈 쪽은 그 누름과 함께 남는다).
-        let (aim, aim_drag, auto_aim) = merge_drag(&self.latch, self.taken, aim, &a);
+        self.latch = collect::fold_latch(&self.latch, self.taken, &a);
         self.taken = false;
-        self.latch = Actions {
-            move_dir: m,
-            aim,
-            aim_drag,
-            auto_aim,
-            aim_hold: a.aim_hold,
-            aim_ahead: false,
-            aim_sight: None,
-            aim_assist: 0.0,
-            cursor: a.cursor,
-            aim_at: None,
-            zoom: self.latch.zoom + a.zoom,
-            look: self.latch.look + a.look,
-            view: self.latch.view | a.view,
-            swap: self.latch.swap | a.swap,
-            attack: self.latch.attack | a.attack,
-            attack_held: a.attack_held,
-            cast_held: a.cast_held,
-            dodge_held: a.dodge_held,
-            parry_held: a.parry_held,
-            dodge: self.latch.dodge | a.dodge,
-            parry: self.latch.parry | a.parry,
-            jump: self.latch.jump | a.jump,
-            flask: self.latch.flask | a.flask,
-            interact: self.latch.interact | a.interact,
-            cast: self.latch.cast | a.cast,
-            lock: self.latch.lock | a.lock,
-            turn_right: self.latch.turn_right | a.turn_right,
-            turn_left: self.latch.turn_left | a.turn_left,
-            skill1: self.latch.skill1 | a.skill1,
-            skill2: self.latch.skill2 | a.skill2,
-            tab_prev: self.latch.tab_prev | a.tab_prev,
-            tab_next: self.latch.tab_next | a.tab_next,
-            ult: self.latch.ult | a.ult,
-            equip: self.latch.equip | a.equip,
-            lab_toggle: self.latch.lab_toggle | a.lab_toggle,
-            scenario: a.scenario.or(self.latch.scenario),
-            menu_up: self.latch.menu_up | a.menu_up,
-            menu_down: self.latch.menu_down | a.menu_down,
-            menu_left: self.latch.menu_left | a.menu_left,
-            menu_right: self.latch.menu_right | a.menu_right,
-            confirm: self.latch.confirm | a.confirm,
-            back: self.latch.back | a.back,
-            pause: self.latch.pause | a.pause,
-            tap: a.tap.or(self.latch.tap),
-            drag: self.latch.drag + a.drag,
-            drag_x: self.latch.drag_x + a.drag_x,
-            wheel: self.latch.wheel + a.wheel,
-            point: a.point.or(self.latch.point),
-            dev_overlay: self.latch.dev_overlay | a.dev_overlay,
-            ui_check: self.latch.ui_check | a.ui_check,
-            step_clock: self.latch.step_clock | a.step_clock,
-            pressed_key: a.pressed_key.or(self.latch.pressed_key),
-            pressed_pad: a.pressed_pad.or(self.latch.pressed_pad),
-        };
     }
 
     /// 로직 틱이 소비. 눌림은 지워지고 상태(이동·누르고 있음)는 남는다.
@@ -1700,7 +1276,7 @@ mod tests {
     /// Android 패드 버튼: 패치한 miniquad 표(KEYCODE_BUTTON_* → F13~F24)와 `Pad::key`가 같은 짝이고 겹치지 않는다(nail 0075).
     #[test]
     fn android_pad_keys_match_patched_miniquad() {
-        let table = include_str!("../third_party/miniquad/src/native/android/keycodes.rs");
+        let table = include_str!("../../third_party/miniquad/src/native/android/keycodes.rs");
         let name = |p: Pad| match p {
             Pad::South => "BUTTON_A",
             Pad::East => "BUTTON_B",
@@ -1734,7 +1310,7 @@ mod tests {
     /// 그 차례(버튼 이름·키)가 게임의 `Pad::key`와 같은 짝이고, 축은 Android와 같은 배열(아래가 +y, 위로 민 스틱 → 앞으로).
     #[test]
     fn ios_pad_keys_match_patched_miniquad() {
-        let src = include_str!("../third_party/miniquad/src/native/ios_pad.rs");
+        let src = include_str!("../../third_party/miniquad/src/native/ios_pad.rs");
         let name = |p: Pad| match p {
             Pad::South => "buttonA",
             Pad::East => "buttonB",
@@ -1780,21 +1356,21 @@ mod tests {
     /// Android 키 반복: 패치한 miniquad가 반복 이벤트의 repeat 플래그를 넘긴다(안 그러면 누르고 있는 동안 계속 새 누름, nail 0171).
     #[test]
     fn android_key_repeat_reaches_macroquad() {
-        let java = include_str!("../third_party/miniquad/java/MainActivity.java");
+        let java = include_str!("../../third_party/miniquad/java/MainActivity.java");
         assert!(java.contains("QuadNative.surfaceOnKeyDown(keyCode, event.getRepeatCount() > 0)"));
-        let rs = include_str!("../third_party/miniquad/src/native/android.rs");
+        let rs = include_str!("../../third_party/miniquad/src/native/android.rs");
         assert!(rs.contains(".key_down_event(keycode, self.keymods, repeat)"));
     }
 
     /// Android 몰입 모드(0046): API 30+에서 바를 실제로 숨기는 패치가 남아 있고, 앱이 전체 화면을 켠다.
     #[test]
     fn android_fullscreen_hides_the_system_bars() {
-        let java = include_str!("../third_party/miniquad/java/MainActivity.java");
+        let java = include_str!("../../third_party/miniquad/java/MainActivity.java");
         assert!(java.contains(
             "c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars())"
         ));
         assert!(java.contains("BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE"));
-        let main = include_str!("main.rs");
+        let main = include_str!("../main.rs");
         assert!(main.contains(r#"fullscreen: cfg!(target_os = "android")"#));
     }
 }

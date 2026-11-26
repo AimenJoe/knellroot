@@ -5,7 +5,7 @@
 //! - 가득이면 떨어진 것을 **줍지 못한다**(바닥에 남는다) — 자리를 만드는 길은 둘: 여벌을 내려놓기(어디서나 — 발치에 놓이고
 //!   기록에도 남는다) · 잔불로 바꾸기(화로에서만, 하나씩 또는 "여벌 정리"로 한꺼번에).
 //! - 내려놓거나 거둘 수 있는 것은 여벌뿐(낀 것·그 바탕의 마지막 하나는 아니다), 지키는 것은 빼고.
-use super::equip::{Cand, SUB_SLOT};
+use super::equip::{slot_name, Cand, SUB_SLOT};
 use super::frame::Window;
 use super::tabs::{Ln, PaneHead, HEAD_H, K_KIND, LEFT_W};
 use super::*;
@@ -14,14 +14,14 @@ use flow::Host;
 
 /// 칸의 격자(기준 px): 한 줄 여섯, 칸의 한 변과 틈. 가방이 한도를 넘으면(문지기가 처음 주는 장신구 — `BAG_CAP`의 풀이)
 /// 줄이 하나 늘고 칸이 작아진다.
-const COLS: usize = 6;
-const CELL: f32 = 30.0;
+pub(super) const COLS: usize = 6;
+pub(super) const CELL: f32 = 30.0;
 const CELL_SMALL: f32 = 24.0;
-const GAP: f32 = 4.0;
+pub(super) const GAP: f32 = 4.0;
 const GRID_Y: f32 = 2.0;
 /// 격자 아래 한 줄(수 · 여벌 정리 단추)의 자리.
 const FOOT_Y: f32 = 174.0;
-const TIDY_W: f32 = 84.0;
+pub(super) const TIDY_W: f32 = 84.0;
 const TIDY_H: f32 = 16.0;
 /// 내려놓는 자리: 바라보는 쪽 앞으로 이만큼(m — 몸에 가려 안 보이지 않게, 0131). 그 자리가 벽·턱 위거나 낭떠러지면 발치에.
 const PUT_AHEAD: f32 = 0.9;
@@ -156,14 +156,184 @@ fn slot_of(bag: &Bag, id: u32, base: Base) -> usize {
     }
 }
 
-fn slot_name(slot: usize) -> String {
-    let s = s();
-    if slot == 0 {
-        s.menu_weapon.to_string()
-    } else if slot == SUB_SLOT {
-        s.menu_sub_weapon.to_string()
-    } else {
-        tr(crate::charms::SLOT_KINDS[(slot - 1).min(crate::charms::SLOTS - 1)].name()).to_string()
+/// 아이템 칸의 상태 줄(0278 R22 — 차례: 낀 것 > 새 것 > 잠근 것 > 여벌 > 그 바탕의 마지막 하나).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum BagState {
+    Worn,
+    New,
+    Kept,
+    Spare,
+    Last,
+}
+
+impl BagState {
+    fn of(bag: &Bag, id: u32) -> BagState {
+        if bag.worn(id) {
+            BagState::Worn
+        } else if bag.fresh(id) {
+            BagState::New
+        } else if bag.locked(id) {
+            BagState::Kept
+        } else if bag.extras().contains(&id) {
+            BagState::Spare
+        } else {
+            BagState::Last
+        }
+    }
+
+    fn line(self) -> (String, Color) {
+        let s = s();
+        match self {
+            BagState::Worn => (s.equip_worn.to_string(), AMBER),
+            BagState::New => (s.bag_st_new.to_string(), ui::MINT),
+            BagState::Kept => (s.bag_st_kept.to_string(), INK),
+            BagState::Spare => (s.bag_st_spare.to_string(), DIM),
+            BagState::Last => (s.bag_st_last.to_string(), DIM),
+        }
+    }
+}
+
+/// 가방 격자의 한 칸(0278 R22): 빈 칸 · 덧옷 · 아이템과 그 표지(낀 것 — 주무기는 찬 모 · 잠금 · 새 것).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(super) enum BagCell {
+    Empty,
+    Garb {
+        garb: crate::garb::Id,
+        worn: bool,
+    },
+    Item {
+        id: u32,
+        item: Item,
+        worn: bool,
+        main: bool,
+        locked: bool,
+        fresh: bool,
+    },
+}
+
+/// 오른쪽 칸에 보일 것(0278 R22).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub(super) enum BagPane {
+    /// 여벌 정리 단추: 나갈 (수, 잔불).
+    Tidy {
+        count: usize,
+        embers: u32,
+    },
+    Garb {
+        garb: crate::garb::Id,
+        worn: bool,
+    },
+    Item {
+        id: u32,
+        item: Item,
+        /// 그 아이템이 설 장비 칸(`slot_of`).
+        slot: usize,
+        state: BagState,
+        /// 오른쪽 몸의 줄: 견줄 칸의 것과 "후보로 견주나"(낀 것은 그 칸의 지금 것 그대로, 안 낀 것은 그 칸에 낀 것과 견준다).
+        focus: Cand,
+        picking: bool,
+        /// 거둘 수 있는 값을 보이나(안 낀 것)와 잠갔나(값이 흐리다).
+        unworn: bool,
+        locked: bool,
+    },
+    /// 빈 칸.
+    Empty,
+}
+
+/// 가방 탭이 그리는 것(0278 R22 — 순수: 기록 · 든 무기 · 커서에서, GL 없이).
+#[derive(Clone, PartialEq, Debug)]
+pub(super) struct BagView {
+    pub cells: Vec<BagCell>,
+    /// 칸 커서(단추면 칸 수) — 범위 안으로 당긴 것.
+    pub cursor: usize,
+    /// 여벌 정리 단추가 있나(화로).
+    pub tidy: bool,
+    pub count: usize,
+    pub full: bool,
+    pub pane: BagPane,
+}
+
+impl BagView {
+    /// `entries` = 격자의 칸 번호(`App::bag_entries` — 아이템 뒤에 덧옷).
+    pub(super) fn build(
+        p: &crate::save::Progress,
+        weapon: weapons::Id,
+        entries: &[u32],
+        tidy: bool,
+        cursor: usize,
+    ) -> BagView {
+        let bag = &p.bag;
+        let n = cells(entries.len());
+        let cursor = cursor.min(if tidy { n } else { n - 1 });
+        let cell = |i: usize| match entries.get(i) {
+            Some(&id) => match garb_of(id) {
+                Some(g) => BagCell::Garb {
+                    garb: g,
+                    worn: p.garb == Some(g),
+                },
+                None => match bag.get(id) {
+                    Some(it) => BagCell::Item {
+                        id,
+                        item: *it,
+                        worn: bag.worn(id),
+                        main: bag.gear.main == Some(id),
+                        locked: bag.locked(id),
+                        fresh: bag.fresh(id),
+                    },
+                    None => BagCell::Empty,
+                },
+            },
+            None => BagCell::Empty,
+        };
+        let cells: Vec<BagCell> = (0..n).map(cell).collect();
+        let pane = if cursor >= n {
+            let ids = bag.clearable();
+            BagPane::Tidy {
+                count: ids.len(),
+                embers: ids
+                    .iter()
+                    .filter_map(|id| bag.get(*id))
+                    .map(Item::salvage)
+                    .sum(),
+            }
+        } else {
+            match cells[cursor] {
+                BagCell::Garb { garb, worn } => BagPane::Garb { garb, worn },
+                BagCell::Item {
+                    id,
+                    item,
+                    worn,
+                    locked,
+                    ..
+                } => {
+                    let slot = slot_of(bag, id, item.base);
+                    let (focus, picking) = if worn {
+                        (super::equip::slot_now_of(p, weapon, slot), false)
+                    } else {
+                        (Cand::Item(id), true)
+                    };
+                    BagPane::Item {
+                        id,
+                        item,
+                        slot,
+                        state: BagState::of(bag, id),
+                        focus,
+                        picking,
+                        unworn: bag.spares().contains(&id),
+                        locked,
+                    }
+                }
+                BagCell::Empty => BagPane::Empty,
+            }
+        };
+        BagView {
+            cells,
+            cursor,
+            tidy,
+            count: bag.items.len(),
+            full: bag.full(),
+            pane,
+        }
     }
 }
 
@@ -213,11 +383,11 @@ impl App {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
-        self.world.embers += embers;
-        self.progress.embers = self.world.embers;
+        self.world.earn(embers);
+        self.progress.embers = self.world.embers();
         self.progress.settle_items();
         self.snd(crate::sfx::Id::Recall);
-        self.toast = Some((
+        self.notice.toast = Some((
             fill(
                 s().toast_tidy,
                 &[&ids.len().to_string(), &embers.to_string()],
@@ -259,19 +429,19 @@ impl App {
         self.note_ground();
         self.progress.settle_items();
         self.snd(crate::sfx::Id::UiMove);
-        self.toast = Some((fill(s().toast_put_down, &[&name]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_put_down, &[&name]), TOAST_TIME));
         self.persist();
     }
 
     /// 가방 한 틱: 뒤로·✕·창 밖 = 닫기, 십자·스틱 = 칸, 확인(또는 고른 칸 다시 누르기) = 그 아이템의 작은 목록 · 여벌 정리.
     pub(super) fn tick_bag(&mut self, a: &Actions, host: Host) {
         let mut a = *a;
-        let before = self.cursor;
+        let before = self.menu.cursor;
         // 격자는 굴리지 않는다 — 휠·끌기는 어디서든 오른쪽 상세 칸을.
         if a.wheel != 0 || a.drag != 0.0 {
             let line = self.ui.u(tabs::LH_BODY).max(1.0);
-            self.scroll = super::equip::pane_step(
-                self.scroll,
+            self.tab.scroll = super::equip::pane_step(
+                self.tab.scroll,
                 0.0,
                 TICK_DT,
                 a.wheel,
@@ -291,8 +461,8 @@ impl App {
         let ids = self.bag_entries();
         let n = cells(ids.len());
         let tidy = host.edits();
-        self.cursor = nav(
-            self.cursor.min(if tidy { n } else { n - 1 }),
+        self.menu.cursor = nav(
+            self.menu.cursor.min(if tidy { n } else { n - 1 }),
             a.menu_up as i32 - a.menu_down as i32,
             a.menu_right as i32 - a.menu_left as i32,
             n,
@@ -301,26 +471,26 @@ impl App {
         // 터치·마우스: 다른 칸을 누르면 고르기만, 고른 칸을 다시 누르면 확인(장비 탭과 같은 두 걸음).
         let pick = match tap {
             Some(Hit::Row(i)) => {
-                let again = self.cursor == i;
-                self.cursor = i;
+                let again = self.menu.cursor == i;
+                self.menu.cursor = i;
                 again
             }
             _ => a.confirm,
         };
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
         if !pick {
             return;
         }
-        if self.cursor >= n {
+        if self.menu.cursor >= n {
             if self.tidy_count().0 == 0 {
-                self.toast = Some((s().toast_tidy_none.to_string(), 1.6));
+                self.notice.toast = Some((s().toast_tidy_none.to_string(), 1.6));
                 self.snd(crate::sfx::Id::Deny);
             } else {
                 self.ask(flow::Ask::Tidy);
             }
-        } else if ids.get(self.cursor).is_some() {
+        } else if ids.get(self.menu.cursor).is_some() {
             self.go(Go::Open(Scene::BagAct));
         } else {
             // 빈 칸(오른쪽이 가방의 규칙을 말한다).
@@ -380,13 +550,13 @@ impl App {
                 } else {
                     s.toast_unkept
                 };
-                self.toast = Some((fill(line, &[&name]), 1.6));
+                self.notice.toast = Some((fill(line, &[&name]), 1.6));
                 self.persist();
             }
             Do::Drop => self.put_down(id),
             Do::Salvage => self.ask(flow::Ask::Salvage(id)),
             Do::Away => {
-                self.toast = Some((s.toast_bag_away.to_string(), 1.4));
+                self.notice.toast = Some((s.toast_bag_away.to_string(), 1.4));
                 self.snd(crate::sfx::Id::Deny);
             }
             Do::Don | Do::Doff => {}
@@ -394,7 +564,7 @@ impl App {
         // 끼면 차례가 그대로여도 낀 표지가 옮겨 간다 — 커서는 그 아이템을 따라간다(내려놓았으면 그 자리).
         if let Some(to) = self.bag_entries().iter().position(|x| *x == id) {
             if matches!(self.scene(), Scene::Bag { .. }) {
-                self.cursor = to;
+                self.menu.cursor = to;
             }
         }
     }
@@ -425,39 +595,47 @@ impl App {
         let scene = Scene::Bag { host };
         let w = self.draw_tab_window(f, scene);
         let u = w.s;
-        let bag = self.progress.bag.clone();
+        // 무엇을 보이나(칸의 표지 · 상태 줄 · 오른쪽 칸)는 그리기 밖의 `BagView`가 정한다(0278 R22).
         let ids = self.bag_entries();
-        let n = cells(ids.len());
-        let tidy = host.edits();
-        let cursor = cursor.min(if tidy { n } else { n - 1 });
-        for i in 0..n {
+        let view = BagView::build(&self.progress, self.weapon, &ids, host.edits(), cursor);
+        let n = view.cells.len();
+        let tidy = view.tidy;
+        let cursor = view.cursor;
+        for (i, cell) in view.cells.iter().enumerate() {
             let r = Self::bag_cell(&w, i, n);
             let sel = i == cursor;
-            // 덧옷 칸: 그림 + 걸쳤으면 왼쪽 위 금빛 테.
-            if let Some(g) = ids.get(i).and_then(|&id| garb_of(id)) {
-                self.ui.button(r, "", sel);
-                let k = super::equip::icon_scale(crate::render::ICON_PX, r.w - u * 4.0);
-                let side = crate::render::ICON_PX as f32 * k;
-                self.renderer.draw_icon(
-                    crate::item_view::Item::Garb(g),
-                    Rect::new(
-                        (r.x + (r.w - side) * 0.5).round(),
-                        (r.y + (r.h - side) * 0.5).round(),
-                        side,
-                        side,
-                    ),
-                );
-                if self.progress.garb == Some(g) {
-                    let d = (u * 4.0).max(2.0).round();
-                    let (x, y) = (r.x + u, r.y + u);
-                    draw_rectangle(x, y, d + 2.0, d + 2.0, Color::new(0.10, 0.07, 0.08, 1.0));
-                    draw_rectangle(x + 1.0, y + 1.0, d, d, AMBER);
+            match *cell {
+                // 덧옷 칸: 그림 + 걸쳤으면 왼쪽 위 금빛 테.
+                BagCell::Garb { garb: g, worn } => {
+                    self.ui.button(r, "", sel);
+                    let k = super::equip::icon_scale(crate::render::ICON_PX, r.w - u * 4.0);
+                    let side = crate::render::ICON_PX as f32 * k;
+                    self.renderer.draw_icon(
+                        crate::item_view::Item::Garb(g),
+                        Rect::new(
+                            (r.x + (r.w - side) * 0.5).round(),
+                            (r.y + (r.h - side) * 0.5).round(),
+                            side,
+                            side,
+                        ),
+                    );
+                    if worn {
+                        let d = (u * 4.0).max(2.0).round();
+                        let (x, y) = (r.x + u, r.y + u);
+                        draw_rectangle(x, y, d + 2.0, d + 2.0, Color::new(0.10, 0.07, 0.08, 1.0));
+                        draw_rectangle(x + 1.0, y + 1.0, d, d, AMBER);
+                    }
+                    self.menu.hits.push((r, Hit::Row(i)));
+                    continue;
                 }
-                self.hits.push((r, Hit::Row(i)));
-                continue;
-            }
-            match ids.get(i).and_then(|id| bag.get(*id).map(|it| (*id, *it))) {
-                Some((id, it)) => {
+                BagCell::Item {
+                    item: it,
+                    worn,
+                    main,
+                    locked,
+                    fresh,
+                    ..
+                } => {
                     self.ui.button(r, "", sel);
                     if let Some(v) = view_of(it.base) {
                         let k = super::equip::icon_scale(crate::render::ICON_PX, r.w - u * 4.0);
@@ -480,11 +658,11 @@ impl App {
                     }
                     let d = (u * 4.0).max(2.0).round();
                     // 낀 것: 왼쪽 위 금빛 모(주무기 = 찬 것 · 그 밖 = 테).
-                    if bag.worn(id) {
+                    if worn {
                         let (x, y) = (r.x + u, r.y + u);
                         draw_rectangle(x, y, d + 2.0, d + 2.0, Color::new(0.10, 0.07, 0.08, 1.0));
                         draw_rectangle(x + 1.0, y + 1.0, d, d, AMBER);
-                        if bag.gear.main != Some(id) {
+                        if !main {
                             draw_rectangle(
                                 x + 2.0,
                                 y + 2.0,
@@ -495,7 +673,7 @@ impl App {
                         }
                     }
                     // 지키는 것: 오른쪽 아래 자물쇠(몸 + 고리).
-                    if bag.locked(id) {
+                    if locked {
                         let (x, y) = (r.x + r.w - d - u * 2.0, r.y + r.h - d - u * 3.0);
                         let p = (d / 4.0).max(1.0).round();
                         draw_rectangle(x + p, y - p * 2.0, p * 2.0, p, INK);
@@ -504,30 +682,30 @@ impl App {
                         draw_rectangle(x, y, p * 4.0, p * 3.0, INK);
                     }
                     // 새 것: 오른쪽 위 민트 점.
-                    if bag.fresh(id) {
+                    if fresh {
                         let p = (u * 3.0).max(2.0).round();
                         draw_rectangle(r.x + r.w - p - u * 2.0, r.y + u * 2.0, p, p, ui::MINT);
                     }
                 }
-                None => {
+                BagCell::Empty => {
                     // 빈 칸: 옅은 바닥과 테 — 한도가 보인다.
                     draw_rectangle(r.x, r.y, r.w, r.h, Color::new(0.0, 0.0, 0.0, 0.22));
                     let ink = if sel { AMBER } else { Color { a: 0.35, ..DIM } };
                     self.ui.edge(r, u, ink);
                 }
             }
-            self.hits.push((r, Hit::Row(i)));
+            self.menu.hits.push((r, Hit::Row(i)));
         }
         // 아래 한 줄: 수(가득이면 호박색) · 화로면 여벌 정리.
         let count = fill(
             s.bag_count,
-            &[&bag.items.len().to_string(), &BAG_CAP.to_string()],
+            &[&view.count.to_string(), &BAG_CAP.to_string()],
         );
         let first = Self::bag_cell(&w, 0, n);
         let k = K_KIND * w.k * 1.15;
         let ty = w.at(0.0, FOOT_Y).y + (TIDY_H * u - self.ui.px(k)) * 0.5;
         self.ui
-            .text(&count, first.x, ty, k, if bag.full() { AMBER } else { DIM });
+            .text(&count, first.x, ty, k, if view.full { AMBER } else { DIM });
         if tidy {
             let r = Self::bag_tidy_rect(&w, n);
             self.ui.button(r, "", cursor >= n);
@@ -542,116 +720,107 @@ impl App {
                 tk,
                 ink,
             );
-            self.hits.push((r, Hit::Row(n)));
+            self.menu.hits.push((r, Hit::Row(n)));
         }
 
         // 오른쪽: 고른 것.
-        let mut confirm = false;
-        if cursor >= n {
-            let (cnt, embers) = self.tidy_count();
-            self.draw_pane_head(
-                &w,
-                &PaneHead {
-                    name: s.bag_tidy,
-                    gold: cnt > 0,
-                    kind: s.menu_bag.to_string(),
-                    state: (
-                        fill(s.toast_tidy, &[&cnt.to_string(), &embers.to_string()]),
-                        if cnt > 0 { ui::MINT } else { DIM },
-                    ),
-                    icon: false,
-                },
-            );
-            let lines = self.pane_wrap(&w, s.bag_tidy_d, INK);
-            self.draw_pane(&w, HEAD_H, &lines);
-            confirm = cnt > 0;
-        } else if let Some(g) = ids.get(cursor).and_then(|&id| garb_of(id)) {
-            // 덧옷: 이름 · 덧옷 · 걸쳤나, 그림, 설명과 세계 안의 말(장비 탭의 덧옷 칸과 같은 글).
-            let d = crate::garb::def(g);
-            let worn = self.progress.garb == Some(g);
-            let icon = self.draw_pane_head(
-                &w,
-                &PaneHead {
-                    name: tr(d.name),
-                    gold: worn,
-                    kind: s.codex_tab_garb.to_string(),
-                    state: if worn {
-                        (s.equip_worn.to_string(), AMBER)
-                    } else {
-                        (String::new(), DIM)
+        let confirm = match view.pane {
+            BagPane::Tidy { count: cnt, embers } => {
+                self.draw_pane_head(
+                    &w,
+                    &PaneHead {
+                        name: s.bag_tidy,
+                        gold: cnt > 0,
+                        kind: s.menu_bag.to_string(),
+                        state: (
+                            fill(s.toast_tidy, &[&cnt.to_string(), &embers.to_string()]),
+                            if cnt > 0 { ui::MINT } else { DIM },
+                        ),
+                        icon: false,
                     },
-                    icon: true,
-                },
-            );
-            self.draw_pane_item(crate::item_view::Item::Garb(g), icon);
-            let mut lines = self.pane_wrap(&w, tr(d.desc), INK);
-            lines.push(Ln::Gap);
-            lines.extend(self.pane_wrap(&w, tr(d.flavor), DIM));
-            self.draw_pane(&w, HEAD_H, &lines);
-            confirm = true;
-        } else if let Some((id, it)) = ids
-            .get(cursor)
-            .and_then(|id| bag.get(*id).map(|it| (*id, *it)))
-        {
-            let slot = slot_of(&bag, id, it.base);
-            let worn = bag.worn(id);
-            let spare = bag.extras().contains(&id);
-            let unworn = bag.spares().contains(&id);
-            let state = if worn {
-                (s.equip_worn.to_string(), AMBER)
-            } else if bag.fresh(id) {
-                (s.bag_st_new.to_string(), ui::MINT)
-            } else if bag.locked(id) {
-                (s.bag_st_kept.to_string(), INK)
-            } else if spare {
-                (s.bag_st_spare.to_string(), DIM)
-            } else {
-                (s.bag_st_last.to_string(), DIM)
-            };
-            let view = view_of(it.base);
-            let icon = self.draw_pane_head(
-                &w,
-                &PaneHead {
-                    name: &Self::item_label(&it),
-                    gold: worn,
-                    kind: slot_name(slot),
-                    state,
-                    icon: view.is_some(),
-                },
-            );
-            if let Some(v) = view {
-                self.draw_pane_item(v, icon);
+                );
+                let lines = self.pane_wrap(&w, s.bag_tidy_d, INK);
+                self.draw_pane(&w, HEAD_H, &lines);
+                cnt > 0
             }
-            // 장비 탭과 같은 줄: 낀 것은 그 칸의 지금 것으로, 안 낀 것은 그 칸에 지금 낀 것과 견줘.
-            let mut lines = if worn {
-                self.equip_lines(&w, slot, self.slot_now(slot), false)
-            } else {
-                self.equip_lines(&w, slot, Cand::Item(id), true)
-            };
-            if unworn {
+            BagPane::Garb { garb: g, worn } => {
+                // 덧옷: 이름 · 덧옷 · 걸쳤나, 그림, 설명과 세계 안의 말(장비 탭의 덧옷 칸과 같은 글).
+                let d = crate::garb::def(g);
+                let icon = self.draw_pane_head(
+                    &w,
+                    &PaneHead {
+                        name: tr(d.name),
+                        gold: worn,
+                        kind: s.codex_tab_garb.to_string(),
+                        state: if worn {
+                            (s.equip_worn.to_string(), AMBER)
+                        } else {
+                            (String::new(), DIM)
+                        },
+                        icon: true,
+                    },
+                );
+                self.draw_pane_item(crate::item_view::Item::Garb(g), icon);
+                let mut lines = self.pane_wrap(&w, tr(d.desc), INK);
                 lines.push(Ln::Gap);
-                lines.push(Ln::Pair(
-                    s.bag_value.to_string(),
-                    format!("+{}", it.salvage()),
-                    if bag.locked(id) { DIM } else { AMBER },
-                ));
+                lines.extend(self.pane_wrap(&w, tr(d.flavor), DIM));
+                self.draw_pane(&w, HEAD_H, &lines);
+                true
             }
-            self.draw_pane(&w, HEAD_H, &lines);
-            confirm = true;
-        } else {
-            self.draw_pane_head(
-                &w,
-                &PaneHead {
-                    name: s.bag_empty,
-                    gold: false,
-                    kind: s.menu_bag.to_string(),
-                    state: (count.clone(), if bag.full() { AMBER } else { DIM }),
-                    icon: false,
-                },
-            );
-            let lines = self.pane_wrap(&w, s.bag_empty_d, INK);
-            self.draw_pane(&w, HEAD_H, &lines);
-        }
+            BagPane::Item {
+                item: it,
+                slot,
+                state,
+                focus,
+                picking,
+                unworn,
+                locked,
+                ..
+            } => {
+                let v = view_of(it.base);
+                let icon = self.draw_pane_head(
+                    &w,
+                    &PaneHead {
+                        // 등급은 갈래 줄에(0275 — 이름 칸이 넘쳤다).
+                        name: Self::base_name(&it),
+                        gold: state == BagState::Worn,
+                        kind: crate::i18n::with_rarity(Some(it.rarity), &slot_name(slot)),
+                        state: state.line(),
+                        icon: v.is_some(),
+                    },
+                );
+                if let Some(v) = v {
+                    self.draw_pane_item(v, icon);
+                }
+                // 장비 탭과 같은 줄: 낀 것은 그 칸의 지금 것으로, 안 낀 것은 그 칸에 지금 낀 것과 견줘.
+                let mut lines = self.equip_lines(&w, slot, focus, picking);
+                if unworn {
+                    lines.push(Ln::Gap);
+                    lines.push(Ln::Pair(
+                        s.bag_value.to_string(),
+                        format!("+{}", it.salvage()),
+                        if locked { DIM } else { AMBER },
+                    ));
+                }
+                self.draw_pane(&w, HEAD_H, &lines);
+                true
+            }
+            BagPane::Empty => {
+                self.draw_pane_head(
+                    &w,
+                    &PaneHead {
+                        name: s.bag_empty,
+                        gold: false,
+                        kind: s.menu_bag.to_string(),
+                        state: (count.clone(), if view.full { AMBER } else { DIM }),
+                        icon: false,
+                    },
+                );
+                let lines = self.pane_wrap(&w, s.bag_empty_d, INK);
+                self.draw_pane(&w, HEAD_H, &lines);
+                false
+            }
+        };
         let right = w.panel.x + w.panel.w;
         let mut pairs = vec![(Act::Walk, s.verb_choose)];
         if confirm {
@@ -668,12 +837,12 @@ impl App {
         let Scene::Bag { host } = under.scene else {
             return;
         };
-        let (cursor, view) = (self.cursor, self.view);
-        (self.cursor, self.view) = (under.cursor, under.view);
+        let (cursor, view) = (self.menu.cursor, self.menu.view);
+        (self.menu.cursor, self.menu.view) = (under.cursor, under.view);
         self.draw_layered(f, under.scene);
-        (self.cursor, self.view) = (cursor, view);
+        (self.menu.cursor, self.menu.view) = (cursor, view);
         // 작은 창은 누를 자리를 제 줄과 창 밖만 남긴다(묻는 창과 같다).
-        self.hits.clear();
+        self.menu.hits.clear();
         #[cfg(feature = "dev")]
         crate::ui::check::forget();
         let s = s();
@@ -755,7 +924,9 @@ impl App {
         self.ui.panel(panel, None);
         self.ui.edge(panel, u, AMBER);
         let area = Rect::new(x + u * 3.0, y + u * 4.0, pw - u * 6.0, ph - u * 8.0);
-        let hits = self.ui.list(&rows, self.cursor, &mut self.view, area);
+        let hits = self
+            .ui
+            .list(&rows, self.menu.cursor, &mut self.menu.view, area);
         self.push_hits(&hits);
         self.push_outside(panel);
     }
@@ -879,5 +1050,123 @@ mod tests {
         assert!(bag.toggle_lock(spare));
         assert_eq!(acts(&bag, spare, W::Sword, true), [Do::Main, Do::Unkeep]);
         assert!(acts(&bag, 999, W::Sword, true).is_empty());
+    }
+
+    /// 0278 R22: 가방 칸의 상태 줄 차례는 낀 것 > 새 것 > 잠근 것 > 여벌 > 그 바탕의 마지막 하나 — 그리기 밖의 `BagView`가 정한다.
+    /// 낀 것을 고르면 그 칸의 지금 것을 그대로, 안 낀 것은 그 칸에 낀 것과 견준다.
+    #[test]
+    fn bag_states_go_worn_new_kept_spare_last_and_the_pane_compares_the_unworn() {
+        let mut p = crate::save::Progress::default();
+        p.bag = bag_with(&[Base::Weapon(W::Sword), Base::Weapon(W::Hammer)]);
+        let spare = p.bag.add(rare(Base::Weapon(W::Sword)));
+        p.bag.settle(
+            &[Base::Weapon(W::Sword), Base::Weapon(W::Hammer)],
+            &Worn {
+                main: Some(W::Sword),
+                ..Worn::default()
+            },
+        );
+        let worn = p.bag.gear.main.unwrap();
+        let hammer = p.bag.of(Base::Weapon(W::Hammer)).next().unwrap().0;
+        let ids = order(&p.bag);
+        let state = |p: &crate::save::Progress, id: u32| {
+            let at = ids.iter().position(|&i| i == id).unwrap();
+            match BagView::build(p, W::Sword, &ids, false, at).pane {
+                BagPane::Item { state, .. } => state,
+                other => panic!("{other:?}"),
+            }
+        };
+        // 다 새 것이다(가방 탭을 아직 안 봤다) — 낀 것만 "착용 중".
+        assert_eq!(state(&p, worn), BagState::Worn);
+        assert_eq!(state(&p, spare), BagState::New);
+        p.bag.mark_seen();
+        assert_eq!(state(&p, spare), BagState::Spare);
+        assert_eq!(state(&p, hammer), BagState::Last);
+        assert!(p.bag.toggle_lock(spare));
+        assert_eq!(state(&p, spare), BagState::Kept);
+        assert!(p.bag.toggle_lock(worn));
+        assert_eq!(state(&p, worn), BagState::Worn);
+        // 오른쪽 칸: 낀 검은 주무기 칸의 지금 것, 안 낀 망치는 후보로(값도 보인다).
+        let at = |id: u32| ids.iter().position(|&i| i == id).unwrap();
+        match BagView::build(&p, W::Sword, &ids, false, at(worn)).pane {
+            BagPane::Item {
+                slot,
+                focus,
+                picking,
+                unworn,
+                ..
+            } => {
+                assert_eq!(
+                    (slot, focus, picking, unworn),
+                    (0, Cand::Weapon(W::Sword), false, false)
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+        match BagView::build(&p, W::Sword, &ids, false, at(hammer)).pane {
+            BagPane::Item {
+                slot,
+                focus,
+                picking,
+                unworn,
+                locked,
+                ..
+            } => {
+                assert_eq!(
+                    (slot, focus, picking, unworn, locked),
+                    (0, Cand::Item(hammer), true, true, false)
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// 0278 R22: 격자의 칸은 아이템 뒤에 덧옷, 나머지는 빈 칸 — 낀 표지는 주무기만 찬 모. 커서는 격자 안으로(화로면 단추까지),
+    /// 단추에서는 여벌 정리로 나갈 수와 잔불.
+    #[test]
+    fn bag_cells_mark_main_and_others_and_the_cursor_reaches_the_tidy_button_only_at_the_hearth() {
+        let mut p = crate::save::Progress::default();
+        p.bag = bag_with(&[
+            Base::Weapon(W::Sword),
+            Base::Shield(crate::shield::Id::Pilgrim),
+        ]);
+        let extra = p.bag.add(Item::plain(Base::Weapon(W::Sword)));
+        p.bag.settle(
+            &[
+                Base::Weapon(W::Sword),
+                Base::Shield(crate::shield::Id::Pilgrim),
+            ],
+            &Worn {
+                main: Some(W::Sword),
+                shield: Some(crate::shield::Id::Pilgrim),
+                ..Worn::default()
+            },
+        );
+        let ids = order(&p.bag);
+        let v = BagView::build(&p, W::Sword, &ids, false, 999);
+        assert_eq!(v.cells.len(), cells(ids.len()));
+        assert_eq!(v.cursor, v.cells.len() - 1);
+        assert_eq!(v.pane, BagPane::Empty);
+        let marks: Vec<(bool, bool)> = v
+            .cells
+            .iter()
+            .filter_map(|c| match *c {
+                BagCell::Item { worn, main, .. } => Some((worn, main)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks, [(true, true), (false, false), (true, false)]);
+        assert!(v.cells[3..].iter().all(|c| *c == BagCell::Empty));
+        let v = BagView::build(&p, W::Sword, &ids, true, 999);
+        assert_eq!(v.cursor, v.cells.len());
+        let salvage = p.bag.get(extra).unwrap().salvage();
+        assert_eq!(
+            v.pane,
+            BagPane::Tidy {
+                count: 1,
+                embers: salvage
+            }
+        );
+        assert_eq!((v.count, v.full), (3, false));
     }
 }

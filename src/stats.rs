@@ -35,6 +35,12 @@ pub struct Mods {
     pub poise: f32,
     /// 강타 피해 +(레벨 힘 3단) — 강타·패링 반격만.
     pub heavy_dmg: i32,
+    /// 다 모은 강공격 피해 +(0274 ④ 대검의 보조특성 "어깨에 걸친 날의 무게") — 쥐어 다 모은 강공격만(패링 반격 · 덜 모은 것은 아니다).
+    pub charged_dmg: i32,
+    /// 적이 쓰러질 때마다 체력 +(0274 ⑤ 낫의 보조특성 "거두는 손").
+    pub kill_heal: i32,
+    /// 종류의 원거리 수단(RB — 사격 무기의 볼트 · 화살은 아니다) 피해 +(0274 ⑥ 완드의 보조특성 "입에 붙은 말").
+    pub toss_dmg: i32,
     /// 평타 피해 +(레벨 힘 5단) — 콤보·대시 공격만.
     pub light_dmg: i32,
     /// 열린 틈의 타 피해 +(0127 "깨진 종 조각") — 패링으로 드러났거나 자세가 깨진 적을 칠 때만.
@@ -53,32 +59,40 @@ pub struct Mods {
     pub ail: f32,
 }
 
+impl Mods {
+    /// 아무것도 안 바꾸는 보정 — 상수 표(장신구 `charms::TABLE` · 덧옷 `garb::TABLE` · 종류의 보조특성 `weapons::CLASSES`)가 `..Mods::NONE`으로 쓴다.
+    pub const NONE: Mods = Mods {
+        hp: 0,
+        flask: 0,
+        heal: 0,
+        dmg: 0,
+        taken: 0,
+        atk_speed: 1.0,
+        dodge_cost: 1.0,
+        parry: 0.0,
+        kill_stamina: 0.0,
+        ember: 1.0,
+        stamina_max: 0.0,
+        stamina_regen: 1.0,
+        poise: 1.0,
+        heavy_dmg: 0,
+        charged_dmg: 0,
+        kill_heal: 0,
+        toss_dmg: 0,
+        light_dmg: 0,
+        opened_dmg: 0,
+        knock: 1.0,
+        flinch: 1.0,
+        shot_dmg: 0,
+        mag: 0,
+        skill_cd: 1.0,
+        ail: 1.0,
+    };
+}
+
 impl Default for Mods {
     fn default() -> Self {
-        Mods {
-            hp: 0,
-            flask: 0,
-            heal: 0,
-            dmg: 0,
-            taken: 0,
-            atk_speed: 1.0,
-            dodge_cost: 1.0,
-            parry: 0.0,
-            kill_stamina: 0.0,
-            ember: 1.0,
-            stamina_max: 0.0,
-            stamina_regen: 1.0,
-            poise: 1.0,
-            heavy_dmg: 0,
-            light_dmg: 0,
-            opened_dmg: 0,
-            knock: 1.0,
-            flinch: 1.0,
-            shot_dmg: 0,
-            mag: 0,
-            skill_cd: 1.0,
-            ail: 1.0,
-        }
+        Mods::NONE
     }
 }
 
@@ -100,6 +114,9 @@ pub struct Stats {
     pub stamina_regen: f32,
     pub poise: f32,
     pub heavy_dmg: i32,
+    pub charged_dmg: i32,
+    pub kill_heal: i32,
+    pub toss_dmg: i32,
     pub light_dmg: i32,
     pub opened_dmg: i32,
     /// 맞을 때 밀리는 배(0176 덧옷 — 1 = 그대로, 0.5 = 반만 밀린다).
@@ -148,6 +165,9 @@ impl Stats {
             stamina_regen: 1.0,
             poise: 1.0,
             heavy_dmg: 0,
+            charged_dmg: 0,
+            kill_heal: 0,
+            toss_dmg: 0,
             light_dmg: 0,
             opened_dmg: 0,
             knock: 1.0,
@@ -172,6 +192,9 @@ impl Stats {
             s.stamina_regen *= m.stamina_regen;
             s.poise *= m.poise;
             s.heavy_dmg += m.heavy_dmg;
+            s.charged_dmg += m.charged_dmg;
+            s.kill_heal += m.kill_heal;
+            s.toss_dmg += m.toss_dmg;
             s.light_dmg += m.light_dmg;
             s.opened_dmg += m.opened_dmg;
             s.knock *= m.knock;
@@ -195,6 +218,9 @@ impl Stats {
         s.stamina_regen = s.stamina_regen.max(0.1);
         s.poise = s.poise.max(0.0);
         s.heavy_dmg = s.heavy_dmg.max(0);
+        s.charged_dmg = s.charged_dmg.max(0);
+        s.kill_heal = s.kill_heal.max(0);
+        s.toss_dmg = s.toss_dmg.max(0);
         s.light_dmg = s.light_dmg.max(0);
         s.opened_dmg = s.opened_dmg.max(0);
         s.knock = s.knock.clamp(KNOCK_RANGE.0, KNOCK_RANGE.1);
