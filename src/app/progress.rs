@@ -132,14 +132,37 @@ impl App {
                     Some(Loot::Weapon(w)) if !self.progress.owns_weapon(w) => {
                         self.gain_weapon(w, Some((0, self.loot_seed(1, i))))
                     }
-                    _ => {
-                        self.world.embers += crate::stage::CHEST_EMBERS;
-                        let n = crate::stage::CHEST_EMBERS.to_string();
-                        self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
+                    // 숫돌(0274 ⑦): 숨은 물건의 숫돌과 같은 길로 기록에 — 상자는 한 번만 열리지만 같은 이름이 있으면 잔불.
+                    Some(Loot::Stone)
+                        if !self.progress.finds.contains(&crate::stage::chest_stone_id(
+                            self.run.def.find_prefix,
+                            i,
+                        )) =>
+                    {
+                        let id = crate::stage::chest_stone_id(self.run.def.find_prefix, i);
+                        self.progress.note_find(id);
+                        self.toast = Some((s().toast_find_stone.to_string(), TOAST_TIME));
                     }
+                    // 여벌(0274 ⑦): 가진 바탕의 고급(`Sturdy` — 옵션 한 줄) — 주운 것이니 바로 가방에(바닥의 여벌을 주울 때와 같은 길).
+                    // 가진 것이 없으면(맨손뿐) 잔불.
+                    Some(Loot::Spare) => {
+                        let rare = Some(crate::items::Rarity::Sturdy);
+                        match self.roll_spare_of(rare, 0, self.loot_seed(1, i)) {
+                            Some(item) => self.take_item(item),
+                            None => self.chest_embers(),
+                        }
+                    }
+                    _ => self.chest_embers(),
                 }
             }
         }
+    }
+
+    /// 상자의 것을 이미 가졌다(또는 든 것이 없다): 잔불 `CHEST_EMBERS`.
+    fn chest_embers(&mut self) {
+        self.world.embers += crate::stage::CHEST_EMBERS;
+        let n = crate::stage::CHEST_EMBERS.to_string();
+        self.toast = Some((fill(s().toast_embers, &[&n]), TOAST_TIME));
     }
 
     /// 떨어진 아이템을 주웠다.
@@ -518,6 +541,9 @@ impl App {
                         && match l {
                             Loot::Charm(id) => !self.progress.owned.contains(id),
                             Loot::Weapon(w) => !self.progress.owns_weapon(*w),
+                            // 숫돌은 가방 밖 · 여벌은 늘 칸이 든다(0274 ⑦).
+                            Loot::Stone => false,
+                            Loot::Spare => true,
                         }
                 })
                 .fold(0u64, |m, (i, _)| m | 1 << i)

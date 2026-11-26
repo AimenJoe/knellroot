@@ -526,7 +526,7 @@ impl App {
     }
 }
 
-/// 무기의 이름·설명·나오는 곳(0191 — 상자 자리는 `stage/sanctuary.rs`의 `chest_loot` 차례).
+/// 무기의 이름·설명·나오는 곳(0191 — 상자 자리는 지역마다 `stage/<지역>.rs`의 `chest_loot` 차례, 무기를 얻는 차례는 0274 ⑦).
 fn weapon_texts(id: crate::weapons::Id) -> (Tr, Tr, Tr) {
     use crate::weapons::Id as W;
     match id {

@@ -145,7 +145,7 @@ pub struct StageDef {
     pub obj_gate: Tr,
     pub obj_core: Tr,
     pub boss_wakes: Tr,
-    /// 상자(지도 `C`, 위에서부터 차례)마다 든 것(0064 M3 → 0117: 장신구 또는 무기). 이미 가졌으면 잔불 `CHEST_EMBERS`.
+    /// 상자(지도 `C`, 위에서부터 차례)마다 든 것(0064 M3 → 0117: 장신구 또는 무기 → 0274 ⑦: 숫돌 · 여벌도). 이미 가졌으면 잔불 `CHEST_EMBERS`.
     pub chest_loot: &'static [Loot],
     /// 문지기를 처음 이겼을 때 주는 장신구.
     pub boss_charm: Option<crate::charms::Id>,
@@ -364,6 +364,18 @@ pub const CHEST_EMBERS: u32 = 10;
 pub enum Loot {
     Charm(crate::charms::Id),
     Weapon(crate::weapons::Id),
+    /// 숫돌 하나(0274 ⑦ — 무기를 얻는 차례를 다시 짜며 성소의 옛 쇠뇌 상자에): 숨은 물건 숫돌과 같은 것이라 벼리는 셈(`forge::stones`)이
+    /// 그대로 센다 — 기록 이름은 `chest_stone_id`(지도 `O`의 차례 이름과 섞이지 않는다). 가방의 칸이 들지 않는다.
+    Stone,
+    /// 여벌 하나(0274 ⑦ — 성소의 옛 지팡이 상자에): 가진 바탕 가운데 하나의 **고급**(`Sturdy` — 옵션 한 줄 확정) — 엘리트의 여벌과 같은 굴림에
+    /// 등급만 정해 준다. 가진 것이 없으면(맨손뿐) 잔불. 가방의 칸이 든다.
+    Spare,
+}
+
+/// 상자에서 나온 숫돌의 기록 이름(0274 ⑦): `sanctuary.stone.chest1` — 가운데 칸이 `stone`이라 숫돌로 세고(`forge::stones`),
+/// 끝이 지도 `O`의 차례(수)가 아니라 숨은 물건·여정의 셈(`find_id`의 0..n)에는 들지 않는다. 바꾸지 않는다.
+pub fn chest_stone_id(prefix: &str, chest: usize) -> String {
+    format!("{prefix}.{}.chest{chest}", Find::Stone.key())
 }
 /// 상자 부딪힘 상자 반폭(가로·세로 m).
 const CHEST_HALF: Vec3 = Vec3::new(0.45, 0.5, 0.3);

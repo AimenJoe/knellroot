@@ -2007,15 +2007,16 @@ fn the_gardeners_sickle_waits_in_the_gardens_fourth_chest() {
 #[test]
 fn the_pledged_wand_waits_in_the_workings_second_chest() {
     let def = &workings::DEF;
+    // 0274 ⑦: 셋째 · 넷째 상자(쇠뇌 · 지팡이)가 그 뒤에 붙었다 — 앞의 둘은 그대로.
     assert_eq!(
-        def.chest_loot,
-        &[
+        def.chest_loot[..2],
+        [
             Loot::Charm(crate::charms::Id::Feet),
             Loot::Weapon(crate::weapons::Id::Wand),
         ]
     );
     let (mut run, _) = StageRun::start(def);
-    assert_eq!(run.chest.at.len(), 2);
+    assert_eq!(run.chest.at.len(), 4);
     let g = run.level.ground();
     let cell = |p: Vec3| g.cell_of(p).unwrap();
     assert_eq!(
@@ -2029,7 +2030,11 @@ fn the_pledged_wand_waits_in_the_workings_second_chest() {
         "the westernmost side room of the haulage gallery"
     );
     run.set_opened(&[0]);
-    assert_eq!(run.chest.open, vec![true, false], "an old record");
+    assert_eq!(
+        run.chest.open,
+        vec![true, false, false, false],
+        "an old record"
+    );
     // 어느 지역의 상자에도 완드는 하나뿐이다(얻는 차례 — 작업층).
     let n = crate::stage::STAGES
         .iter()
@@ -2038,3 +2043,134 @@ fn the_pledged_wand_waits_in_the_workings_second_chest() {
         .count();
     assert_eq!(n, 1);
 }
+
+/// 0274 ⑦: 화약 쇠뇌 · 순례자 지팡이는 작업층의 셋째 · 넷째 상자 — 서쪽 작업대(+2.5m)의 북서 구석 · 위층 회랑(+5m)의 동쪽 벽 밑. 옛
+/// 상자 둘(장신구 · 맡겨진 완드)의 기록 번호(위 → 아래 차례)는 그대로다: 둘을 연 옛 기록은 쇠뇌 · 지팡이의 상자를 연 것으로 읽히지 않는다.
+/// 상자 자리는 걸어서 닿는다(`every_floor_is_reachable_and_every_spawn_can_walk_to_the_fight`가 모든 바닥을 본다).
+#[test]
+fn the_powder_crossbow_and_the_pilgrim_staff_wait_in_the_workings() {
+    let def = &workings::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Wand),
+            Loot::Weapon(crate::weapons::Id::Crossbow),
+            Loot::Weapon(crate::weapons::Id::Staff),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (5, 47),
+        "the wand's chest keeps its place"
+    );
+    assert_eq!(cell(run.chest.at[2]), (5, 49), "the west bench's corner");
+    assert_eq!(
+        cell(run.chest.at[3]),
+        (40, 50),
+        "under the upper gallery's east wall"
+    );
+    // 높이: 서쪽 작업대는 +2.5m, 위층 회랑은 +5m(지도 생성기의 층 — 도착 작업대와 같은 높이).
+    let y = |i: usize| g.height(run.chest.at[i]);
+    assert!((y(2) - 2.5).abs() < 0.01, "bench {}", y(2));
+    assert!((y(3) - 5.0).abs() < 0.01, "upper gallery {}", y(3));
+    run.set_opened(&[0, 1]);
+    assert_eq!(
+        run.chest.open,
+        vec![true, true, false, false],
+        "an old record"
+    );
+}
+
+/// 0274 ⑦ 얻는 차례(단순하고 직관적인 것부터 — 사장 2026-11-25): 무기는 지역마다 이 표대로 상자에 하나씩 — 성소 망치 · 떠난 마을 창 ·
+/// 쌍단검 · 정원 활 · 대검 · 낫 · 작업층 완드 · 쇠뇌 · 지팡이(검은 깨어난 자리, 맨손은 처음부터, 방패는 가게). 어느 무기도 두 상자에 들지
+/// 않고, 상자에서 나오는 무기는 이것뿐이다.
+#[test]
+fn weapons_are_found_simplest_first_one_chest_each() {
+    use crate::weapons::Id as W;
+    let want: [(usize, W); 9] = [
+        (0, W::Hammer),
+        (1, W::Spear),
+        (1, W::Daggers),
+        (2, W::Bow),
+        (2, W::Greatsword),
+        (2, W::Scythe),
+        (3, W::Wand),
+        (3, W::Crossbow),
+        (3, W::Staff),
+    ];
+    let found: Vec<(usize, W)> = crate::stage::STAGES
+        .iter()
+        .enumerate()
+        .flat_map(|(n, d)| {
+            d.chest_loot.iter().filter_map(move |l| match l {
+                Loot::Weapon(w) => Some((n, *w)),
+                _ => None,
+            })
+        })
+        .collect();
+    let mut a = found.clone();
+    let mut b = want.to_vec();
+    a.sort_by_key(|(n, w)| (*n, *w as usize));
+    b.sort_by_key(|(n, w)| (*n, *w as usize));
+    assert_eq!(a, b);
+    // 검 · 맨손 밖의 무기는 모두 어느 상자에 있다(얻을 수 없는 무기가 없다).
+    for w in crate::weapons::IDS {
+        if w != W::Sword && w != W::Fists {
+            assert!(found.iter().any(|(_, x)| *x == w), "{w:?} has no chest");
+        }
+    }
+}
+
+/// 0274 ⑦: 성소의 옛 쇠뇌 · 지팡이 상자는 자리와 번호(기록 `chests` = 1 · 2)를 그대로 두고 든 것만 바꿨다 — 성벽길(문 장치로 가는 길)은
+/// 숫돌, 뜰 남동 단은 여벌. 두 상자를 연 옛 기록은 두 상자가 열린 채로 읽힌다(새로 든 것을 다시 주지 않는다 — 가진 쇠뇌 · 지팡이는 기록의
+/// `weapons`가 지닌다: `save::tests::an_old_record_that_opened_the_sanctuary_weapon_chests_keeps_its_weapons`). 상자의 숫돌은 숫돌로
+/// 세고(벼리기), 지도 `O`의 셈(숨은 물건 · 여정)에는 들지 않는다.
+#[test]
+fn the_sanctuarys_old_weapon_chests_keep_their_place_and_hold_a_whetstone_and_a_spare() {
+    let def = &sanctuary::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Ear),
+            Loot::Stone,
+            Loot::Spare,
+            Loot::Weapon(crate::weapons::Id::Hammer),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    let at: Vec<(usize, usize)> = run.chest.at.iter().map(|p| cell(*p)).collect();
+    assert_eq!(at, OLD_SANCTUARY_CHESTS, "the chests keep their place");
+    // 성벽길(+3m)의 상자.
+    assert!((g.height(run.chest.at[1]) - 3.0).abs() < 0.01);
+    run.set_opened(&[1, 2]);
+    assert_eq!(
+        run.chest.open,
+        vec![false, true, true, false],
+        "an old record"
+    );
+    // 상자의 숫돌: 벼리는 셈은 센다 — 숨은 물건 이름(`find_id`)과 겹치지 않는다.
+    let id = crate::stage::chest_stone_id(def.find_prefix, 1);
+    assert_eq!(id, "sanctuary.stone.chest1");
+    assert_eq!(crate::forge::stones(std::slice::from_ref(&id)), 1);
+    let o = def.map.chars().filter(|c| *c == 'O').count();
+    assert!((0..o + 8).all(|k| crate::stage::find_id(def.find_prefix, Find::Stone, k) != id));
+    // 어느 지역의 상자에도 쇠뇌 · 지팡이는 작업층에만.
+    for (n, d) in crate::stage::STAGES.iter().enumerate() {
+        for w in [crate::weapons::Id::Crossbow, crate::weapons::Id::Staff] {
+            assert_eq!(
+                d.chest_loot.contains(&Loot::Weapon(w)),
+                n == 3,
+                "{w:?} in stage {n}"
+            );
+        }
+    }
+}
+
+/// 성소 상자 넷의 칸(탑 · 성벽길 · 뜰 남동 단 · 뿌리 굴) — 0274 ⑦ 전과 같다(기록 `chests`의 번호가 이 자리를 가리킨다).
+const OLD_SANCTUARY_CHESTS: [(usize, usize); 4] = [(40, 17), (2, 18), (34, 29), (2, 49)];

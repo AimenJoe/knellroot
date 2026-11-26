@@ -2221,6 +2221,48 @@ weapons=sword,bow
         assert_eq!(Progress::from_record(odd).level.might, 5);
     }
 
+    /// 0274 ⑦: 성소의 옛 쇠뇌(1) · 지팡이(2) 상자는 이제 숫돌 · 여벌을 든다(자리 · 번호 그대로). 그 상자를 이미 연 옛 기록은 가진 쇠뇌 ·
+    /// 지팡이를 그대로 지닌다 — 가진 무기는 상자 번호가 아니라 기록 `weapons`에서 읽고, 연 상자(`chests`)도 그대로다(상자가 다시 닫히지
+    /// 않으니 새로 든 것을 덤으로 받지도 않는다). 가방에는 그 둘의 아이템이 서고, 다시 써도 그대로다.
+    #[test]
+    fn an_old_record_that_opened_the_sanctuary_weapon_chests_keeps_its_weapons() {
+        use crate::weapons::Id;
+        let old = "v=1
+embers=40
+clears=1
+chests=0,1,2
+weapons=sword,crossbow,staff
+weapon=crossbow
+weapon.sub=staff
+charm.owned=ear
+migrated.sword=1
+migrated.v04=1
+migrated.v06=1
+migrated.ult=1
+";
+        let mut p = Progress::from_record(Record::parse(old));
+        p.settle_items();
+        for w in [Id::Crossbow, Id::Staff] {
+            assert!(p.owns_weapon(w), "{w:?}");
+            assert!(
+                p.bag
+                    .items
+                    .iter()
+                    .any(|(_, it)| it.base == crate::items::Base::Weapon(w)),
+                "{w:?} in the bag"
+            );
+        }
+        assert_eq!((p.weapon, p.sub), (Some(Id::Crossbow), Some(Id::Staff)));
+        assert_eq!(p.chests, vec![0, 1, 2], "the opened chests stay opened");
+        // 상자를 다시 열지 않으니 그 상자의 숫돌은 없다(벼리는 셈은 주운 숫돌만).
+        assert_eq!(crate::forge::stones(&p.finds), 0);
+        let mut back = Progress::from_record(Record::parse(&p.to_record().to_text()));
+        back.settle_items();
+        assert_eq!(back.weapons, p.weapons);
+        assert_eq!((back.weapon, back.sub), (p.weapon, p.sub));
+        assert_eq!(back.chests, p.chests);
+    }
+
     #[test]
     fn charms_and_opened_chests_survive_the_record() {
         use crate::charms::Id;

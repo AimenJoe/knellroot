@@ -148,6 +148,22 @@ pub const WAND_CHEST: Pair = (
     "넷째 지역 운반 회랑 서쪽 끝 곁방의 상자 곁에서(맡겨진 완드)",
     "region 4 beside the chest in the westernmost side room of the haulage gallery (the Pledged Wand)",
 );
+pub const WALL_CHEST: Pair = (
+    "첫 지역 성벽길의 상자 곁에서(숫돌)",
+    "region 1 beside the chest on the wall walk (a whetstone)",
+);
+pub const SPARE_CHEST: Pair = (
+    "첫 지역 뜰 남동쪽 단의 상자 곁에서(여벌)",
+    "region 1 beside the chest on the courtyard's southeast dais (a spare)",
+);
+pub const CROSSBOW_CHEST: Pair = (
+    "넷째 지역 서쪽 작업대 구석의 상자 곁에서(화약 쇠뇌)",
+    "region 4 beside the chest in the corner of the west workbench (the Powder Crossbow)",
+);
+pub const STAFF_CHEST: Pair = (
+    "넷째 지역 위층 회랑 동쪽 벽 밑의 상자 곁에서(순례자 지팡이)",
+    "region 4 beside the chest under the upper gallery's east wall (the Pilgrim's Staff)",
+);
 pub const FIELD: Pair = (
     "첫 지역 필드 보스의 터에서(고요한 사슴)",
     "region 1 at the field boss's clearing (the Hushed Stag)",
@@ -260,6 +276,10 @@ pub const PAIRS: &[Pair] = &[
     GREATSWORD_CHEST,
     SCYTHE_CHEST,
     WAND_CHEST,
+    WALL_CHEST,
+    SPARE_CHEST,
+    CROSSBOW_CHEST,
+    STAFF_CHEST,
     FIELD,
     STAGE_NOTE,
     LAB_START,

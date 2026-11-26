@@ -71,6 +71,14 @@ pub(super) enum DevStart {
     ScytheChest,
     /// 넷째 지역 운반 회랑 서쪽 끝 곁방의 상자 곁(0274 ⑥ — 맡겨진 완드가 나오는 곳 판정) — 기록은 쓰지 않는다.
     WandChest,
+    /// 첫 지역 성벽길의 상자 곁(0274 ⑦ — 옛 쇠뇌 상자, 이제 숫돌) — 기록은 쓰지 않는다.
+    WallChest,
+    /// 첫 지역 뜰 남동 단의 상자 곁(0274 ⑦ — 옛 지팡이 상자, 이제 여벌) — 기록은 쓰지 않는다.
+    SpareChest,
+    /// 넷째 지역 서쪽 작업대 구석의 상자 곁(0274 ⑦ — 화약 쇠뇌가 나오는 곳 판정) — 기록은 쓰지 않는다.
+    CrossbowChest,
+    /// 넷째 지역 위층 회랑 동쪽 벽 밑의 상자 곁(0274 ⑦ — 순례자 지팡이가 나오는 곳 판정) — 기록은 쓰지 않는다.
+    StaffChest,
     /// 첫 지역의 필드 보스 터 들머리(0270 D — 엎드린 고요한 사슴·끈·떨굼·쉬어도 다시 서지 않음 판정) — 기록은 쓰지 않는다.
     Field,
     /// PoC·개발 아레나(`scenario::LIST`).
@@ -96,7 +104,7 @@ pub(super) enum DevStart {
 }
 
 /// 줄 표(묶음, 시작할 것) — 묶음 안 순서 = 표 순서. 전투·적 첫 줄 = 보스 아레나(시험 스크립트: 오른쪽 둘 · 확인).
-pub(super) const DEV_LIST: [(DevCat, DevStart); 55] = [
+pub(super) const DEV_LIST: [(DevCat, DevStart); 59] = [
     (DevCat::Tools, DevStart::Lab),
     (DevCat::Tools, DevStart::Scenario(Scenario::Empty)),
     (DevCat::Motion, DevStart::Motion(0)),
@@ -143,6 +151,11 @@ pub(super) const DEV_LIST: [(DevCat, DevStart); 55] = [
     (DevCat::Stage, DevStart::ScytheChest),
     // 0274 ⑥: 역시 끝에.
     (DevCat::Stage, DevStart::WandChest),
+    // 0274 ⑦: 역시 끝에.
+    (DevCat::Stage, DevStart::WallChest),
+    (DevCat::Stage, DevStart::SpareChest),
+    (DevCat::Stage, DevStart::CrossbowChest),
+    (DevCat::Stage, DevStart::StaffChest),
     (DevCat::Combat, DevStart::Scenario(Scenario::Boss)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Pillars)),
     (DevCat::Combat, DevStart::Scenario(Scenario::Duel)),
@@ -194,6 +207,10 @@ impl DevStart {
             DevStart::GreatswordChest => t(dv::GREATSWORD_CHEST),
             DevStart::ScytheChest => t(dv::SCYTHE_CHEST),
             DevStart::WandChest => t(dv::WAND_CHEST),
+            DevStart::WallChest => t(dv::WALL_CHEST),
+            DevStart::SpareChest => t(dv::SPARE_CHEST),
+            DevStart::CrossbowChest => t(dv::CROSSBOW_CHEST),
+            DevStart::StaffChest => t(dv::STAFF_CHEST),
             DevStart::Field => t(dv::FIELD),
             DevStart::Scenario(sc) => {
                 let e = scenario::entry(sc);
@@ -228,6 +245,10 @@ impl DevStart {
             | DevStart::GreatswordChest
             | DevStart::ScytheChest
             | DevStart::WandChest
+            | DevStart::WallChest
+            | DevStart::SpareChest
+            | DevStart::CrossbowChest
+            | DevStart::StaffChest
             | DevStart::Field => t(dv::STAGE_NOTE).to_string(),
             DevStart::Scenario(sc) => {
                 let n = scenario::LIST
@@ -414,36 +435,62 @@ impl App {
             | DevStart::DaggerChest
             | DevStart::GreatswordChest
             | DevStart::ScytheChest
-            | DevStart::WandChest => {
+            | DevStart::WandChest
+            | DevStart::WallChest
+            | DevStart::SpareChest
+            | DevStart::CrossbowChest
+            | DevStart::StaffChest => {
+                use crate::stage::Loot;
+                use crate::weapons::Id as W;
                 self.dev.run = true;
                 self.restart();
-                // 대검 · 낫의 상자는 셋째 지역(두 문지기를 이긴 셈), 완드는 넷째 지역(작업층 — 셋을 이긴 셈), 나머지는 둘째 지역.
+                // 대검 · 낫의 상자는 셋째 지역(두 문지기를 이긴 셈), 완드 · 쇠뇌 · 지팡이는 넷째 지역(작업층 — 셋을 이긴 셈), 성소의 옛 무기
+                // 상자 둘(0274 ⑦)은 첫 지역(건너지 않는다), 나머지는 둘째 지역.
                 let region = match e {
                     DevStart::GreatswordChest | DevStart::ScytheChest => 2,
-                    DevStart::WandChest => 3,
+                    DevStart::WandChest | DevStart::CrossbowChest | DevStart::StaffChest => 3,
+                    DevStart::WallChest | DevStart::SpareChest => 0,
                     _ => 1,
                 };
-                self.down = region;
-                self.cross_to(region, false);
-                let weapon = match e {
-                    DevStart::SpearChest => Some(crate::weapons::Id::Spear),
-                    DevStart::DaggerChest => Some(crate::weapons::Id::Daggers),
-                    DevStart::GreatswordChest => Some(crate::weapons::Id::Greatsword),
-                    DevStart::ScytheChest => Some(crate::weapons::Id::Scythe),
-                    DevStart::WandChest => Some(crate::weapons::Id::Wand),
+                if region > 0 {
+                    self.down = region;
+                    self.cross_to(region, false);
+                }
+                let loot = match e {
+                    DevStart::SpearChest => Some(Loot::Weapon(W::Spear)),
+                    DevStart::DaggerChest => Some(Loot::Weapon(W::Daggers)),
+                    DevStart::GreatswordChest => Some(Loot::Weapon(W::Greatsword)),
+                    DevStart::ScytheChest => Some(Loot::Weapon(W::Scythe)),
+                    DevStart::WandChest => Some(Loot::Weapon(W::Wand)),
+                    DevStart::CrossbowChest => Some(Loot::Weapon(W::Crossbow)),
+                    DevStart::StaffChest => Some(Loot::Weapon(W::Staff)),
+                    DevStart::WallChest => Some(Loot::Stone),
+                    DevStart::SpareChest => Some(Loot::Spare),
                     _ => None,
                 };
-                let which = match weapon {
-                    Some(w) => self
-                        .run
-                        .def
-                        .chest_loot
-                        .iter()
-                        .position(|l| *l == crate::stage::Loot::Weapon(w)),
+                let which = match loot {
+                    Some(l) => self.run.def.chest_loot.iter().position(|x| *x == l),
                     None => Some(0),
                 };
                 if let Some(&at) = which.and_then(|i| self.run.chest.at.get(i)) {
-                    self.world.player.pos = at + vec3(-1.2, 0.0, 0.0);
+                    // 서쪽 곁부터 — 벽 · 다른 높이면 동 · 남 · 북(0274 ⑦: 작업대 구석의 상자는 서쪽이 벽이다).
+                    let g = self.run.level.ground();
+                    let floor = |p: Vec3| {
+                        g.cell_of(p).is_some_and(|(x, z)| {
+                            !matches!(g.at(x, z), crate::ground::Cell::Solid)
+                                && (g.height(p) - g.height(at)).abs() < 0.1
+                        })
+                    };
+                    let side = [
+                        vec3(-1.2, 0.0, 0.0),
+                        vec3(1.2, 0.0, 0.0),
+                        vec3(0.0, 0.0, 1.2),
+                        vec3(0.0, 0.0, -1.2),
+                    ]
+                    .into_iter()
+                    .find(|d| floor(at + *d))
+                    .unwrap_or(vec3(-1.2, 0.0, 0.0));
+                    self.world.player.pos = at + side;
                     self.world.player.prev = self.world.player.pos;
                     self.cam = self.cam.renew(self.world.player.pos, &self.t);
                 }
