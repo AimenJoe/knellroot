@@ -1,6 +1,6 @@
 //! 스킬 트리의 셈 `Board`(점수 · 사기 · 뒤집기 · 되돌리기 — 순수, 0158 G0·G1 → 0161).
 use super::*;
-use crate::progression::{Branch, Cell, Tree, Vein, KEYS, VEINS};
+use crate::progression::{Branch, Cell, Tree, Vein, VEINS};
 
 /// 기술 점수(0158 나 → 0161): 줍는 화폐가 아니라 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 수 + **핵**(보스를 이길 때마다, 보스마다
 /// `progression::CORE_CAP`까지 — 부르는 쪽이 자른 수) + 주운 **종소리 조각**. 핵·조각은 옛 나무 화폐 "마디"였다 — 이제 점수의 샘이다.
@@ -347,7 +347,7 @@ impl Board {
             ult: [ULT_MAX_RANK; NU],
             // 맺음은 하나만(0214) — 첫째를 켠다.
             cells: Tree {
-                key: Some(KEYS[0]),
+                key: Some(crate::progression::KEYS[0]),
                 ..Tree::full()
             },
         }
