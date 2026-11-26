@@ -28,6 +28,7 @@ mod toss;
 mod touch_aim;
 mod turn;
 mod veins;
+mod wand;
 mod weapon_swap;
 
 /// 높낮이 시험 마당(0043): 5×6칸(2m). 맨 윗줄(가장 -z)은 높이 `ledge`인 단, 나머지는 바닥 0.

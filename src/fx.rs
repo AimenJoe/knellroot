@@ -1341,6 +1341,12 @@ impl Fx {
                 self.dust_ring(g, 0.5, 8, 3.2, 0.5, DUST);
                 let _ = at;
             }
+            // 저주탄을 날렸다(0274 ⑥ — 완드의 주된 공격): 돌끝의 작은 하늘빛 별 + 앞으로 흩어지는 잿빛 부스러기 몇(탄은 렌더가 `bolts`로).
+            Event::Cast { at, look } if look == crate::weapons::CURSE => {
+                let fwd = w.player.facing_dir();
+                self.star(at, 0.7, 0.07, SKY);
+                self.spray(at, fwd, 0.4, 4, 3.0, Shape::Dot, 0.05, 0.22, 0.0, SKY, ASH);
+            }
             // 가시 씨앗을 던졌다(0274 ⑤): 손의 작은 민트 별 + 흩어지는 흙 몇(씨가 날아가는 것은 렌더가 `smites`로).
             Event::Cast { at, look } if look == crate::weapons::SEED => {
                 self.star(at, 0.8, 0.08, MINT);
@@ -1695,6 +1701,8 @@ impl Fx {
                     crate::status::Kind::Root => (ROOT, STONE, fade(DUST), 3.5, 0.2),
                     // 화약 덫(0272): 노란 충격빛 고리와 위로 튀는 흰 불똥.
                     crate::status::Kind::Shock => (SHOCK, WHITE_HOT, fade(AMBER), 4.5, 0.2),
+                    // 시드는 그늘(0274 ⑥ — 균열): 하늘빛 고리가 조여들고 잿빛 부스러기가 천천히 가라앉는다.
+                    crate::status::Kind::Rift => (SKY, SKY, fade(ASH), -0.8, 1.3),
                     _ => (AMBER, GOLD, fade(AMBER), 2.2, 0.1),
                 };
                 self.mark(
@@ -1858,6 +1866,91 @@ impl Fx {
                         STEEL,
                     );
                 }
+            }
+            // 치른 값(0274 ⑥): 첫 박 = 몸에서 둘레 끝까지 번지는 하늘빛(균열) 고리 + 잿빛 연기가 땅을 쓴다, 마지막 박 = 큰 흰 별 + 둘레
+            // 끝에서 안으로 조여드는 쇳빛(울림) 고리 둘 + 솟는 쇳빛 — 보라 · 빨강은 쓰지 않는다.
+            Event::PricePulse { at, radius, last } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                if last {
+                    self.star(g + Vec3::Y * 1.2, 2.4, 0.14, WHITE_HOT);
+                    for (r0, life) in [(radius, 0.4), (radius * 0.7, 0.55)] {
+                        self.mark_with(
+                            g,
+                            MarkKind::Ring { r0, r1: 0.4 },
+                            life,
+                            STEEL,
+                            0.06,
+                            false,
+                            false,
+                        );
+                    }
+                    self.rise(
+                        g,
+                        radius * 0.8,
+                        16,
+                        Shape::Dot,
+                        (0.1, 0.05),
+                        0.7,
+                        STEEL,
+                        COOL,
+                        false,
+                    );
+                } else {
+                    self.mark_with(
+                        g,
+                        MarkKind::Ring {
+                            r0: 0.4,
+                            r1: radius,
+                        },
+                        0.35,
+                        SKY,
+                        0.0,
+                        false,
+                        false,
+                    );
+                    self.dust_ring(g, radius * 0.6, 14, 3.0, 0.5, SMOKE);
+                }
+            }
+            // 저주의 표가 새겨졌다(0274 ⑥): 그 적 몸의 작은 하늘빛 별 + 몸으로 모여드는 잿빛.
+            Event::Hexed { at } => {
+                self.star(at, 1.0, 0.1, SKY);
+                self.implode(at, 0.9, 8, ASH);
+            }
+            // 저주가 옮았다(0274 ⑥): 쓰러진 자리에서 다음 적으로 잇는 하늘빛 줄(점 여럿이 그 길을 따라 난다) + 닿은 몸의 별.
+            Event::HexJump { from, to } => {
+                let d = to - from;
+                for k in 0..8 {
+                    let p = from + d * (k as f32 / 8.0);
+                    self.push(Part {
+                        pos: p,
+                        vel: d.normalize_or_zero() * 2.0,
+                        age: 0.0,
+                        life: 0.25 + 0.03 * k as f32,
+                        size: (0.08, 0.03),
+                        color: (SKY, fade(ASH)),
+                        gravity: 0.0,
+                        drag: 1.0,
+                        shape: Shape::Dot,
+                        decor: false,
+                    });
+                }
+                self.star(to, 0.9, 0.08, SKY);
+            }
+            // 죽음의 울림(0274 ⑥ — 주특성 치른 값): 금 간 채 쓰러진 자리에서 번지는 쇳빛(울림) 고리 한 겹.
+            Event::DeathKnell { at } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                self.mark_with(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.3,
+                        r1: crate::weapons::DEATH_KNELL_R,
+                    },
+                    0.35,
+                    STEEL,
+                    0.0,
+                    false,
+                    false,
+                );
             }
             // 깨어나는 숲(0274 ⑤): 고리마다 그 둘레까지 번지는 뿌리빛(민트) 고리 + 둘레의 먼지 + 튀는 흙, 마지막은 큰 흰 별 + 풀빛(흡수)
             // 고리 + 위로 떠오르는 풀빛 — 솟는 가시 뿌리 자체는 렌더가(`skill_spikes`).
@@ -2041,6 +2134,11 @@ impl Fx {
                         let f = w.player.facing_dir();
                         self.star(pp + Vec3::Y * 1.0 + f * 0.6, 1.2, 0.3, STEEL);
                         self.implode(g, 2.0, 10, SMOKE);
+                    }
+                    // 0274 ⑥: 치른 값 = 든 완드 끝의 하늘빛 별 + 발밑으로 모이는 잿빛 연기(값이 걷히기 전).
+                    crate::skills::Ult::Price => {
+                        self.star(pp + Vec3::Y * 1.5, 1.4, 0.3, SKY);
+                        self.implode(g, 3.0, 14, SMOKE);
                     }
                     // 0274 ⑤: 깨어나는 숲 = 땅을 짚는 손의 민트 별 + 발밑으로 모이는 뿌리빛(땅이 깨어나기 전).
                     crate::skills::Ult::Grove => {
@@ -2627,6 +2725,37 @@ impl Fx {
                     GOLD,
                     MINT,
                 );
+            }
+            // 저주 새기기(0274 ⑥): 내민 완드 끝의 하늘빛 별 + 앞으로 곧게 뻗는 가는 잿빛 줄(새김은 맞은 적의 `Hexed`가).
+            (Sk::Hex, Form::Hex { .. }) => {
+                let hand = g + Vec3::Y * 1.1 + dir * 0.6;
+                self.star(hand, 1.0, 0.08, SKY);
+                self.spray(
+                    hand,
+                    dir,
+                    0.15,
+                    6,
+                    9.0,
+                    Shape::Streak,
+                    0.05,
+                    0.2,
+                    0.0,
+                    SKY,
+                    ASH,
+                );
+            }
+            // 시드는 그늘(0274 ⑥): 놓인 자리에서 퍼지는 하늘빛 고리 + 둘레에서 가라앉는 잿빛(그늘이 드리운다 — 치는 것은 그늘의 타).
+            (Sk::Blight, Form::Drift { radius, .. }) => {
+                self.mark(
+                    g,
+                    MarkKind::Ring {
+                        r0: 0.3,
+                        r1: radius,
+                    },
+                    0.35,
+                    SKY,
+                );
+                self.dust_ring(g, radius * 0.8, 12, 1.5, 0.5, SMOKE);
             }
             // 눈발(0270 C3): 놓인 자리 위에서 퍼지는 흰 서리빛 고리 + 위에서 내려앉는 눈송이(별 없음 — 치는 것은 눈발의 타).
             (Sk::Snow, Form::Drift { radius, .. }) => {
@@ -3416,6 +3545,23 @@ mod tests {
                 dir,
                 last: false,
             },
+            // 0274 ⑥: 완드 판의 큰 기술 · 저주의 표 · 죽음의 울림.
+            Event::PricePulse {
+                at,
+                radius: 5.0,
+                last: false,
+            },
+            Event::PricePulse {
+                at,
+                radius: 5.0,
+                last: true,
+            },
+            Event::Hexed { at },
+            Event::HexJump {
+                from: at,
+                to: at + dir * 3.0,
+            },
+            Event::DeathKnell { at },
             // 0274 ⑤: 낫 판의 큰 기술.
             Event::GrovePulse {
                 at,
@@ -3642,6 +3788,10 @@ mod tests {
                 look: crate::weapons::SEED,
             },
             Event::Sprout { at, radius: 1.6 },
+            Event::Cast {
+                at,
+                look: crate::weapons::CURSE,
+            },
             Event::JavelinBack { at },
             Event::Prayer { at, radius: 3.0 },
             Event::SnareSet { at },
@@ -3919,6 +4069,10 @@ mod tests {
                 look: crate::weapons::SEED,
             },
             Event::Sprout { at, radius: 1.6 },
+            Event::Cast {
+                at,
+                look: crate::weapons::CURSE,
+            },
             Event::JavelinBack { at },
             Event::Prayer { at, radius: 3.0 },
             Event::SnareSet { at },

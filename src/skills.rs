@@ -43,12 +43,14 @@ pub const DAGGER: Hands = class_bit(Class::Dagger);
 pub const GREATSWORD: Hands = class_bit(Class::Greatsword);
 /// 낫(0274 ⑤ — 한 손의 휜 날: 한손검 · 망치처럼 방패와 든다 — 방패를 들면 방패 판).
 pub const SCYTHE: Hands = class_bit(Class::Scythe);
+/// 완드(0274 ⑥ — 한 손에 드는 짧은 막대지만 다른 손은 저주의 꼴을 그린다: 방패와 들지 않는다 — 두 손이 다 찬다).
+pub const WAND: Hands = class_bit(Class::Wand);
 /// 한손 계열과 방패(방패 판의 기술).
 pub const SHIELD: Hands = 1 << 15;
-/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도, ⑤부터 낫도) · 양손 근접(지팡이 · 창 · 쌍단검 · 대검 — 두 손이 다 찬다) · 근접 ·
+/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도, ⑤부터 낫도) · 양손 근접(지팡이 · 창 · 쌍단검 · 대검 · 완드 — 두 손이 다 찬다) · 근접 ·
 /// 원거리 · 어느 것이나.
 pub const ONE: Hands = SWORD | HAMMER | SCYTHE | SHIELD;
-pub const TWO: Hands = STAFF | SPEAR | DAGGER | GREATSWORD;
+pub const TWO: Hands = STAFF | SPEAR | DAGGER | GREATSWORD | WAND;
 pub const MELEE: Hands = ONE | TWO;
 pub const RANGED: Hands = CROSSBOW | BOW;
 pub const ANY: Hands = MELEE | RANGED;
@@ -183,6 +185,10 @@ pub enum Form {
         most: u8,
         time: f32,
     },
+    /// 저주 새기기(0274 ⑥ — 완드·균열, BG3 흑마법사의 "Hex"): 앞 `range` m 안의 적 하나(크로스헤어 > 조준 > 락온 > 가장 가까운)에게
+    /// 저주를 새긴다 — 표의 피해 + 균열, `secs`초 동안 그 적에 표가 남고(`Enemy::marks.hex`), 표가 남은 채 쓰러지면 둘레 `spread` m 안의
+    /// 가장 가까운 적에게 옮는다(남은 초 그대로 · 균열을 다시 가득 — `World::tick_embers`). 앞이 비면 허공에 흩어진다(대기는 쓴다).
+    Hex { range: f32, secs: f32, spread: f32 },
     /// 뿌리 솟기(0214): 앞 `len` m를 `step` m 간격으로 뿌리가 `every`초마다 차례로 솟는다 — 솟은 자리 둘레 `radius` m의 적을 한 번씩
     /// 찌르고 `stagger`초 휘청(보스는 아니다).
     Erupt {
@@ -215,7 +221,7 @@ impl Form {
     pub fn sighted(&self) -> bool {
         matches!(
             self,
-            Form::Throw { .. } | Form::Hop { .. } | Form::Bell { .. }
+            Form::Throw { .. } | Form::Hop { .. } | Form::Bell { .. } | Form::Hex { .. }
         )
     }
 }
@@ -331,10 +337,14 @@ pub enum Id {
     Reap,
     /// 생기 거두기(0274 ⑤ — 낫·흡수): 몸 둘레를 한 바퀴 거두며 벤 적마다 체력을 되찾는다.
     Harvest,
+    /// 저주 새기기(0274 ⑥ — 완드·균열): 한 적에게 저주를 새긴다 — 금이 가고, 그 적이 쓰러지면 가까운 적에게 옮는다(BG3 흑마법사의 Hex 결).
+    Hex,
+    /// 시드는 그늘(0274 ⑥ — 완드·균열): 겨눈 쪽 앞에 그늘을 드리운다 — 그 안의 적을 거듭 치며 금을 쌓는다.
+    Blight,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 32] = [
+pub const IDS: [Id; 34] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -367,6 +377,8 @@ pub const IDS: [Id; 32] = [
     Id::Sear,
     Id::Reap,
     Id::Harvest,
+    Id::Hex,
+    Id::Blight,
 ];
 pub const N: usize = IDS.len();
 
@@ -689,6 +701,21 @@ impl Skill {
                         _ => 1.0,
                     },
             },
+            // 저주 새기기(0274 ⑥): 4단의 치수는 닿는 거리 · 옮는 둘레에, 멀리 옮는 저주(ㄱ)는 옮는 둘레에.
+            Form::Hex {
+                range,
+                secs,
+                spread,
+            } => Form::Hex {
+                range: range * size,
+                secs,
+                spread: spread
+                    * size
+                    * match twist {
+                        Some(Twist::Big { mult }) => mult,
+                        _ => 1.0,
+                    },
+            },
             Form::Pull {
                 range,
                 arc_deg,
@@ -921,6 +948,7 @@ impl Skill {
             | Form::Field { .. }
             | Form::Bash { .. }
             | Form::Bell { .. }
+            | Form::Hex { .. }
             | Form::Drift { .. }
             | Form::Trap { .. }
             | Form::Rally { .. } => 0.0,
@@ -1084,7 +1112,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.10, 1.20, 0.35],
         },
         row: 0,
-        hands: MELEE & !DAGGER,
+        // 0274 ⑥: 완드(흑마법사)는 버티지 않는다 — 떼 한가운데서 맞으며 버티는 결이 아니다(완드 판에 서지 않게 묶음에서 뺀다).
+        hands: MELEE & !DAGGER & !WAND,
         kind: Kind::Drain,
         build: 1.0,
         branch: Branch::Riposte,
@@ -1110,7 +1139,8 @@ pub const SKILLS: [Skill; N] = [
         },
         row: 1,
         // 0274 ④: 한손검(전사)도 — 방패 없이 받아치면 둘레가 울린다(한손검 판 가운데 둘째 줄이 비어 있었다).
-        hands: SHIELD | SWORD | STAFF | RANGED,
+        // 0274 ⑥: 완드(흑마법사)도 — 받아친 손이 둘레를 울린다(완드 판의 울림 계열 둘째 줄).
+        hands: SHIELD | SWORD | STAFF | RANGED | WAND,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -1349,7 +1379,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.20, 0.0, 0.30],
         },
         row: 0,
-        hands: SHIELD | HAMMER,
+        // 0274 ⑥: 완드(흑마법사)도 — 한 적에게 울림을 걸어 곧 터뜨린다(완드 판의 울림 계열 첫 줄 — 죽음의 울림을 부른다).
+        hands: SHIELD | HAMMER | WAND,
         kind: Kind::Knell,
         build: 0.5,
         branch: Branch::Riposte,
@@ -1919,6 +1950,66 @@ pub const SKILLS: [Skill; N] = [
         ],
         cap: Cap::Stun { stagger: 0.6 },
     },
+    // ---- 0274 ⑥: 완드 = 흑마법사(균열 · 울림) ----
+    // 저주 새기기: 앞 8 m 안의 한 적에게 저주를 새긴다 — 피해 10 · 균열 가득(보통 적은 곧바로 금이 간다), 표는 6초 남고 그 적이 표를 지닌 채
+    // 쓰러지면 둘레 4 m의 가장 가까운 적에게 옮는다(남은 초 그대로 · 균열 다시 가득). 멀리 옮는 저주(ㄱ — 옮는 둘레 ×1.5) · 두 갈래(ㄴ —
+    // 가까운 둘에게 옮는다: 종 치기의 두 번 울림과 같은 칸) · 최종 효과 = 옮을 때 쓰러진 자리가 울린다(둘레 피해 10 · 울림 — 되울림의 맺음과 같은 칸).
+    Skill {
+        id: Id::Hex,
+        cooldown: 9.0,
+        startup: 0.22,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 0.5,
+        form: Form::Hex {
+            range: 8.0,
+            secs: 6.0,
+            spread: 4.0,
+        },
+        anim: "cast",
+        clip: Clip {
+            name: "sk_hex",
+            seg: [0.22, 0.0, 0.30],
+        },
+        row: 0,
+        hands: WAND,
+        kind: Kind::Rift,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [Twist::Big { mult: 1.5 }, Twist::Twice],
+        cap: Cap::Toll { damage: HP_UNIT },
+    },
+    // 시드는 그늘: 겨눈 쪽 4.5 m 앞에 둘레 2.6 m의 그늘을 4초 드리운다 — 1초마다 그 안의 적을 치고(10) 균열을 쌓는다(0.35 — 셋이면 금).
+    // 흐르는 그늘(ㄱ — 겨눈 쪽으로 흘러간다) · 넓은 그늘(ㄴ — 둘레 ×1.4) · 최종 효과 = 1초 더 남고 타마다 자세 피해 1(눈발과 같은 칸들).
+    Skill {
+        id: Id::Blight,
+        cooldown: 10.0,
+        startup: 0.25,
+        recover: 0.30,
+        damage: HP_UNIT,
+        poise: 0.0,
+        form: Form::Drift {
+            ahead: 4.5,
+            radius: 2.6,
+            secs: 4.0,
+            every: 1.0,
+        },
+        anim: "cast",
+        clip: Clip {
+            name: "sk_blight",
+            seg: [0.25, 0.0, 0.30],
+        },
+        row: 1,
+        hands: WAND,
+        kind: Kind::Rift,
+        build: 0.35,
+        branch: Branch::Footing,
+        picks: [Twist::Flow { speed: 1.5 }, Twist::Big { mult: 1.4 }],
+        cap: Cap::Smolder {
+            secs: 1.0,
+            poise: 1.0,
+        },
+    },
 ];
 
 impl Id {
@@ -1964,6 +2055,8 @@ impl Id {
             Id::Sear => "sear",
             Id::Reap => "reap",
             Id::Harvest => "harvest",
+            Id::Hex => "hex",
+            Id::Blight => "blight",
         }
     }
 
@@ -2003,10 +2096,12 @@ pub enum Ult {
     Tempest,
     /// 깨어나는 숲(0274 ⑤ — 낫 판): 빈 손으로 땅을 짚어 가시 뿌리의 고리를 잇달아 바깥으로 솟게 한다 — 묶고, 마지막 고리에 거둔 만큼 되살아난다.
     Grove,
+    /// 치른 값(0274 ⑥ — 완드 판): 둘레의 적에게 저주를 퍼뜨려 금을 내고, 잠시 뒤 그 값이 울림으로 터진다 — 금 간 적은 더 크게.
+    Price,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 10] = [
+pub const ULTS: [Ult; 11] = [
     Ult::Upend,
     Ult::Flurry,
     Ult::Line,
@@ -2017,6 +2112,7 @@ pub const ULTS: [Ult; 10] = [
     Ult::Ambush,
     Ult::Tempest,
     Ult::Grove,
+    Ult::Price,
 ];
 pub const NU: usize = ULTS.len();
 
@@ -2043,6 +2139,7 @@ impl Ult {
             Ult::Ambush => "ambush",
             Ult::Tempest => "tempest",
             Ult::Grove => "grove",
+            Ult::Price => "price",
         }
     }
 
@@ -2055,7 +2152,7 @@ impl Ult {
         match self {
             Ult::Upend | Ult::Blizzard | Ult::Rain | Ult::Grove => Branch::Footing,
             Ult::Flurry | Ult::Ambush | Ult::Tempest => Branch::Beat,
-            Ult::Line | Ult::Bell | Ult::Gale => Branch::Riposte,
+            Ult::Line | Ult::Bell | Ult::Gale | Ult::Price => Branch::Riposte,
         }
     }
 
@@ -2072,6 +2169,7 @@ impl Ult {
             Ult::Ambush => AMBUSH.anim,
             Ult::Tempest => TEMPEST.anim,
             Ult::Grove => GROVE.anim,
+            Ult::Price => PRICE.anim,
         }
     }
 
@@ -2087,6 +2185,7 @@ impl Ult {
             Ult::Ambush => AMBUSH.clip,
             Ult::Tempest => TEMPEST.clip,
             Ult::Grove => GROVE.clip,
+            Ult::Price => PRICE.clip,
         }
     }
 
@@ -2103,6 +2202,7 @@ impl Ult {
             Ult::Ambush => (AMBUSH.freeze, AMBUSH.startup, AMBUSH.recover()),
             Ult::Tempest => (TEMPEST.freeze, TEMPEST.startup, TEMPEST.recover()),
             Ult::Grove => (GROVE.freeze, GROVE.startup, GROVE.recover()),
+            Ult::Price => (PRICE.freeze, PRICE.startup, PRICE.recover()),
         }
     }
 
@@ -2769,6 +2869,76 @@ impl Grove {
     }
 }
 
+/// 큰 기술 "치른 값"(0274 ⑥ — 완드 판, 흑마법사의 결 "저주로 약하게 하고 죽음의 울림을 부른다"): 세계 멈춤 뒤 완드를 들어(시동) 시동 끝에
+/// 둘레 `radius` m(2단 `radius2`) 안의 깨어 있는 적 모두에게 저주가 번진다 — `curse` 피해 · 자세 `curse_poise` · `curse_dose`(균열 가득 — 보통
+/// 적은 곧바로 금이 간다). `gap`초 뒤 그 값이 울림으로 터진다 — 같은 둘레의 적 모두에 `toll`(3단 `toll3`) · 자세 `toll_poise` · `toll_dose`
+/// (울림 가득 — 울린 적이 둘레를 다시 친다), 금 간 적은 금의 배만큼 더 다친다(주특성 치른 값이면 더). 밀지 않는다. 보스는 다치되 휘청이지
+/// 않는다. 상대를 부르지 않는다 — 무엇을 치렀는지는 화면이 말하지 않는다(0274 "계약").
+pub struct Price {
+    pub freeze: f32,
+    pub startup: f32,
+    pub gap: f32,
+    pub tail: f32,
+    pub radius: f32,
+    pub radius2: f32,
+    pub curse: i32,
+    pub curse_poise: f32,
+    pub curse_dose: Dose,
+    pub toll: i32,
+    pub toll3: i32,
+    pub toll_poise: f32,
+    pub toll_dose: Dose,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const PRICE: Price = Price {
+    freeze: 0.3,
+    startup: 0.3,
+    gap: 0.45,
+    tail: 0.45,
+    radius: 5.0,
+    radius2: 6.0,
+    curse: HP_UNIT,
+    curse_poise: 0.5,
+    curse_dose: (Kind::Rift, 1.0),
+    toll: 3 * HP_UNIT,
+    toll3: 5 * HP_UNIT,
+    toll_poise: 3.0,
+    toll_dose: (Kind::Knell, 1.0),
+    anim: "cast",
+    // 완드를 들어 올렸다 내리꽂는 시전(지팡이 판의 눈보라와 같은 원본 Charged_Axe_Chop) — 멈춤 · 시동(번지는 저주) · 후딜(터지는 울림).
+    clip: Clip {
+        name: "ult_price",
+        seg: [0.30, 0.30, 0.90],
+    },
+};
+
+impl Price {
+    /// 후딜(초): 터지는 울림(시동 끝에서 `gap`초)이 이 안에.
+    pub const fn recover(&self) -> f32 {
+        self.gap + self.tail
+    }
+
+    /// `rank`단의 둘레(m).
+    pub fn radius_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.radius2
+        } else {
+            self.radius
+        }
+    }
+
+    /// `rank`단의 터지는 울림의 피해.
+    pub fn toll_at(&self, rank: u8) -> i32 {
+        if rank >= ULT_MAX_RANK {
+            self.toll3
+        } else {
+            self.toll
+        }
+    }
+}
+
 /// 큰 기술의 단(0158 다): 쟁반 뒤집기는 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·
 /// 3단(벽에 박힌 피해 ×1.5). 몰아치기·한 줄기는 줄이 열리면 2점으로 배우고(1단) 2·3단은 1점씩.
 pub const ULT_MAX_RANK: u8 = 3;
@@ -2948,6 +3118,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Sear),
     // 0274 ⑤ — 낫 판의 뿌리 갈래 첫 줄
     Entry::Skill(Id::Reap),
+    // 0274 ⑥ — 완드 판의 균열 갈래 첫 줄
+    Entry::Skill(Id::Hex),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -2978,6 +3150,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Sunder),
     // 0274 ⑤ — 낫 판의 둘째 줄(흡수)
     Entry::Skill(Id::Harvest),
+    // 0274 ⑥ — 완드 판의 둘째 줄(균열)
+    Entry::Skill(Id::Blight),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -2998,6 +3172,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Ult(Ult::Tempest),
     // 0274 ⑤ — 낫 판의 큰 기술
     Entry::Ult(Ult::Grove),
+    // 0274 ⑥ — 완드 판의 큰 기술
+    Entry::Ult(Ult::Price),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),
@@ -3857,7 +4033,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 48] = [
+        let table: [(usize, Branch, &[Entry]); 51] = [
             (
                 0,
                 Beat,
@@ -3892,6 +4068,8 @@ mod tests {
             (0, Beat, &[S(Id::Sear)]),
             // 0274 ⑤: 낫 판.
             (0, Footing, &[S(Id::Reap)]),
+            // 0274 ⑥: 완드 판.
+            (0, Riposte, &[S(Id::Hex)]),
             (
                 1,
                 Beat,
@@ -3924,6 +4102,7 @@ mod tests {
             (1, Beat, &[S(Id::Slip)]),
             (1, Footing, &[S(Id::Sunder)]),
             (1, Riposte, &[S(Id::Harvest)]),
+            (1, Footing, &[S(Id::Blight)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -3933,6 +4112,7 @@ mod tests {
             (2, Beat, &[U(Ult::Ambush)]),
             (2, Beat, &[U(Ult::Tempest)]),
             (2, Footing, &[U(Ult::Grove)]),
+            (2, Riposte, &[U(Ult::Price)]),
             (
                 3,
                 Beat,
@@ -3979,7 +4159,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 78);
+        assert_eq!(NE, 81);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -4801,7 +4981,8 @@ mod tests {
                 Ult::Gale,
                 Ult::Ambush,
                 Ult::Tempest,
-                Ult::Grove
+                Ult::Grove,
+                Ult::Price
             ]
         );
         for u in ULTS {
@@ -4978,7 +5159,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 42] = [
+    const FACES: [(&str, Face); 45] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -5027,6 +5208,10 @@ mod clip_facing {
         ("sk_reap", Face::Hips),
         ("sk_harvest", Face::Spin),
         ("ult_grove", Face::Hips),
+        // 0274 ⑥ 완드.
+        ("sk_hex", Face::Hips),
+        ("sk_blight", Face::Hips),
+        ("ult_price", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {

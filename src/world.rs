@@ -412,6 +412,25 @@ pub enum Event {
         radius: f32,
         last: bool,
     },
+    /// 치른 값(0274 ⑥ — 완드 판의 큰 기술)의 한 박 — `at`(방랑자) 둘레 `radius` m: 첫 박 = 번지는 저주(균열), 마지막 박(`last`) = 터지는 울림.
+    PricePulse {
+        at: Vec3,
+        radius: f32,
+        last: bool,
+    },
+    /// 저주 새기기(0274 ⑥): `at`의 적에게 저주의 표가 새겨졌다.
+    Hexed {
+        at: Vec3,
+    },
+    /// 저주가 옮았다(0274 ⑥): 표를 지닌 채 쓰러진 `from`에서 `to`의 적으로.
+    HexJump {
+        from: Vec3,
+        to: Vec3,
+    },
+    /// 죽음의 울림(0274 ⑥ — 완드의 주특성 치른 값): 금 간 채 쓰러진 `at`의 둘레로 울림이 번졌다.
+    DeathKnell {
+        at: Vec3,
+    },
     /// 기도하는 손(0276 — 망치의 빈 손): 한 모금을 삼킨 순간 둘레 `radius` m에 울림 고리가 퍼졌다.
     Prayer {
         at: Vec3,
@@ -1079,6 +1098,8 @@ pub struct World {
     /// 스킬이 남긴 것(0158 G1): 곧 터질 "모인 자리"(끌어모으기 ㄱ), 남은 갈라진 땅(땅울림 ㄴ — 렌더가 읽는다).
     pub skill_bursts: Vec<skill_tick::Burst>,
     pub skill_zones: Vec<skill_tick::Zone>,
+    /// 이 틱에 막 쓰러진 적의 자리 번호(0274 ⑥ — `tick_embers`가 채우고 `after_deaths`가 그 자리의 표를 읽는다).
+    fallen: Vec<usize>,
     /// 0158 G2: 던진 무기(던지기 — 렌더가 그 자리에 무기를 그린다), 남은 불티(잔불 흩기), 버티는 동안 받아낸 조각을 던진 적(버팀 ㄴ).
     pub skill_blades: Vec<skill_tick::Blade>,
     pub skill_fields: Vec<skill_tick::Field>,
@@ -1255,6 +1276,7 @@ impl World {
             swap_full: false,
             skill_kill_left: 0.0,
             skill_bursts: Vec::new(),
+            fallen: Vec::new(),
             skill_zones: Vec::new(),
             skill_blades: Vec::new(),
             skill_fields: Vec::new(),
@@ -1558,6 +1580,7 @@ impl World {
             keen: self.keen(),
             sneak: (sneak > 1.0).then_some((self.player.pos, sneak)),
             sure: false,
+            hex: self.player.weapon.art().hex,
         }
     }
 
@@ -1595,6 +1618,16 @@ impl World {
     /// 지금 RB의 탄 둘(보통 · 모은 것) — 쏠 때 · 미리보기 · 그림이 같이 읽는다. 땅을 짚는 손(0274 ⑤ — 낫의 빈 손)이면 가시 씨앗이
     /// 솟는 둘레가 넓다(`BARE_GROUND_REACH` — 솟는 둘레는 탄의 `scale`이다).
     pub fn rb_bolts(&self) -> (weapons::Bolt, weapons::Bolt) {
+        let (mut a, mut b) = self.rb_bolts_plain();
+        // 입에 붙은 말(0274 ⑥ — 완드를 멘 보조특성): 종류의 원거리 수단(사격 무기의 볼트 · 화살은 아니다)의 피해 +.
+        if !a.is_shot() {
+            a.damage += self.stats.toss_dmg;
+            b.damage += self.stats.toss_dmg;
+        }
+        (a, b)
+    }
+
+    fn rb_bolts_plain(&self) -> (weapons::Bolt, weapons::Bolt) {
         if self.shield_throws() {
             (weapons::SHIELD_TOSS.bolt, weapons::SHIELD_TOSS.charged)
         } else {
@@ -1654,12 +1687,12 @@ impl World {
         Some(h)
     }
 
-    /// RB 칸의 수(0111 — 두 손으로 엮는 지팡이 0276은 하나 더).
+    /// RB 칸의 수(0111 — 두 손으로 엮는 지팡이 0276은 하나 더, 0274 ⑥: 완드의 저주탄은 종류의 칸 `Toss::charges`).
     pub fn cast_charges(&self) -> f32 {
         if self.bare() == Some(weapons::Bare::Weave) {
             weapons::BARE_STAFF_CHARGES
         } else {
-            CAST_CHARGES
+            self.rb_toss().map_or(CAST_CHARGES, |r| r.charges)
         }
     }
 
@@ -2210,9 +2243,12 @@ impl World {
 
     /// 잔불(0064 M1): 막 쓰러진 적은 제 값을 흩고, 바닥의 조각은 튀고·끌리고·주워진다.
     fn tick_embers(&mut self, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
+        // 이 틱에 막 쓰러진 적(0274 ⑥ — `after_deaths`가 그 자리의 표를 읽는다).
+        self.fallen.clear();
         for (i, en) in self.enemies.iter_mut().enumerate() {
             if !en.alive() && !en.dropped {
                 en.dropped = true;
+                self.fallen.push(i);
                 let seed = (self.time * 1000.0) as u32 ^ (i as u32).wrapping_mul(2654435761);
                 // 잔불 주머니(0064 M3): 값에 배. 엘리트(0112)는 × `ELITE_EMBERS`.
                 let elite = if en.elite.is_some() { ELITE_EMBERS } else { 1 };
@@ -2241,6 +2277,8 @@ impl World {
                 }
             }
         }
+        // 쓰러진 자리에서 일어나는 것(0274 ⑥ — 완드): 죽음의 울림 · 옮는 저주 · 계약의 표.
+        self.after_deaths(t, ev);
         let to = self.player.pos + Vec3::Y * 0.9;
         let ground = self.ground.as_ref();
         let mut got = 0;
@@ -2773,6 +2811,8 @@ struct Strike {
     cleave: u8,
     /// 걸어 당기기(0274 ⑤ 낫): 맞은 적을 이만큼(m) 끌어온다(0 = 넉백 그대로).
     pull: f32,
+    /// 맞은 적에게 쌓는 속성 게이지(0274 ⑥ 완드 — 저주를 새기는 찌르기 · 쥐었다 터뜨린 저주 = 균열). 없으면 `NO_DOSE`.
+    dose: crate::status::Dose,
 }
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
@@ -2961,7 +3001,9 @@ fn hurt_by(en: &Enemy, base: i32, crit: bool, opened: i32, knack: Knack, t: &Tun
     } else {
         1.0
     };
-    let k = frail.max(rift_mult(en));
+    // 치른 값(0274 ⑥ — 완드의 손): 금이 키우는 덤만 × 배(금이 없으면 1 그대로).
+    let rift = 1.0 + (rift_mult(en) - 1.0) * knack.hex.max(1.0);
+    let k = frail.max(rift);
     // 날카로움(0270 C5): 피 흘리는 적을 결투의 손이 치면 ×`SHARP_CUT_MULT` — 타마다 한 번(겹치지 않는다).
     let k = if knack.keen && en.ail.bleed > 0.0 {
         k * crate::tuning::SHARP_CUT_MULT
@@ -2997,6 +3039,8 @@ pub struct Knack {
     pub keen: bool,
     pub sneak: Option<(Vec3, f32)>,
     pub sure: bool,
+    /// 치른 값(0274 ⑥ — 완드의 주특성 `Art::hex`): 금(균열)이 키우는 피해의 덤에 곱하는 배(1 = 그대로 — 0은 1로 읽는다).
+    pub hex: f32,
 }
 
 impl Knack {
@@ -3005,6 +3049,7 @@ impl Knack {
         keen: false,
         sneak: None,
         sure: false,
+        hex: 1.0,
     };
     /// 날카로움만(시험).
     #[cfg(test)]
@@ -3012,6 +3057,7 @@ impl Knack {
         keen: true,
         sneak: None,
         sure: false,
+        hex: 1.0,
     };
 }
 

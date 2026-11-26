@@ -74,6 +74,7 @@ impl World {
                     dash: hit == weapons::DASH,
                     cleave: h.cleave,
                     pull: h.pull,
+                    dose: h.dose,
                 }
             }
             PState::Heavy {
@@ -118,6 +119,12 @@ impl World {
                     dash: false,
                     cleave: 0,
                     pull: h.pull,
+                    // 덜 모은 강공격은 반(0274 ⑥ — 완드의 쥐었다 터뜨리는 저주).
+                    dose: if full {
+                        h.dose
+                    } else {
+                        (h.dose.0, h.dose.1 * 0.5)
+                    },
                 }
             }
             _ => return,
@@ -514,6 +521,8 @@ impl World {
                 en.stance.broken = dur;
                 en.exposed = en.exposed.max(dur);
             }
+            // 타가 싣는 속성(0274 ⑥ — 완드의 셋째 찌르기 · 강공격 = 균열). 쓰러진 적에는 걸리지 않는다(`afflict`).
+            afflict(en, s.dose, ev);
             first_hit.get_or_insert((en.pos, en.radius, dir));
             ev.push(Event::Hit {
                 at: en.pos + Vec3::Y * en.height * 0.6,

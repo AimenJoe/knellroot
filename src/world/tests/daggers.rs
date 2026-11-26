@@ -45,6 +45,7 @@ fn the_sneak_attack_lands_from_behind_or_on_a_reeling_foe() {
         keen: false,
         sneak: Some((from, ART_SNEAK)),
         sure: false,
+        hex: 1.0,
     };
     let en = &w.enemies[i];
     let front = vec3(0.0, 0.0, 0.0);
@@ -320,6 +321,7 @@ fn a_boss_opens_its_weak_spot_only_from_behind() {
         keen: false,
         sneak: Some((from, ART_SNEAK)),
         sure: false,
+        hex: 1.0,
     };
     let en = &w.enemies[0];
     assert!(hurt_by(en, 100, false, 0, k(back), &t) > hurt_by(en, 100, false, 0, k(front), &t));

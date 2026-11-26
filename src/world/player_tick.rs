@@ -319,6 +319,8 @@ impl World {
         let javelin = self.rb_out();
         let shield_rb = self.shield_throws();
         let charges = self.cast_charges();
+        // 한 칸이 차는 시간의 배(0274 ⑥ — 완드의 저주탄은 빨리 찬다, 나머지는 1).
+        let refill = self.rb_toss().map_or(1.0, |r| r.refill);
         let pl = &mut self.player;
         // 그림자 걸음(0276)의 창.
         pl.off.shadow = (pl.off.shadow - dt).max(0.0);
@@ -376,7 +378,8 @@ impl World {
         }
         // 마법 칸(0111): 수류탄처럼 시간으로 찬다 — 한 칸 `cast.cooldown s`.
         if let Rb::Toss = wpn.rb {
-            pl.ranged.mana = (pl.ranged.mana + dt / t[P::CastCooldown].max(0.1)).min(charges);
+            pl.ranged.mana =
+                (pl.ranged.mana + dt / (t[P::CastCooldown] * refill).max(0.1)).min(charges);
         }
         // 공중 RB(0111): 땅에 서면 다음 점프에 다시 쏠 수 있다.
         if !matches!(pl.state, PState::Jump { .. }) {

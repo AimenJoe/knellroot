@@ -692,6 +692,11 @@ impl App {
                 // 깨어나는 숲(0274 ⑤): 고리마다 가볍게, 마지막은 큰 기술만큼.
                 Event::GrovePulse { last: true, .. } => SHAKE_ROUSE,
                 Event::GrovePulse { .. } => SHAKE_HIT,
+                // 치른 값(0274 ⑥): 번지는 저주는 가볍게, 터지는 울림은 큰 기술만큼. 새김 · 옮음은 조용히, 죽음의 울림은 가볍게.
+                Event::PricePulse { last: true, .. } => SHAKE_ROUSE,
+                Event::PricePulse { .. } => SHAKE_HIT,
+                Event::Hexed { .. } | Event::HexJump { .. } => 0.0,
+                Event::DeathKnell { .. } => SHAKE_HIT,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
@@ -744,7 +749,8 @@ impl App {
                 | Event::GaleThrust { last: true, .. }
                 | Event::AmbushStab { last: true, .. }
                 | Event::TempestSweep { last: true, .. }
-                | Event::GrovePulse { last: true, .. } => ZOOM_SMASH,
+                | Event::GrovePulse { last: true, .. }
+                | Event::PricePulse { last: true, .. } => ZOOM_SMASH,
                 // 0158 G2의 큰 순간: 땅울림이 찍는 순간, 셋을 다 받아낸 버팀의 터뜨림(받아낸 수는 다음 버팀까지 남는다).
                 Event::Skill {
                     id: crate::skills::Id::Quake,
@@ -844,6 +850,10 @@ impl App {
                 Event::SwapStrike { .. } => self.tutor.seen.swap_strikes += 1,
                 Event::Guard { .. } => self.tutor.seen.blocks += 1,
                 Event::Ail { .. } | Event::Toll { .. } => self.tutor.seen.ails += 1,
+                // 0274 ⑥: 저주탄을 날렸다(완드의 상황 힌트).
+                Event::Cast { look, .. } if *look == crate::weapons::CURSE => {
+                    self.tutor.seen.curses += 1
+                }
                 // 등잔을 한 번 마셔 보면 그 뒤로는 알리지 않는다(기록의 비트 — 판을 넘어, 0213).
                 Event::Gulp { .. } => {
                     self.tutor.seen.gulps += 1;
@@ -950,6 +960,7 @@ impl App {
             unfit: (0..2).any(|i| pl.skill.rank[i] == 0 && pl.skill.known[i] > 0),
             spare: !self.progress.bag.extras().is_empty(),
             bag_blocked: self.run.near_blocked,
+            wand: pl.weapon == crate::weapons::Id::Wand,
         };
         // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
         let flask = Tip::Flask.bit();
@@ -1368,7 +1379,10 @@ impl App {
                         | Sk::Slip
                         | Sk::Sunder
                         | Sk::Reap
-                        | Sk::Harvest => Id::Swing,
+                        | Sk::Harvest
+                        | Sk::Hex => Id::Swing,
+                        // 0274 ⑥: 시드는 그늘 = 낮은 울림.
+                        Sk::Blight => Id::Wake,
                         // 0274 ④: 불씨 휩쓸기 = 잔불 소리(달군 날).
                         Sk::Sear => Id::Ember,
                         // 0274: 재기 = 발을 딛는 둔한 소리(숨을 몰아쉬고 선다).
@@ -1419,6 +1433,9 @@ impl App {
                         // 0274 ⑤(낫): 걸어 당기기 = 둔한 소리(끌려오는 몸), 생기 거두기 = 휘두름(되찾는 소리는 `Mend`가 낸다).
                         Sk::Reap => Id::Thwack,
                         Sk::Harvest => Id::Swing,
+                        // 0274 ⑥(완드): 저주 새기기 = 쇳소리(금이 가는 소리), 시드는 그늘 = 낮은 울림(그늘이 드리운다).
+                        Sk::Hex => Id::Parry,
+                        Sk::Blight => Id::Wake,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -1444,6 +1461,11 @@ impl App {
                 // 깨어나는 숲(0274 ⑤): 고리마다 낮은 울림(땅이 솟는다), 마지막은 둔한 소리(되찾는 소리는 `Mend`가 낸다).
                 Event::GrovePulse { last: true, .. } => Id::Thwack,
                 Event::GrovePulse { .. } => Id::Wake,
+                // 치른 값(0274 ⑥): 번지는 저주 = 쇳소리(금), 터지는 울림 = 낮은 종. 저주가 옮음 = 스치는 바람, 죽음의 울림 = 가운데 종.
+                Event::PricePulse { last: true, .. } => Id::Beat,
+                Event::PricePulse { .. } => Id::Parry,
+                Event::HexJump { .. } => Id::Dodge,
+                Event::DeathKnell { .. } => Id::Beat2,
                 // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
                 Event::GreatBell { .. } => Id::Beat,
                 Event::Blizzard { .. } => Id::Beat3,
@@ -1495,6 +1517,8 @@ impl App {
             if matches!(
                 e,
                 Event::Ail { .. }
+                    | Event::DeathKnell { .. }
+                    | Event::HexJump { .. }
                     | Event::Toll { .. }
                     | Event::AilBurst { .. }
                     | Event::Shatter { .. }

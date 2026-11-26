@@ -3,7 +3,7 @@ use super::*;
 
 /// 재는 도구(0274 ②b): RB만 눌러 서 있는 적에게 `secs`초 동안 준 피해(초당) — 근접 무기는 종류의 RB(칸이 차는 대로),
 /// 원거리 무기는 사격. `hold` = 쥐고 다 모은 뒤 뗀다(모은 RB · 끝까지 당긴 화살), 아니면 마구 누른다.
-fn rb_dps(id: weapons::Id, secs: f32, dist: f32, hold: bool, boss: bool) -> f32 {
+pub(super) fn rb_dps(id: weapons::Id, secs: f32, dist: f32, hold: bool, boss: bool) -> f32 {
     let t = Tuning::default();
     let mut w = World::new("test", 40.0);
     w.set_weapon(id);
@@ -347,6 +347,8 @@ fn every_kind_keeps_one_air_rb_per_jump() {
             cast: true,
             ..Default::default()
         };
+        // 칸은 쏘기 전의 것에서 하나 준다(0274 ⑥ — 완드는 칸이 다섯이라 3에서 차오르는 중이다).
+        let before = w.player.ranged.mana;
         let first = w.step(&cast, &t);
         let n = |ev: &[Event]| {
             ev.iter()
@@ -357,7 +359,7 @@ fn every_kind_keeps_one_air_rb_per_jump() {
         ev.extend(w.step(&Actions::default(), &t));
         assert_eq!(n(&ev), 1, "{id:?}: one air RB");
         assert!(
-            (w.player.ranged.mana - (CAST_CHARGES - 1.0)).abs() < 0.05,
+            (w.player.ranged.mana - (before - 1.0)).abs() < 0.05,
             "{id:?}"
         );
         let again = w.step(&cast, &t);

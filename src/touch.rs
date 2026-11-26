@@ -119,6 +119,12 @@ pub enum Kind {
     Harvest,
     Grove,
     ThornSeed,
+    /// 완드(0274 ⑥): 공격 그림(잿빛 돌을 단 짧은 막대) · 저주 새기기 · 시드는 그늘 · 치른 값 · 저주탄(RB).
+    Wand,
+    Hex,
+    Blight,
+    Price,
+    CurseBolt,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -962,7 +968,8 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Spear
         | Kind::Daggers
         | Kind::Greatsword
-        | Kind::Sickle => a.attack = true,
+        | Kind::Sickle
+        | Kind::Wand => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -1025,7 +1032,11 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Reap
         | Kind::Harvest
         | Kind::Grove
-        | Kind::ThornSeed => {}
+        | Kind::ThornSeed
+        | Kind::Hex
+        | Kind::Blight
+        | Kind::Price
+        | Kind::CurseBolt => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1087,6 +1098,7 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Daggers => Kind::Daggers,
         Id::Greatsword => Kind::Greatsword,
         Id::Scythe => Kind::Sickle,
+        Id::Wand => Kind::Wand,
     }
 }
 
@@ -1129,6 +1141,8 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Sear => Kind::Sear,
         Id::Reap => Kind::Reap,
         Id::Harvest => Kind::Harvest,
+        Id::Hex => Kind::Hex,
+        Id::Blight => Kind::Blight,
     }
 }
 
@@ -1146,6 +1160,7 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Ambush => Kind::Ambush,
         Ult::Tempest => Kind::Tempest,
         Ult::Grove => Kind::Grove,
+        Ult::Price => Kind::Price,
     }
 }
 
@@ -1174,8 +1189,9 @@ pub fn rb_icon(w: &crate::world::World) -> Kind {
 
 /// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b). 마법 탄(0 · 1 · 2)은 별.
 pub fn toss_icon(look: u8) -> Kind {
-    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, QUAKE, SEED, SHIELD, STONE};
+    use crate::weapons::{AXE, CURSE, JAVELIN, KNIFE, LIGHT, QUAKE, SEED, SHIELD, STONE};
     match look {
+        CURSE => Kind::CurseBolt,
         AXE => Kind::HandAxe,
         QUAKE => Kind::Quake2,
         SEED => Kind::ThornSeed,
@@ -2381,6 +2397,86 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "#.#.#.#.#.#.#",
             ".#.#.#.#.#.#.",
         ],
+        // 완드(0274 ⑥): 오른쪽 위의 둥근 잿빛 돌 + 왼쪽 아래로 내려가는 짧은 막대 — 지팡이(긴 곧은 막대)와 갈린다.
+        Kind::Wand => [
+            "........###..",
+            ".......#####.",
+            ".......#####.",
+            ".......#####.",
+            "........###..",
+            ".......##....",
+            "......##.....",
+            ".....##......",
+            "....##.......",
+            "...##........",
+            "..##.........",
+            ".##..........",
+            "##...........",
+        ],
+        // 저주 새기기(0274 ⑥): 적에게 새긴 표(둥근 테 안의 갈라진 금) + 그 아래로 옮는 화살(표가 옮는다).
+        Kind::Hex => [
+            "....#####....",
+            "..##.....##..",
+            ".#....#....#.",
+            ".#...#.....#.",
+            "#.....#....#.",
+            "#......#...#.",
+            ".#....#....#.",
+            "..##.....##..",
+            "....#####....",
+            "......#......",
+            "......#......",
+            "....#.#.#....",
+            ".....###.....",
+        ],
+        // 시드는 그늘(0274 ⑥): 위에 드리운 그늘(납작한 테) + 그 밑의 갈라진 땅(금 셋).
+        Kind::Blight => [
+            ".............",
+            "..#########..",
+            ".#.........#.",
+            "#...........#",
+            ".#.........#.",
+            "..#########..",
+            ".............",
+            "...#...#...#.",
+            "..#...#...#..",
+            "...#...#...#.",
+            ".............",
+            "#############",
+            ".............",
+        ],
+        // 치른 값(0274 ⑥): 가운데의 금 간 고리에서 사방으로 터지는 울림.
+        Kind::Price => [
+            "#.....#.....#",
+            ".#....#....#.",
+            "..#.......#..",
+            "....#####....",
+            "...#..#..#...",
+            "...#.#...#...",
+            "###...#...###",
+            "...#...#.#...",
+            "...#..#..#...",
+            "....#####....",
+            "..#.......#..",
+            ".#....#....#.",
+            "#.....#.....#",
+        ],
+        // 저주탄(0274 ⑥ — 완드의 RB): 오른쪽 위로 곧게 나는 둥근 탄 + 뒤에 갈라지며 남는 금.
+        Kind::CurseBolt => [
+            ".........###.",
+            "........#####",
+            "........#####",
+            "........#####",
+            ".........###.",
+            "........#....",
+            ".......#.....",
+            "......#......",
+            ".......#.....",
+            "......#......",
+            ".....#.......",
+            "....#.#......",
+            "...#...#.....",
+        ],
         // 가시 씨앗(0274 ⑤ — 낫의 RB): 가시가 돋친 둥근 씨 + 그것이 떨어질 땅.
         Kind::ThornSeed => [
             "......#......",
@@ -2810,6 +2906,11 @@ mod tests {
             Kind::Harvest,
             Kind::Grove,
             Kind::ThornSeed,
+            Kind::Wand,
+            Kind::Hex,
+            Kind::Blight,
+            Kind::Price,
+            Kind::CurseBolt,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

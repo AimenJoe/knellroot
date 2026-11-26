@@ -297,6 +297,7 @@ mod tests {
     const DAGGER: Plate = Plate::Class(Class::Dagger);
     const GREATSWORD: Plate = Plate::Class(Class::Greatsword);
     const SCYTHE: Plate = Plate::Class(Class::Scythe);
+    const WAND: Plate = Plate::Class(Class::Wand);
 
     #[test]
     fn every_weapon_plate_pairs_two_different_types_and_every_type_has_a_home() {
@@ -334,6 +335,7 @@ mod tests {
                 DAGGER,
                 GREATSWORD,
                 SCYTHE,
+                WAND,
                 Plate::Shield
             ]
         );
@@ -530,6 +532,55 @@ mod tests {
         );
     }
 
+    /// 0274 ⑥: 완드 판 = 흑마법사의 결 — 왼쪽 균열(저주 새기기(새) / 시드는 그늘(새) / 결), 가운데 마법(끌어모으기 / 궁극기 치른 값(새)),
+    /// 오른쪽 울림(종 치기 / 되울림 / 결). 8노드 — 첫 줄 스킬 셋. 버팀은 양손 묶음이지만 완드 판에 서지 않는다(흑마법사는 버티지 않는다).
+    /// 종 치기 · 되울림은 방패 · 망치 · 한손검 · 지팡이 · 원거리 판에도 그대로 선다(빼앗지 않는다).
+    #[test]
+    fn the_wand_plate_seats_rift_magic_and_knell() {
+        assert_eq!(WAND.pair(), Some([Kind::Rift, Kind::Knell]));
+        assert_eq!(WAND.great(), Some(Ult::Price));
+        let at = |col: Col, row: u8| -> Vec<Entry> {
+            WAND.seats()
+                .into_iter()
+                .filter(|s| s.col == col && s.row == row)
+                .map(|s| s.entry)
+                .collect()
+        };
+        let sk = |ids: &[Id]| ids.iter().map(|&i| Entry::Skill(i)).collect::<Vec<_>>();
+        assert_eq!(at(Col::Left, 0), sk(&[Id::Hex]));
+        assert_eq!(at(Col::Left, 1), sk(&[Id::Blight]));
+        assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Rift)]);
+        assert_eq!(at(Col::Mid, 0), sk(&[Id::Gather]));
+        assert_eq!(at(Col::Mid, 1), sk(&[]));
+        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Price)]);
+        assert_eq!(at(Col::Right, 0), sk(&[Id::Toll]));
+        assert_eq!(at(Col::Right, 1), sk(&[Id::Echo]));
+        assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Knell)]);
+        assert_eq!(WAND.seats().len(), 8);
+        assert!(
+            !WAND.has(Entry::Skill(Id::Brace)),
+            "the warlock does not brace"
+        );
+        for p in PLATES {
+            for id in [Id::Hex, Id::Blight] {
+                assert_eq!(p.has(Entry::Skill(id)), p == WAND, "{p:?} {id:?}");
+            }
+        }
+        // 빼앗지 않는다: 종 치기는 방패 · 망치에, 되울림은 방패 · 한손검 · 지팡이 · 원거리에 그대로.
+        assert!(Plate::Shield.has(Entry::Skill(Id::Toll)) && HAMMER.has(Entry::Skill(Id::Toll)));
+        for p in [Plate::Shield, SWORD, STAFF, CROSSBOW, BOW] {
+            assert!(p.has(Entry::Skill(Id::Echo)), "{p:?}");
+        }
+        let s = crate::i18n::s();
+        assert_eq!(
+            WAND.attribute().map(|a| a(s)),
+            STAFF.attribute().map(|a| a(s)),
+            "a curse is still magic"
+        );
+        // 한 손에 들지만 방패와 들지 않는다 — 방패를 들어도 완드 판.
+        assert_eq!(Plate::held(crate::weapons::Id::Wand.grip(true)), Some(WAND));
+    }
+
     #[allow(non_snake_case)]
     fn SHIELD_PLATE_HAS(id: Id) -> bool {
         Plate::Shield.has(Entry::Skill(id))
@@ -581,10 +632,11 @@ mod tests {
                 n(SPEAR),
                 n(DAGGER),
                 n(GREATSWORD),
-                n(SCYTHE)
+                n(SCYTHE),
+                n(WAND)
             ],
-            // 0274 ④: 한손검 9 → 10(가운데 둘째 줄의 되울림), 대검 9. 0274 ⑤: 낫 8.
-            [10, 11, 10, 9, 8, 10, 10, 9, 9, 8]
+            // 0274 ④: 한손검 9 → 10(가운데 둘째 줄의 되울림), 대검 9. 0274 ⑤: 낫 8. 0274 ⑥: 완드 8.
+            [10, 11, 10, 9, 8, 10, 10, 9, 9, 8, 8]
         );
         // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
         for id in [

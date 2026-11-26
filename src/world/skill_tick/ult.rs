@@ -75,6 +75,14 @@ impl World {
                 | skills::Ult::Ambush
                 | skills::Ult::Tempest
                 | skills::Ult::Grove => {}
+                // 치른 값(0274 ⑥): 시동 끝 = 번지는 저주(첫 박), 그 뒤 `gap`초 = 터지는 울림(아래에서).
+                skills::Ult::Price => self.price_pulse(cx.t, false),
+            }
+        }
+        if kind == skills::Ult::Price {
+            let at = startup + skills::PRICE.gap;
+            if e < at && e1 >= at {
+                self.price_pulse(cx.t, true);
             }
         }
         if kind == skills::Ult::Gale {
@@ -369,6 +377,61 @@ impl World {
             }
         }
         ev.push(Event::GrovePulse {
+            at: p,
+            radius,
+            last,
+        });
+        self.skill_ev = ev;
+    }
+
+    /// 치른 값(0274 ⑥)의 한 박: 몸 둘레(`PRICE.radius_at`) 안의 깨어 있는 적을 모두 — 첫 박(`last` 거짓)은 번지는 저주(작은 피해 ·
+    /// 균열 가득), 마지막 박은 터지는 울림(큰 피해 · 큰 자세 피해 · 울림 가득 — 금 간 적은 금의 배로 더, 주특성이면 더 `hurt_by`).
+    /// 밀지 않는다. 보스는 다치되 휘청이지 않는다(`skill_touch`가 거른다). 박마다 새 타 번호.
+    pub(super) fn price_pulse(&mut self, t: &Tuning, last: bool) {
+        let g = &skills::PRICE;
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let rank = self.player.skill.ult_rank;
+        let radius = g.radius_at(rank);
+        let dose = self.dosed(if last { g.toll_dose } else { g.curse_dose });
+        self.player.swings += 1;
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if dv.length() - en.radius > radius {
+                continue;
+            }
+            if last {
+                self.sparks.extend(sparks_at(
+                    en.pos + Vec3::Y * en.height * 0.5,
+                    Vec3::Y,
+                    self.player.swings,
+                    true,
+                ));
+            }
+            self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage: if last { g.toll_at(rank) } else { g.curse },
+                    poise: if last { g.toll_poise } else { g.curse_poise },
+                    stagger: 0.0,
+                    knock: Vec3::ZERO,
+                    crit: last,
+                    dose,
+                    flat: false,
+                },
+            );
+        }
+        if last {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+        }
+        ev.push(Event::PricePulse {
             at: p,
             radius,
             last,

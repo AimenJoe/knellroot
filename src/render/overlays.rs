@@ -51,6 +51,19 @@ const BOLT_LOOKS: [(Color, Color); 9] = [
     ),
 ];
 
+/// 탄의 빛(알맹이 · 빛무리) — 표의 줄, 저주탄(0274 ⑥)은 하늘빛(균열)으로.
+fn bolt_colors(look: u8) -> (Color, Color) {
+    if look == crate::weapons::CURSE {
+        return CURSE_LOOK;
+    }
+    BOLT_LOOKS[(look as usize).min(BOLT_LOOKS.len() - 1)]
+}
+/// 저주탄(0274 ⑥): 하늘빛 알맹이 · 빛무리(균열의 빛 `status::INK` — 보라 · 빨강은 쓰지 않는다).
+const CURSE_LOOK: (Color, Color) = (
+    Color::new(0.86, 0.95, 1.0, 1.0),
+    Color::new(0.50, 0.80, 1.0, 0.4),
+);
+
 impl Renderer {
     /// 배우 위에 얹는 것: 스윙 부채꼴·쟁반 테·휘청 별·락온 표시·마법 탄.
     pub(super) fn overlays(&self, w: &World, pp: Vec3, alpha: f32, t: &Tuning) {
@@ -286,6 +299,7 @@ impl Renderer {
                     | Form::Bash { .. }
                     | Form::Erupt { .. }
                     | Form::Bell { .. }
+                    | Form::Hex { .. }
                     | Form::Drift { .. }
                     | Form::Trap { .. } => {}
                     // 재기(0274): 몸에서 밀쳐 내는 거리까지 번지는 민트 고리 — 피해가 아니라 밀어냄과 흡수의 자리.
@@ -417,7 +431,12 @@ fn bolts(w: &World, alpha: f32) {
             quake_wave(w, b, p);
             continue;
         }
-        let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
+        // 저주탄(0274 ⑥ — 완드의 주된 공격): 잿빛 돌 조각 같은 어두운 알맹이를 하늘빛 빛무리가 감싸고, 뒤에 꺾인 금(지그재그 띠)이 남는다.
+        if b.def.look == crate::weapons::CURSE {
+            curse_bolt(w, b, p);
+            continue;
+        }
+        let (core, glow) = bolt_colors(b.def.look);
         let k = if b.def.is_shot() { 0.6 } else { 1.0 } * b.def.scale;
         let pulse = 1.0 + 0.12 * (w.time * 30.0 + b.left).sin();
         glow_disc(p, 0.62 * k, with_a(glow, glow.a * 0.8));
@@ -501,6 +520,32 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
         }
         _ => {}
     }
+}
+
+/// 저주탄의 몸(0274 ⑥): 하늘빛 빛무리 + 어두운 잿빛 알맹이(돌기가 돈다) + 그 속의 작은 하늘빛 별, 꼬리는 나는 쪽의 옆으로 꺾이는 가는
+/// 하늘빛 금(세 마디 — 마법 탄의 곧은 빛 띠와 갈린다).
+fn curse_bolt(w: &World, b: &crate::world::Bolt, p: Vec3) {
+    let (core, glow) = CURSE_LOOK;
+    let k = b.def.scale;
+    let pulse = 1.0 + 0.1 * (w.time * 24.0 + b.left).sin();
+    glow_disc(p, 0.75 * k, with_a(glow, 0.36));
+    let side = vec3(-b.dir.z, 0.0, b.dir.x).normalize_or(Vec3::X) * (0.14 * k);
+    let back = b.dir * (0.6 * k);
+    let mut at = p;
+    for i in 0..3 {
+        let next = at - back + if i % 2 == 0 { side } else { -side };
+        trail(at, next, 0.12 * k, with_a(glow, 0.8 - 0.2 * i as f32));
+        at = next;
+    }
+    let rot = Quat::from_rotation_y(w.time * 7.0 + b.left) * Quat::from_rotation_x(w.time * 5.0);
+    shaded_tris(
+        p,
+        &octa_faces(vec2(0.17 * k, 0.14 * k), 0.17 * k, 0.14 * k),
+        Color::new(0.36, 0.35, 0.38, 1.0),
+        0.7,
+        rot,
+    );
+    spark4(p, 0.38 * k * pulse, with_a(core, 0.95));
 }
 
 /// 땅 내려찍기의 물결(0274 ④): 땅 높이에서 나는 쪽의 가로로 선 앞머리(넓은 흙빛 띠 + 흰 속) + 뒤로 남는 금(가는 띠) + 앞머리 양옆에서
@@ -808,7 +853,7 @@ fn cast_charge(w: &World, pp: Vec3, t: &Tuning, fl: &Drape) {
         // 두 손으로 엮는 지팡이(0276)는 빨리 모인다 — 월드와 같은 셈.
         let full = w.cast_full(t).max(1e-3);
         let k = (e / full).clamp(0.0, 1.0);
-        let (core, glow) = BOLT_LOOKS[(wpn_look(w) as usize).min(BOLT_LOOKS.len() - 1)];
+        let (core, glow) = bolt_colors(wpn_look(w));
         let hand = pp
             + Vec3::Y * (w.player.air + crate::tuning::BOLT_HEIGHT)
             + w.player.facing_dir() * 0.45;
@@ -1203,6 +1248,32 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                     fl.ring(at, r * grow, 0.0, 360.0, with_a(mint, 0.7 * grow));
                 }
             }
+            // 치른 값(0274 ⑥): 세계가 멈춘 동안 저주가 번질 둘레의 균열빛(하늘) 테가 몸에서 바깥으로 자라고, 번진 뒤 터지기까지는 그 테
+            // 안쪽에서 울림빛(쇳빛) 테가 조여든다(터지는 순간의 빛은 이펙트가). 보라 · 빨강은 쓰지 않는다.
+            crate::skills::Ult::Price => {
+                let u = &crate::skills::PRICE;
+                let rift = Color::new(0.50, 0.80, 1.0, 1.0);
+                let knell = Color::new(0.80, 0.84, 0.94, 1.0);
+                let r = u.radius_at(w.player.skill.ult_rank);
+                let at = pp + Vec3::Y * 0.06;
+                let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
+                if e <= 0.0 {
+                    fl.ring(at, r * frozen, 0.0, 360.0, with_a(rift, 0.75 * frozen));
+                } else if e < u.startup + u.gap {
+                    let k = ((e - u.startup) / u.gap.max(1e-3)).clamp(0.0, 1.0);
+                    fl.sector(at, r, 0.0, 360.0, with_a(rift, 0.08));
+                    fl.ring(at, r, 0.0, 360.0, with_a(rift, 0.6));
+                    if e > u.startup {
+                        fl.ring(
+                            at,
+                            r * (1.0 - 0.8 * k),
+                            0.0,
+                            360.0,
+                            with_a(knell, 0.4 + 0.5 * k),
+                        );
+                    }
+                }
+            }
             // 칼바람(0274 ④): 세계가 멈춘 동안 휩쓸 둘레의 잔불빛 테가 몸에서 바깥으로 자라고, 휘도는 동안 그 테가 옅게 남는다
             // (휩쓸기마다의 빛은 이펙트가).
             crate::skills::Ult::Tempest => {
@@ -1565,6 +1636,25 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
                     Color::new(0.85, 1.0, 0.72, k),
                 );
             }
+        }
+        // 저주의 표(0274 ⑥ — 저주 새기기): 발밑에 셋으로 끊긴 하늘빛 고리가 거꾸로 돌고, 머리 위에 작은 잿빛 마름모가 하늘빛 테를 두르고
+        // 뜬다 — 표가 다해 갈수록 옅어진다(옮을 표다). 보라 · 빨강은 쓰지 않는다.
+        if en.marks.hex > 0.0 {
+            let k = 0.35 + 0.5 * (en.marks.hex / 2.0).min(1.0);
+            let sky = Color::new(0.50, 0.80, 1.0, k);
+            let turn = -w.time * 1.4;
+            for q in 0..3 {
+                fl.ring(
+                    p + Vec3::Y * 0.06,
+                    en.radius + 0.38,
+                    turn + q as f32 * std::f32::consts::TAU / 3.0,
+                    70.0,
+                    sky,
+                );
+            }
+            let top = p + Vec3::Y * (en.height + 0.55 + 0.06 * (w.time * 3.0).sin());
+            gem(top, 0.34, with_a(sky, 0.5 * k));
+            gem(top, 0.2, Color::new(0.40, 0.39, 0.42, k));
         }
         // 0270 B: 언 적은 발밑에 두꺼운 얼음 고리 둘, 흡수 표지는 숨 쉬는 풀빛 고리, 기절한 적은 머리 둘레를 도는 레몬 별 셋.
         if a.frozen > 0.0 {
@@ -1955,7 +2045,7 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
                 | Form::Bash { range, arc_deg, .. }
                 | Form::Stab { range, arc_deg, .. }
                 | Form::Slip { range, arc_deg, .. } => fan(range, arc_deg),
-                Form::Bell { range, .. } => lane(range, 0.6),
+                Form::Bell { range, .. } | Form::Hex { range, .. } => lane(range, 0.6),
                 // 놓는 것(0270 C3): 놓일 자리까지의 가는 줄 + 그 자리의 고리.
                 Form::Drift { ahead, radius, .. } | Form::Trap { ahead, radius, .. } => {
                     lane(ahead, 0.3);

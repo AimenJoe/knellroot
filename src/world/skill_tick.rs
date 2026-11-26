@@ -11,6 +11,10 @@ use super::player_tick::Ctx;
 use super::*;
 use crate::skills::{Cap, Eff, Form, Twist, FLURRY, LINE, UPEND};
 use crate::status::{Dose, NO_DOSE};
+
+/// 저주 새기기(0274 ⑥): 옮은 표가 남는 가장 짧은 초 · 최종 효과(옮을 때 쓰러진 자리가 울린다)의 둘레(m).
+pub const HEX_JUMP_MIN: f32 = 2.0;
+pub const HEX_TOLL_RADIUS: f32 = 2.5;
 use crate::tuning::{
     BASH_CUT_STAGGER, BASH_PUSH, BELL_CONE, BLADE_CATCH, BLADE_HEIGHT, ERUPT_RING_MAX, HOP_DASH,
     HOP_EMPTY, HOP_GAP, SCORCH_EVERY, SKILL_DENIED_SHOW, SKILL_HITSTOP, SPIRE_DELAY, TRAP_SPIKES,
@@ -362,6 +366,13 @@ impl World {
                 .or(lock)
                 .or_else(|| nearest_in_reach(&self.enemies, pl.pos, range + 1.0, None))
                 .unwrap_or(facing),
+            // 저주 새기기(0274 ⑥): 한 대상 — 숄더뷰에서는 크로스헤어가 먼저, 없으면 닿는 거리의 가장 가까운 적.
+            Form::Hex { range, .. } => cx
+                .sight
+                .or(cx.aim)
+                .or(lock)
+                .or_else(|| nearest_in_reach(&self.enemies, pl.pos, range + 1.0, None))
+                .unwrap_or(facing),
             Form::Bash { range, .. } | Form::Stab { range, .. } | Form::Slip { range, .. } => cx
                 .aim
                 .or(lock)
@@ -615,6 +626,39 @@ impl World {
                             dose,
                             toll: true,
                         });
+                    }
+                }
+            }
+            // 저주 새기기(0274 ⑥): 앞의 한 적(종 치기와 같은 고르기 — 벽 너머는 아니다)에게 저주를 새긴다 — 표의 피해 · 균열, 표가
+            // `secs`초 남는다(쓰러지면 옮는다 — `after_deaths`). 앞이 비면 허공에 흩어진다.
+            Form::Hex { range, secs, .. } => {
+                if crossed(s.startup) {
+                    self.skill_ev.push(Event::Skill { id, at, dir });
+                    if let Some(i) = self.bell_target(dir, range) {
+                        let dose = self.dosed(s.dose());
+                        let mut ev = std::mem::take(&mut self.skill_ev);
+                        self.skill_touch(
+                            t,
+                            &mut ev,
+                            i,
+                            &Touch {
+                                damage: s.damage,
+                                poise: s.poise,
+                                stagger: 0.0,
+                                knock: Vec3::ZERO,
+                                crit: false,
+                                dose,
+                                flat: false,
+                            },
+                        );
+                        let en = &mut self.enemies[i];
+                        if en.hp > 0 {
+                            en.marks.hex = en.marks.hex.max(secs);
+                            ev.push(Event::Hexed {
+                                at: en.pos + Vec3::Y * en.height * 0.6,
+                            });
+                        }
+                        self.skill_ev = ev;
                     }
                 }
             }
@@ -1752,6 +1796,129 @@ impl World {
                 };
                 d(a).total_cmp(&d(b))
             })
+    }
+
+    /// 쓰러진 자리에서 일어나는 것(0274 ⑥ — 완드, `tick_embers`가 이 틱에 막 쓰러진 적 `fallen`을 채운 뒤):
+    /// - **죽음의 울림**(주특성 치른 값 `Art::hex`): 금 간 채 쓰러진 적의 둘레 `DEATH_KNELL_R` m의 적에게 울림 `DEATH_KNELL_DOSE` — 한
+    ///   틱에 한 적은 한 번만(떼가 커도 곱절이 되지 않게, 0223 8절).
+    /// - **옮는 저주**(저주 새기기의 표 `marks.hex`): 표를 지닌 채 쓰러지면 둘레(그 스킬의 `spread`)의 가장 가까운 표 없는 적(두 갈래 ㄴ이면
+    ///   둘)에게 남은 초 그대로(`HEX_JUMP_MIN`초 아래면 그만큼) 옮고 균열을 다시 가득 쌓는다. 최종 효과면 쓰러진 자리가 울린다.
+    /// - **계약의 표**(빈 손의 결 `Bare::PactMark`): 저주탄의 표(`marks.pact`)가 남은 적이 쓰러지면 체력 · RB 칸이 돌아온다.
+    pub(in crate::world) fn after_deaths(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
+        let _ = t;
+        if self.fallen.is_empty() {
+            return;
+        }
+        let fallen = std::mem::take(&mut self.fallen);
+        let knell = self.player.weapon.art().hex > 1.0;
+        let pact = self.bare() == Some(weapons::Bare::PactMark);
+        let mut knells: Vec<Vec3> = Vec::new();
+        let mut hexes: Vec<(Vec3, f32)> = Vec::new();
+        let mut paid = 0;
+        for &i in &fallen {
+            let en = &mut self.enemies[i];
+            if knell && en.ail.rift > 0.0 {
+                knells.push(en.pos);
+            }
+            if en.marks.hex > 0.0 {
+                hexes.push((en.pos, en.marks.hex));
+                en.marks.hex = 0.0;
+            }
+            if en.marks.pact > 0.0 {
+                en.marks.pact = 0.0;
+                if pact {
+                    paid += 1;
+                }
+            }
+        }
+        self.fallen = fallen;
+        if !knells.is_empty() {
+            for en in &mut self.enemies {
+                if !en.active() || en.harmless() || en.hp <= 0 {
+                    continue;
+                }
+                let near = knells.iter().any(|p| {
+                    vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length() - en.radius
+                        <= weapons::DEATH_KNELL_R
+                        && (en.pos.y - p.y).abs() <= HIT_DY
+                });
+                if near {
+                    afflict(
+                        en,
+                        (crate::status::Kind::Knell, weapons::DEATH_KNELL_DOSE),
+                        ev,
+                    );
+                }
+            }
+            for at in knells {
+                ev.push(Event::DeathKnell { at });
+            }
+        }
+        if !hexes.is_empty() {
+            let d = self.skill_eff(skills::Id::Hex);
+            let spread = match d.skill.form {
+                Form::Hex { spread, .. } => spread,
+                _ => 0.0,
+            };
+            let n = if matches!(d.twist, Some(Twist::Twice)) {
+                2
+            } else {
+                1
+            };
+            let dose = self.dosed(d.skill.dose());
+            for (at, left) in hexes {
+                let mut near: Vec<(f32, usize)> = self
+                    .enemies
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, en)| {
+                        en.active()
+                            && !en.harmless()
+                            && en.hp > 0
+                            && en.marks.hex <= 0.0
+                            && (en.pos.y - at.y).abs() <= HIT_DY
+                    })
+                    .map(|(i, en)| {
+                        (
+                            vec3(en.pos.x - at.x, 0.0, en.pos.z - at.z).length() - en.radius,
+                            i,
+                        )
+                    })
+                    .filter(|(r, _)| *r <= spread)
+                    .collect();
+                near.sort_by(|a, b| a.0.total_cmp(&b.0));
+                for &(_, i) in near.iter().take(n) {
+                    let en = &mut self.enemies[i];
+                    en.marks.hex = left.max(HEX_JUMP_MIN);
+                    afflict(en, dose, ev);
+                    ev.push(Event::HexJump {
+                        from: at + Vec3::Y * 0.8,
+                        to: en.pos + Vec3::Y * en.height * 0.6,
+                    });
+                }
+                if let Some(Cap::Toll { damage }) = d.cap {
+                    self.skill_bursts.push(Burst {
+                        at,
+                        left: 0.0,
+                        radius: HEX_TOLL_RADIUS,
+                        damage,
+                        on: None,
+                        dose: (crate::status::Kind::Knell, 0.5),
+                        toll: true,
+                    });
+                }
+            }
+        }
+        if paid > 0 {
+            let charges = self.cast_charges();
+            let pl = &mut self.player;
+            pl.hp = (pl.hp + weapons::BARE_PACT_HEAL * paid).min(pl.max_hp);
+            pl.ranged.mana =
+                (pl.ranged.mana + weapons::BARE_PACT_CHARGE * paid as f32).min(charges);
+            ev.push(Event::Mend {
+                at: pl.pos + Vec3::Y * 1.0,
+            });
+        }
     }
 
     /// 틱 끝의 셈(0151 5절). **기세**: 이번 틱에 쓰러진 적마다 모든 스킬의 대기가 당겨진다 — 스킬이 아닌 것으로 쓰러뜨렸으면

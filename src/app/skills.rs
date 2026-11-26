@@ -76,6 +76,8 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Sear => (s.skill_sear, s.skill_sear_d),
         sk::Id::Reap => (s.skill_reap, s.skill_reap_d),
         sk::Id::Harvest => (s.skill_harvest, s.skill_harvest_d),
+        sk::Id::Hex => (s.skill_hex, s.skill_hex_d),
+        sk::Id::Blight => (s.skill_blight, s.skill_blight_d),
     }
 }
 
@@ -93,6 +95,7 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Ambush => (s.ult_ambush, s.ult_ambush_d),
         sk::Ult::Tempest => (s.ult_tempest, s.ult_tempest_d),
         sk::Ult::Grove => (s.ult_grove, s.ult_grove_d),
+        sk::Ult::Price => (s.ult_price, s.ult_price_d),
     }
 }
 
@@ -205,6 +208,10 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Reap, Pick::B) => (s.pick_reap_b, s.pick_reap_b_d),
         (sk::Id::Harvest, Pick::A) => (s.pick_harvest_a, s.pick_harvest_a_d),
         (sk::Id::Harvest, Pick::B) => (s.pick_harvest_b, s.pick_harvest_b_d),
+        (sk::Id::Hex, Pick::A) => (s.pick_hex_a, s.pick_hex_a_d),
+        (sk::Id::Hex, Pick::B) => (s.pick_hex_b, s.pick_hex_b_d),
+        (sk::Id::Blight, Pick::A) => (s.pick_blight_a, s.pick_blight_a_d),
+        (sk::Id::Blight, Pick::B) => (s.pick_blight_b, s.pick_blight_b_d),
     };
     (mark, name, desc)
 }
@@ -245,6 +252,8 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Sear => s.cap_sear,
         sk::Id::Reap => s.cap_reap,
         sk::Id::Harvest => s.cap_harvest,
+        sk::Id::Hex => s.cap_hex,
+        sk::Id::Blight => s.cap_blight,
     }
 }
 
@@ -294,7 +303,8 @@ pub(super) fn rank_gives(id: sk::Id, rank: u8) -> String {
                 | Form::Throw { .. }
                 | Form::Hop { .. }
                 | Form::Stab { .. }
-                | Form::Slip { .. } => s.rk_range,
+                | Form::Slip { .. }
+                | Form::Hex { .. } => s.rk_range,
                 Form::Cone { .. } | Form::Bash { .. } => s.rk_arc,
             };
             fill(t, &[&pct(sk::RANK4_SIZE)])
@@ -345,6 +355,9 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         // 깨어나는 숲(0274 ⑤): 2단 = 가장 바깥 고리의 둘레, 3단 = 마지막 고리의 피해.
         (sk::Ult::Grove, 2) => fill(s.rk_bell_radius, &[&num(sk::GROVE.radius_at(2, 2))]),
         (sk::Ult::Grove, _) => fill(s.rk_line_dmg, &[&sk::GROVE.last3.to_string()]),
+        // 치른 값(0274 ⑥): 2단 = 둘레, 3단 = 터지는 울림의 피해.
+        (sk::Ult::Price, 2) => fill(s.rk_bell_radius, &[&num(sk::PRICE.radius2)]),
+        (sk::Ult::Price, _) => fill(s.rk_line_dmg, &[&sk::PRICE.toll3.to_string()]),
     }
 }
 
@@ -2636,9 +2649,10 @@ mod tests {
                 s.class_sword, s.class_hammer, s.class_greatsword, s.hands_shield
             )
         );
+        // 0274 ⑥: 종 치기는 완드(흑마법사)도 — 양손 종류라 방패 없이 그대로.
         assert_eq!(
             hands_text(Id::Toll),
-            format!("{} · {}", s.class_hammer, s.hands_shield)
+            format!("{} · {} · {}", s.class_hammer, s.class_wand, s.hands_shield)
         );
         assert_eq!(hands_text(Id::Snare), s.class_bow);
         // 0274 ⑤: 뿌리 솟기는 낫(드루이드)도 — 한손 종류라 "방패 없이".
@@ -2671,6 +2685,7 @@ mod tests {
                 s.class_dagger,
                 s.class_greatsword,
                 s.class_scythe,
+                s.class_wand,
                 s.plate_shield
             ]
         );
@@ -2691,6 +2706,7 @@ mod tests {
                 s.attr_pierce,
                 s.attr_slash,
                 s.attr_slash,
+                s.attr_magic,
                 s.attr_guard
             ]
         );
@@ -3361,6 +3377,9 @@ mod tests {
         keyless.rank[Id::Rally.index()] = 0;
         // 0274 ⑤: 낫의 생기 거두기도 맞받기 갈래.
         keyless.rank[Id::Harvest.index()] = 0;
+        // 0274 ⑥: 완드의 저주 새기기 · 치른 값도 맞받기 갈래.
+        keyless.rank[Id::Hex.index()] = 0;
+        keyless.ult[Ult::Price.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         keyless.ult[Ult::Bell.index()] = 0;
         keyless.rank[Id::Pin.index()] = 0;

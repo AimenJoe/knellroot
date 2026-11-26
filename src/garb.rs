@@ -107,6 +107,7 @@ const MODS0: Mods = Mods {
     heavy_dmg: 0,
     charged_dmg: 0,
     kill_heal: 0,
+    toss_dmg: 0,
     light_dmg: 0,
     opened_dmg: 0,
     knock: 1.0,

@@ -2001,3 +2001,40 @@ fn the_gardeners_sickle_waits_in_the_gardens_fourth_chest() {
         "an old record"
     );
 }
+
+/// 0274 ⑥: 맡겨진 완드는 멈추지 않는 갱도(작업층)의 둘째 상자 — 운반 회랑 서쪽 끝 곁방(창고)의 구석(숫돌 곁). 옛 상자(장신구)의 기록
+/// 번호(위 → 아래 차례)는 그대로다: 그 상자를 연 옛 기록은 완드의 상자를 연 것으로 읽히지 않는다.
+#[test]
+fn the_pledged_wand_waits_in_the_workings_second_chest() {
+    let def = &workings::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Wand),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 2);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (6, 36),
+        "the charm's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (5, 47),
+        "the westernmost side room of the haulage gallery"
+    );
+    run.set_opened(&[0]);
+    assert_eq!(run.chest.open, vec![true, false], "an old record");
+    // 어느 지역의 상자에도 완드는 하나뿐이다(얻는 차례 — 작업층).
+    let n = crate::stage::STAGES
+        .iter()
+        .flat_map(|d| d.chest_loot.iter())
+        .filter(|l| **l == Loot::Weapon(crate::weapons::Id::Wand))
+        .count();
+    assert_eq!(n, 1);
+}

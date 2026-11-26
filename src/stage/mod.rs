@@ -836,6 +836,7 @@ impl StageRun {
         w.lock = None;
         w.hitstop = 0.0;
         let full = w.stats.max_stamina();
+        let charges = w.cast_charges();
         let pl = &mut w.player;
         pl.pos = self.level.player_start;
         pl.prev = pl.pos;
@@ -845,7 +846,7 @@ impl StageRun {
         pl.hurt.left = 1.0;
         pl.hp = pl.max_hp;
         pl.flask = pl.flask_max;
-        pl.ranged.mana = crate::tuning::CAST_CHARGES;
+        pl.ranged.mana = charges;
         pl.stamina = full;
         self.populate(w);
         self.zone = self.zone_at(w.player.pos);
@@ -1480,10 +1481,12 @@ impl StageRun {
     /// 쉬기(0032): 체력·등잔·스태미나 가득, 이 쉼터가 다시 일어설 곳. 되돌아갈 단계 = 지금(물결 중이면 물결 전부터).
     fn rest(&mut self, w: &mut World, i: usize) {
         let full = w.stats.max_stamina();
+        // RB 칸은 든 무기의 수만큼(0274 ⑥ — 완드는 다섯).
+        let charges = w.cast_charges();
         let pl = &mut w.player;
         pl.hp = pl.max_hp;
         pl.flask = pl.flask_max;
-        pl.ranged.mana = crate::tuning::CAST_CHARGES;
+        pl.ranged.mana = charges;
         pl.stamina = full;
         let back = match self.phase {
             Phase::Entrance | Phase::Waves(_) => Phase::Entrance,

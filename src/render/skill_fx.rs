@@ -402,6 +402,52 @@ impl Renderer {
                 gem(c + Vec3::Y * 0.2, 0.12, with_a(hot, fade));
                 continue;
             }
+            // 시드는 그늘(0274 ⑥ — 완드 · 균열): 바닥에 드리운 어두운 잿빛 면 + 하늘빛(균열) 테 + 테 안쪽으로 금 셋(넓어졌다 좁아지며 숨
+            // 쉰다) + 천천히 가라앉는 잿빛 부스러기. 보라 · 빨강은 쓰지 않는다(그늘은 생물의 색이 아니다).
+            if !f.trap && f.dose.0 == crate::status::Kind::Rift {
+                let sky = Color::new(0.50, 0.80, 1.0, 1.0);
+                let shade = Color::new(0.16, 0.16, 0.20, 1.0);
+                let ash = Color::new(0.64, 0.63, 0.60, 1.0);
+                let beat = (f.age / f.every.max(1e-3)).fract();
+                fl.sector(
+                    c + Vec3::Y * 0.04,
+                    f.radius,
+                    0.0,
+                    360.0,
+                    with_a(shade, (0.30 + 0.08 * beat) * fade),
+                );
+                fl.ring(
+                    c + Vec3::Y * 0.06,
+                    f.radius,
+                    0.0,
+                    360.0,
+                    with_a(sky, (0.55 + 0.3 * beat) * fade),
+                );
+                for k in 0..3 {
+                    let a0 = (k as f32 * 120.0 + f.age * 12.0).to_radians();
+                    fl.ring(
+                        c + Vec3::Y * 0.065,
+                        f.radius * (0.45 + 0.2 * beat),
+                        a0,
+                        40.0,
+                        with_a(sky, 0.45 * fade),
+                    );
+                }
+                if fx {
+                    let n = ((crate::fx::FIELD_MOTES as f32 * (f.radius / 4.0).powi(2)) as usize)
+                        .min(crate::fx::FIELD_MOTES_MAX);
+                    for i in 0..n {
+                        let (off, k) = crate::fx::field_mote(i, w.time);
+                        if k <= 0.03 {
+                            continue;
+                        }
+                        let y = 1.4 - off.y * 1.0;
+                        let p = c + vec3(off.x * f.radius, y, off.z * f.radius);
+                        gem(p, 0.1, with_a(ash, k * fade * 0.9));
+                    }
+                }
+                continue;
+            }
             // 눈발(0270 C3)은 흰 서리빛, 불티는 호박빛.
             let frost = f.dose.0 == crate::status::Kind::Frost;
             let (rim, body) = if frost {

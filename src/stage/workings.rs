@@ -42,7 +42,12 @@ pub static DEF: StageDef = StageDef {
     obj_gate: |s| s.obj_winch,
     obj_core: |s| s.obj_core,
     boss_wakes: |s| s.overseer_wakes,
-    chest_loot: &[Loot::Charm(Charm::Feet)],
+    // 상자 차례 = 지도에서 위 → 아래(`marks_of`): 운반 회랑 서쪽 곁방(장신구) · 회랑 서쪽 끝 곁방의 구석(맡겨진 완드, 0274 ⑥ — 숫돌 곁,
+    // 맡겨 둔 짐 사이).
+    chest_loot: &[
+        Loot::Charm(Charm::Feet),
+        Loot::Weapon(crate::weapons::Id::Wand),
+    ],
     boss_charm: None,
     stones: &[|s| s.stone_w1, |s| s.stone_w2, |s| s.stone_w3],
     find_prefix: "works",
@@ -108,7 +113,7 @@ const MAP: &str = "
     ######.......||...j..................#   
     #............||..............u.......#   
     #.O...a......||.......e..............#   
-    #............||......................#   
+    #C...........||......................#   
     ################.......####..........#   
     #.........................#..........#   
     #.....................H...#..........#   

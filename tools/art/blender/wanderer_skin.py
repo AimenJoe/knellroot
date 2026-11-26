@@ -100,6 +100,9 @@ SKILL_FACE = {
     # 깨어나는 숲(웅크려 빈 손으로 땅을 짚는다 — 몸이 정면).
     "sk_reap": ((0.18, 0.0, 0.30), "hips"), "sk_harvest": ((0.15, 0.22, 0.30), "spin"),
     "ult_grove": ((0.30, 0.25, 0.94), "hips"),
+    # 0274 ⑥ 완드: 저주 새기기 · 시드는 그늘(손을 내미는 시전 — 몸이 정면) · 치른 값(완드를 들어 올렸다 내리꽂는다 — 몸이 정면).
+    "sk_hex": ((0.22, 0.0, 0.30), "hips"), "sk_blight": ((0.25, 0.0, 0.30), "hips"),
+    "ult_price": ((0.30, 0.30, 0.90), "hips"),
     "throw": ((0.2, 0.0, 0.3), "hips"),  # 0204: 수류탄이 손을 떠나는 순간 몸이 정면(원본 M16은 몸 왼쪽으로 휘둘러 던진다)
     "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
     "block": ((0.0, 0.2, 0.0), "hold"),  # 방패 막기(0223) — 내내 정면
@@ -394,6 +397,11 @@ CLIPS = [
     ("sk_reap", "M13", ("hitseg", 24, (40, 56), 76, [0.18, 0.0, 0.30])),
     ("sk_harvest", "Skill_03", ("anchors", [(0.0, 16), (0.15, 24), (0.37, 33), (0.67, 39)])),
     ("ult_grove", "Collect_Object", ("anchors", [(0.0, 11), (0.30, 29), (0.55, 62), (1.05, 80), (1.49, 104)])),
+    # 0274 ⑥ 완드(있는 원본에서 — 0 크레딧): 저주 새기기 = 손을 내밀어 한 적을 가리킨다(불길과 같은 시전 원본), 시드는 그늘 = 눈발과 같은
+    # 시전, 치른 값 = 완드를 들어 올렸다(멈춤) 내리꽂고(번지는 저주) 그 자세로 머문다(터지는 울림까지 — 눈보라와 같은 원본).
+    ("sk_hex", "mage_soell_cast_8", ("anchors", [(0.0, 4), (0.22, 16), (0.52, 29)])),
+    ("sk_blight", "mage_soell_cast_8", ("anchors", [(0.0, 0), (0.25, 14), (0.55, 31)])),
+    ("ult_price", "Charged_Axe_Chop", ("anchors", [(0.0, 74), (0.30, 93), (0.60, 103), (0.95, 124), (1.50, 124)])),
 ]
 LOOPS = {"idle", "walk", "run", "walk_back"}
 
@@ -453,7 +461,7 @@ def load_old():
         "hand_l": rig.matrix_world @ rig.data.bones["hand_l"].head_local,
         "atlas": m.mat.node_tree.nodes["Image Texture"].image,
         "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow", "w_daggers", "w_greatsword",
-                                           "w_scythe")],
+                                           "w_scythe", "w_wand")],
         "bow": m.objects["w_bow"],
         "spear": m.objects["w_spear"],
         "dagger_l": m.objects["w_dagger_l"],
@@ -2002,6 +2010,9 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
         if os.environ.get("KR_SHEET_SCYTHE"):  # 낫만(0274 ⑤ — 휜 날의 걸어 당기기를 본다)
             for o in old["weapons"] + [old["shield"], old["bow"], old["spear"], old["dagger_l"]]:
                 o.hide_render = o.name != "w_scythe"
+        if os.environ.get("KR_SHEET_WAND"):  # 완드만(0274 ⑥ — 잿빛 돌의 짧은 막대를 본다)
+            for o in old["weapons"] + [old["shield"], old["bow"], old["spear"], old["dagger_l"]]:
+                o.hide_render = o.name != "w_wand"
         only = [x for x in os.environ.get("KR_SHEET_ONLY", "").split(",") if x]  # 몇 동작만(이름 쉼표로)
         for name, _, _ in CLIPS:
             if only and name not in only:

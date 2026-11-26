@@ -504,6 +504,7 @@ fn hold_for(w: &mut World, id: Sk) {
         W::Daggers,
         W::Greatsword,
         W::Scythe,
+        W::Wand,
     ] {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
@@ -3707,6 +3708,177 @@ fn waking_grove_raises_three_rings_that_bind_the_near_and_heal_for_each_foe_reac
         gain >= want && gain <= want + 2 * sip,
         "+{gain} (want {want})"
     );
+    let (w, _, staggered, _) = go(true);
+    assert!(w.enemies[0].hp < 900, "a warden is hurt");
+    assert!(!staggered, "a warden is not staggered");
+}
+
+/// 0274 ⑥ 저주 새기기: 앞 8 m 안의 한 적(가장 가까운)에게 저주를 새긴다 — 균열이 가득 차고(금) 표가 남는다, 등 뒤 · 곁의 다른 적은 아니다.
+/// 그 적이 표를 지닌 채 쓰러지면 둘레(`spread`)의 가장 가까운 표 없는 적에게 옮는다(금을 다시 가득 — `Event::HexJump`), 둘레 밖으로는
+/// 옮지 않는다. 두 갈래(ㄴ)면 가까운 둘에게, 최종 효과면 쓰러진 자리가 울린다(울림의 터짐).
+#[test]
+fn etch_a_curse_marks_one_foe_and_passes_on_when_it_falls() {
+    use crate::skills::Form;
+    let Form::Hex { spread, secs, .. } = Sk::Hex.def().form else {
+        panic!("etch a curse is a hex")
+    };
+    let go = |rank: u8, pick: Pick| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Hex, rank, pick);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Wand);
+        // 앞의 표적 · 그 곁(옮을 곳 둘 — 가까운 것부터) · 둘레 밖 · 등 뒤.
+        for at in [
+            vec3(0.0, 0.0, -4.0),
+            vec3(1.8, 0.0, -4.0),
+            vec3(-2.6, 0.0, -4.0),
+            vec3(0.0, 0.0, -4.0 - spread * 1.6 - 2.0),
+            vec3(0.0, 0.0, 5.5),
+        ] {
+            w.spawn_mob(at);
+        }
+        still(&mut w);
+        let mut ev = w.step(&skill(0), &t);
+        for _ in 0..40 {
+            still_keep(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+        }
+        (w, t, ev)
+    };
+    let (mut w, t, ev) = go(1, Pick::A);
+    assert!(ev.iter().any(|e| matches!(e, Event::Hexed { .. })));
+    let marked: Vec<bool> = w.enemies.iter().map(|e| e.marks.hex > 0.0).collect();
+    assert_eq!(marked, [true, false, false, false, false], "one foe");
+    assert!(w.enemies[0].marks.hex <= secs);
+    assert!(
+        w.enemies[0].hp < 90 && w.enemies[0].ail.rift > 0.0,
+        "cracked"
+    );
+    // 쓰러진다 — 가장 가까운 곁의 적(1.8 m)에게 옮는다.
+    w.enemies[0].hp = 0;
+    w.enemies[0].state = EState::Dead;
+    let ev = w.step(&Actions::default(), &t);
+    assert!(ev.iter().any(|e| matches!(e, Event::HexJump { .. })));
+    let marked: Vec<bool> = w.enemies.iter().map(|e| e.marks.hex > 0.0).collect();
+    assert_eq!(
+        marked,
+        [false, true, false, false, false],
+        "passed to the nearest"
+    );
+    assert!(w.enemies[1].ail.rift > 0.0, "and cracked it");
+    // 두 갈래(3단 ㄴ): 가까운 둘에게.
+    let (mut w, t, _) = go(3, Pick::B);
+    w.enemies[0].hp = 0;
+    w.enemies[0].state = EState::Dead;
+    w.step(&Actions::default(), &t);
+    let marked: Vec<bool> = w.enemies.iter().map(|e| e.marks.hex > 0.0).collect();
+    assert_eq!(marked, [false, true, true, false, false], "forked");
+    // 최종 효과(5단): 쓰러진 자리가 울린다.
+    let (mut w, t, _) = go(5, Pick::A);
+    w.enemies[0].hp = 0;
+    w.enemies[0].state = EState::Dead;
+    let before = w.enemies[1].hp;
+    let mut ev = Vec::new();
+    for _ in 0..5 {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+    }
+    assert!(
+        w.enemies[1].hp < before,
+        "the fallen spot tolls ({} → {})",
+        before,
+        w.enemies[1].hp
+    );
+}
+
+/// 0274 ⑥ 시드는 그늘: 겨눈 쪽 앞에 그늘이 4초 남아 그 안의 적을 거듭 친다(1초마다) — 균열이 쌓여 금이 간다. 그늘 밖의 적은 아니다.
+#[test]
+fn a_withering_shade_strikes_again_and_again_and_cracks_the_foes_inside() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Blight, 1, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, -4.5));
+    w.spawn_mob(vec3(0.0, 0.0, -12.0));
+    still(&mut w);
+    let mut ev = w.step(&skill(0), &t);
+    let mut cracked = false;
+    for _ in 0..300 {
+        still_keep(&mut w);
+        ev.extend(w.step(&Actions::default(), &t));
+        cracked |= w.enemies[0].ail.rift > 0.0;
+    }
+    let pulses = ev
+        .iter()
+        .filter(|e| matches!(e, Event::FieldPulse { .. }))
+        .count();
+    assert!(pulses >= 3, "again and again: {pulses}");
+    assert!(w.enemies[0].hp <= 90 - 3 * 10, "{}", w.enemies[0].hp);
+    assert!(cracked, "the shade cracks");
+    assert_eq!(w.enemies[1].hp, 90, "out of the shade");
+}
+
+/// 0274 ⑥ 치른 값(완드 판의 궁극기): 세계가 멈춘 뒤 두 박 — 번지는 저주(둘레의 적 모두에게 금)와 `gap`초 뒤 터지는 울림(큰 피해 · 울림
+/// 가득). 금이 간 뒤라 터지는 울림이 금의 배로 더 다친다(완드를 든 손이면 더). 둘레 밖은 아니다. 문지기는 다치되 휘청이지 않는다.
+#[test]
+fn the_price_paid_cracks_everyone_around_then_tolls_harder_for_it() {
+    use crate::skills::{Ult, PRICE};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Wand);
+        wear_ult(&mut w, Ult::Price, 1);
+        for (k, at) in [
+            vec3(0.0, 0.0, -2.0),
+            vec3(3.5, 0.0, 0.0),
+            vec3(0.0, 0.0, -9.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if boss && k == 0 {
+                w.spawn_boss(at);
+            } else {
+                w.spawn_mob(at);
+            }
+        }
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= PRICE.freeze - 1e-4, "the world stops");
+        let (mut staggered, mut cracked) = (false, false);
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            cracked |= w.enemies[1].ail.rift > 0.0;
+            still_keep(&mut w);
+        }
+        (w, ev, staggered, cracked)
+    };
+    let (w, ev, _, cracked) = go(false);
+    let pulses: Vec<bool> = ev
+        .iter()
+        .filter_map(|e| match e {
+            Event::PricePulse { last, .. } => Some(*last),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pulses, [false, true], "a curse, then the toll");
+    assert!(cracked, "everyone around is cracked");
+    let hurt = |i: usize| 900 - w.enemies[i].hp;
+    let plain = PRICE.curse + PRICE.toll_at(1);
+    assert!(
+        hurt(1) > plain,
+        "the toll lands harder on the crack ({} > {plain})",
+        hurt(1)
+    );
+    assert_eq!(w.enemies[2].hp, 900, "out of reach");
     let (w, _, staggered, _) = go(true);
     assert!(w.enemies[0].hp < 900, "a warden is hurt");
     assert!(!staggered, "a warden is not staggered");

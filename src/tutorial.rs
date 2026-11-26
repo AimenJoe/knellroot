@@ -86,6 +86,8 @@ pub struct Seen {
     pub ails: u32,
     /// 0272 1b: 교체 공격을 냈다.
     pub swap_strikes: u32,
+    /// 0274 ⑥: 저주탄을 날렸다(완드의 상황 힌트가 본다).
+    pub curses: u32,
 }
 
 /// 지금의 사실(앱이 기록·월드에서 모은다).
@@ -287,9 +289,11 @@ pub enum Tip {
     Full,
     /// 바꿔 들어 보았고 평타도 여럿 맞혔는데 아직 교체 공격을 낸 적이 없다(0272 1b) — 맞힌 직후·패링 직후의 바꾸기.
     SwapStrike,
+    /// 완드를 처음 쥐었는데 아직 저주탄을 날린 적이 없다(0274 ⑥ — 계약은 잊혔지만 손이 그 말을 안다: 0171 풀이 줄의 결).
+    Curse,
 }
 
-pub const TIPS: [Tip; 10] = [
+pub const TIPS: [Tip; 11] = [
     Tip::Flask,
     Tip::Lock,
     Tip::Charge,
@@ -300,6 +304,7 @@ pub const TIPS: [Tip; 10] = [
     Tip::Spare,
     Tip::Full,
     Tip::SwapStrike,
+    Tip::Curse,
 ];
 /// 상황 힌트가 떠 있는 시간(초) — 그 일을 하면 먼저 걷힌다.
 pub const TIP_TIME: f32 = 6.0;
@@ -326,6 +331,8 @@ pub struct Situation {
     pub spare: bool,
     /// 곁에 떨어진 것이 있는데 가방이 가득이다(0226).
     pub bag_blocked: bool,
+    /// 완드를 들었다(0274 ⑥).
+    pub wand: bool,
 }
 
 impl Tip {
@@ -352,6 +359,7 @@ impl Tip {
             Tip::SwapStrike => {
                 now.has_sub && s.swaps > 0 && s.hits >= SWAP_STRIKE_TIP_HITS && s.swap_strikes == 0
             }
+            Tip::Curse => now.wand && s.curses == 0,
         }
     }
 
@@ -367,6 +375,7 @@ impl Tip {
             Tip::Type | Tip::Spare => false,
             Tip::Full => !now.bag_blocked,
             Tip::SwapStrike => s.swap_strikes > 0,
+            Tip::Curse => s.curses > 0 || !now.wand,
         }
     }
 
@@ -377,6 +386,7 @@ impl Tip {
             Tip::Lock => &[Bind::Lock],
             Tip::Charge => &[Bind::Attack],
             Tip::Swap | Tip::SwapStrike => &[Bind::Swap],
+            Tip::Curse => &[Bind::Cast],
             Tip::Block => &[Bind::Parry],
             Tip::Unfit | Tip::Type | Tip::Spare | Tip::Full => &[],
         }
@@ -394,6 +404,7 @@ impl Tip {
             Tip::Spare => (st.tip_spare, st.tip_spare_d),
             Tip::Full => (st.tip_full, st.tip_full_d),
             Tip::SwapStrike => (st.tip_swapstrike, st.tip_swapstrike_d),
+            Tip::Curse => (st.tip_curse, st.tip_curse_d),
         }
     }
 
@@ -678,6 +689,31 @@ mod tests {
                 "{t:?}"
             );
         }
+    }
+
+    /// 0274 ⑥: 완드를 처음 쥐면 한 번 — "손이 아는 말이 있다"(계약은 잊혔지만 손이 저주의 꼴을 안다). 버튼은 원거리 공격,
+    /// 저주탄을 날리거나 완드를 내리면 걷힌다. 날려 본 적이 있으면(다른 판에서라도 — 비트) 다시 뜨지 않는다.
+    #[test]
+    fn the_curse_tip_comes_once_when_a_wand_is_first_held() {
+        let wand = Situation {
+            wand: true,
+            ..Default::default()
+        };
+        let s = Seen::default();
+        assert_eq!(next_tip(0, DONE, &wand, &s), Some(Tip::Curse));
+        assert_eq!(Tip::Curse.binds(), [Bind::Cast]);
+        assert_eq!(next_tip(0, DONE, &Situation::default(), &s), None);
+        let cast = Seen { curses: 1, ..s };
+        assert!(Tip::Curse.done(&wand, &cast) && !Tip::Curse.done(&wand, &s));
+        assert!(
+            Tip::Curse.done(&Situation::default(), &s),
+            "put the wand away"
+        );
+        assert_eq!(next_tip(Tip::Curse.bit(), DONE, &wand, &s), None);
+        // 몸의 걸음 동안은 기다린다.
+        assert_eq!(next_tip(0, AFTER_BASICS - 1, &wand, &s), None);
+        let (head, more) = Tip::Curse.text(crate::i18n::s());
+        assert!(!head.is_empty() && !more.is_empty());
     }
 
     /// 패링은 막히지 않는다: 깨어 있는 적 곁에서 `PARRY_GIVE_UP`초를 못 하면 넘어간다(상도 받는다 — 해 본 것으로 친다).

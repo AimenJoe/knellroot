@@ -689,6 +689,10 @@ impl World {
                 add_poise(en, b.def.poise * self.stats.poise, None, t, ev);
                 // 종류의 RB가 싣는 속성(0274 ②b)과 끝까지 당긴 화살의 오금.
                 afflict(en, b.def.dose, ev);
+                // 계약의 표(0274 ⑥ — 완드의 빈 손): 저주탄에 맞은 적에 표가 남는다(쓰러지면 값이 돌아오는 것은 빈 손일 때만 — `tick_embers`).
+                if b.def.look == weapons::CURSE {
+                    en.marks.pact = weapons::PACT_MARK_SECS;
+                }
                 if b.def.lame > 0.0 && en.hp > 0 {
                     en.marks.hamstring = en.marks.hamstring.max(b.def.lame);
                 }

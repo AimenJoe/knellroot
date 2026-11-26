@@ -27,8 +27,10 @@ REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 # 모든 부위를 합쳐도 한 그리기 호출의 색인 15,000 밑, 게임은 든 무기 하나만 그린다).
 # 0274 ⑤: 낫(휜 날 여섯 마디 · 자루 · 고리 · 잔뿌리 — 정점 144, 삼각형 80)을 더해 5,500 → 5,650(삼각형 4,965 = 색인 14,895 —
 # 모든 부위를 합쳐도 한 그리기 호출의 색인 15,000 밑을 지키려고 날의 밝은 선 · 자루 끝 구슬은 넣지 않았다).
+# 0274 ⑥: 완드(막대 · 다섯 모의 잿빛 돌 — 삼각형 서른)를 더해 5,650 → 5,700(삼각형 4,995 = 색인 14,985 — 모든 부위를 합쳐도 한 그리기
+# 호출의 색인 15,000 밑).
 # charms: 0155에서 돌린 꼴·꺾인 관으로 다시(1,939) — 한 번에 하나만 그린다(아이콘은 캐시).
-BUDGET = {"hushed_stag": 8800, "mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 5650, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
+BUDGET = {"hushed_stag": 8800, "mossgrazer": 900, "packbearer": 1000, "repeater": 1650, "mossward": 2600, "winchkeeper": 2600, "wanderer": 5700, "root_husk": 760, "thorn_beast": 780, "gatekeeper": 2600, "shellback": 780, "pod": 800, "bellkeeper": 1700, "res_hearth": 780, "res_water": 800, "res_cloth": 800,
           # 0068 장신구 여섯이 한 파일(게임은 하나씩만 그린다) — 하나 280 안팎. 2026-11-23 디테일(사장 "싸구려"): 장신구 아홉 + 덧옷 셋,
           # 메뉴는 파일 한 벌을 그리기 한 번에 넘긴다(다른 부위 크기 0) — 그래서 덧옷은 `garbs`로 나눴다(뿌리껍질 덧옷 1,500 안팎).
           "charms": 4600, "garbs": 3400,
@@ -80,7 +82,9 @@ EXPECT = {
                  "gs1": 0.56, "gs2": 0.56, "gs3": 0.56, "gs4": 0.6, "gs5": 0.69, "gs_dash": 0.47, "gs_charge": 0.3, "gs_heavy": 0.81,
                  "sk_sunder": 0.7, "sk_sear": 0.53, "ult_tempest": 0.67,
                  # 0274 ⑤ 낫: 걸어 당기며 베기 · 걸어 당기기 · 생기 거두기(휘돌이와 같은 한 바퀴) · 깨어나는 숲(땅을 짚는다).
-                 "scythe3": 0.56, "scythe_charge": 0.3, "scythe_heavy": 0.58, "sk_reap": 0.48, "sk_harvest": 0.67, "ult_grove": 1.49},
+                 "scythe3": 0.56, "scythe_charge": 0.3, "scythe_heavy": 0.58, "sk_reap": 0.48, "sk_harvest": 0.67, "ult_grove": 1.49,
+                 # 0274 ⑥ 완드: 저주 새기기 · 시드는 그늘(손을 내미는 시전) · 치른 값(들어 올렸다 내리꽂고 머문다).
+                 "sk_hex": 0.52, "sk_blight": 0.55, "ult_price": 1.5},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "thorn_beast": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},
     "gatekeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,
@@ -110,7 +114,7 @@ EXPECT = {
 MUST_NODES = {"hushed_stag": ["glow_core", "glow_eyes", "head_geo", "antler_geo", "bell_geo", "antlers", "bell"],
               "mossward": ["glow_core", "glow_eyes", "head_geo", "shell_geo"],
               "winchkeeper": ["glow_core", "glow_eyes", "head_geo", "club"], "packbearer": ["glow_eyes", "head_geo", "load_geo", "load"],
-              "repeater": ["glow_eyes", "head_geo", "pick"], "mossgrazer": ["head_geo", "ear_l", "ear_r"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "bow", "w_spear", "spear", "w_daggers", "w_dagger_l", "dagger_l", "w_greatsword", "w_scythe", "glow_lamp", "lamp", "shield"],
+              "repeater": ["glow_eyes", "head_geo", "pick"], "mossgrazer": ["head_geo", "ear_l", "ear_r"], "gate": ["door_l", "door_r"], "gatekeeper": ["glow_core", "glow_eyes"], "wanderer": ["body", "root", "sword", "w_hammer", "w_staff", "w_crossbow", "w_bow", "bow", "w_spear", "spear", "w_daggers", "w_dagger_l", "dagger_l", "w_greatsword", "w_scythe", "w_wand", "glow_lamp", "lamp", "shield"],
               "root_husk": ["glow_eye"], "thorn_beast": ["glow_eyes"], "shellback": ["glow_eyes", "head_geo"], "pod": ["glow_eyes", "head_geo", "seed_geo"],
               "bellkeeper": ["glow_eyes", "glow_core", "bell_geo", "head_geo"], "res_hearth": ["head_geo"], "res_water": ["head_geo"], "res_cloth": ["head_geo"], "brazier": ["glow_flame"],
               "core_crystal": ["glow_core"], "bell": ["bell", "bell_frame"],

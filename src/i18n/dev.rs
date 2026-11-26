@@ -144,6 +144,10 @@ pub const SCYTHE_CHEST: Pair = (
     "셋째 지역 낮은터 동쪽 물가의 상자 곁에서(정원지기의 낫)",
     "region 3 beside the chest on the flooded hollow's eastern bank (the Gardener's Sickle)",
 );
+pub const WAND_CHEST: Pair = (
+    "넷째 지역 운반 회랑 서쪽 끝 곁방의 상자 곁에서(맡겨진 완드)",
+    "region 4 beside the chest in the westernmost side room of the haulage gallery (the Pledged Wand)",
+);
 pub const FIELD: Pair = (
     "첫 지역 필드 보스의 터에서(고요한 사슴)",
     "region 1 at the field boss's clearing (the Hushed Stag)",
@@ -170,13 +174,13 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
 pub const ARM_NOTE: Pair = (
-    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 창 → 쌍단검 → 대검 → 낫 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
-    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, spear, daggers, greatsword, sickle, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
+    "든 무기를 다음 것으로 바꾼다(검 → 망치 → 지팡이 → 쇠뇌 → 검과 방패 → 창 → 쌍단검 → 대검 → 낫 → 완드 → 맨손 → 활). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다. 지금: {0}",
+    "cycle the held weapon (sword, hammer, staff, crossbow, sword and shield, spear, daggers, greatsword, sickle, wand, fists, bow). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved. now: {0}",
 );
 pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
 pub const ARM_SUB_NOTE: Pair = (
-    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 쌍단검 → 대검 → 낫). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
-    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow, spear, daggers, greatsword, sickle); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
+    "아레나의 보조무기를 다음 것으로 바꾼다(없음 → 검 → 망치 → 지팡이 → 쇠뇌 → 활 → 창 → 쌍단검 → 대검 → 낫 → 완드). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다. 지금: {0}",
+    "cycle the arena's off-hand weapon (none, sword, hammer, staff, crossbow, bow, spear, daggers, greatsword, sickle, wand); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved. now: {0}",
 );
 pub const ARM_BARE: Pair = ("보조무기 비우기(켬/끔)", "empty the off hand (on/off)");
 pub const ARM_BARE_NOTE: Pair = (
@@ -255,6 +259,7 @@ pub const PAIRS: &[Pair] = &[
     DAGGER_CHEST,
     GREATSWORD_CHEST,
     SCYTHE_CHEST,
+    WAND_CHEST,
     FIELD,
     STAGE_NOTE,
     LAB_START,
@@ -458,6 +463,13 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("sk_reap", ("기술 — 걸어 당기기", "skill: hook and drag")),
     ("sk_harvest", ("기술 — 생기 거두기", "skill: reap life")),
     ("ult_grove", ("큰 기술 — 깨어나는 숲", "ult: waking grove")),
+    // 0274 ⑥ — 완드
+    ("sk_hex", ("기술 — 저주 새기기", "skill: etch a curse")),
+    (
+        "sk_blight",
+        ("기술 — 시드는 그늘", "skill: withering shade"),
+    ),
+    ("ult_price", ("큰 기술 — 치른 값", "ult: the price paid")),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).

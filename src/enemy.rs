@@ -312,6 +312,10 @@ pub struct Marks {
     pub bind: f32,
     /// 오금(0274 ②b — 끝까지 당긴 화살): 느리게 걷는 남은 초(문지기도 — 묶임·기절과 같은 `ROOT_BOSS_SLOW`로 덜).
     pub hamstring: f32,
+    /// 저주 새기기(0274 ⑥ — 완드): 저주의 표가 남은 초 — 표를 지닌 채 쓰러지면 둘레의 가까운 적에게 옮는다(`World::tick_embers`).
+    pub hex: f32,
+    /// 계약의 표(0274 ⑥ — 완드의 빈 손): 저주탄에 맞은 표가 남은 초 — 그동안 쓰러지면 친 손에 값이 돌아온다(빈 손일 때만).
+    pub pact: f32,
 }
 
 impl Default for Marks {
@@ -323,6 +327,8 @@ impl Default for Marks {
             snare: 0.0,
             bind: 0.0,
             hamstring: 0.0,
+            hex: 0.0,
+            pact: 0.0,
         }
     }
 }

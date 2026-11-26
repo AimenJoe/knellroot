@@ -959,10 +959,24 @@ fn class_fight_probe() {
                 bare: true,
                 ..v("scythe empty", W::Scythe, None, false, 0)
             },
+            // 0274 ⑥: 완드(주무기 · 보조무기로 · 방패를 들어도(쉰다) · 빈 손). 봇은 RB를 쓰지 않는다 — 주된 공격인 저주탄은 재지 못한다.
+            v("wand", W::Wand, None, false, 0),
+            v("wand+shield", W::Wand, None, true, 0),
+            v("wand/sub sword", W::Wand, Some(W::Sword), false, 0),
+            v("sword/sub wand", W::Sword, Some(W::Wand), false, 0),
+            Build {
+                bare: true,
+                ..v("wand empty", W::Wand, None, false, 0)
+            },
         ];
         println!("\n## {kind:?} — {}", b.name);
         println!("variant          | dummy  | p    | win  | secs(win) | taken | flasks");
+        // `SIM_ONLY=wand` — 이름에 그 글이 든 줄만(0274 ⑥ — 한 종류만 다시 잴 때).
+        let only = std::env::var("SIM_ONLY").ok();
         for bv in &variants {
+            if only.as_deref().is_some_and(|o| !bv.name.contains(o)) {
+                continue;
+            }
             let d = fight_vs(kind, true, bv, 1.0, 1, &t).secs;
             for p in [0.5, 0.7, 0.85] {
                 let m = summary(kind, bv, p, runs, &t);
@@ -995,7 +1009,7 @@ fn bare_hand_probe() {
     let only = std::env::var("SIM_ONLY").ok();
     let all = builds();
     // (주무기, 봇의 손, 견줄 보조무기 슬롯 — None = 방패)
-    let rows: [(W, Style, &[Option<W>]); 12] = [
+    let rows: [(W, Style, &[Option<W>]); 14] = [
         (
             W::Sword,
             Style::Plain,
@@ -1037,6 +1051,17 @@ fn bare_hand_probe() {
             W::Scythe,
             Style::Heavy,
             &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers), None],
+        ),
+        // 0274 ⑥: 완드(계약의 표 — 저주탄으로 쓰러뜨린 적만: 봇은 RB를 쓰지 않아 0이어야 한다). 방패와 들지 않는다(양손 — 방패는 쉰다).
+        (
+            W::Wand,
+            Style::Plain,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
+        (
+            W::Wand,
+            Style::Heavy,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
         ),
     ];
     let mut worst: f32 = f32::MIN;
