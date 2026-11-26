@@ -424,6 +424,7 @@ impl World {
         // 되울림·몰아치기(0158 G2)의 남은 시간 — 로직 시계라 히트스톱 동안은 줄지 않는다.
         pl.skill.echo_left = (pl.skill.echo_left - dt).max(0.0);
         pl.skill.flurry_left = (pl.skill.flurry_left - dt).max(0.0);
+        pl.skill.steady = (pl.skill.steady - dt).max(0.0);
         pl.flask_lock = (pl.flask_lock - dt).max(0.0);
         pl.flask_denied = (pl.flask_denied - dt).max(0.0);
         // 새 누름이면 0부터, 쥐고 있으면 늘고, 놓으면 0.
@@ -947,11 +948,11 @@ impl World {
     /// 평타 동작: 회피·패링·점프·마법·다음 타는 캔슬(0057, `cancel_or_buffer`)이 맡는다 — 여기서는 모으기와 끝만.
     fn tick_attack(&mut self, cx: &Ctx, e: f32, swing: u32, dir: Vec3, hit: u8) {
         let (a, t, wpn) = (&cx.a, cx.t, cx.wpn);
+        let after_hit = self.next_hit(hit);
         let pl = &mut self.player;
         let (s0, a0, r0) = hit_times(t, wpn, hit);
         let total = s0 + a0 + r0;
         let after = e >= s0 + a0;
-        let after_hit = wpn.after(hit);
         if a.attack_held && pl.attack_hold >= t[P::HeavyHoldStart] && after && wpn.heavy.is_some() {
             // 강공격(0030): 평타는 누르는 순간 나갔고, 한 번 누른 채 `heavy.hold start s`를 쥐고 있으면(활성이 끝난 뒤) 모으기로.
             // "그 순간 눌려 있나"만 보면 연타 중 휘두르기 도중의 짧은 누름이 활성 끝에 걸려 모으기로 샜다.

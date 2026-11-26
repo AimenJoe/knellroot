@@ -386,6 +386,12 @@ fn bolts(w: &World, alpha: f32) {
             thrown(w, b, p);
             continue;
         }
+        // 땅 내려찍기(0274 ④ — 대검의 RB): 빛 덩이가 아니라 땅을 타고 달리는 물결 — 앞머리의 가로 띠(흙빛 + 흰 속) · 지나온 금 ·
+        // 앞머리에서 솟았다 가라앉는 돌 조각.
+        if b.def.look == crate::weapons::QUAKE {
+            quake_wave(w, b, p);
+            continue;
+        }
         let (core, glow) = BOLT_LOOKS[(b.def.look as usize).min(BOLT_LOOKS.len() - 1)];
         let k = if b.def.is_shot() { 0.6 } else { 1.0 } * b.def.scale;
         let pulse = 1.0 + 0.12 * (w.time * 30.0 + b.left).sin();
@@ -469,6 +475,39 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
             );
         }
         _ => {}
+    }
+}
+
+/// 땅 내려찍기의 물결(0274 ④): 땅 높이에서 나는 쪽의 가로로 선 앞머리(넓은 흙빛 띠 + 흰 속) + 뒤로 남는 금(가는 띠) + 앞머리 양옆에서
+/// 솟았다 가라앉는 돌 조각 셋. 빨강은 쓰지 않는다.
+fn quake_wave(w: &World, b: &crate::world::Bolt, p: Vec3) {
+    let k = b.def.scale;
+    let g = vec3(p.x, w.ground_y(p) + 0.08, p.z);
+    let dir = vec3(b.dir.x, 0.0, b.dir.z).normalize_or(Vec3::Z);
+    let side = vec3(-dir.z, 0.0, dir.x);
+    let dust = Color::new(0.86, 0.80, 0.70, 0.55);
+    let core = Color::new(1.0, 0.97, 0.9, 0.85);
+    let half = 0.75 * k;
+    trail(g + side * half, g - side * half, 0.34 * k, dust);
+    trail(
+        g + side * half * 0.7 + dir * 0.05,
+        g - side * half * 0.7 + dir * 0.05,
+        0.12 * k,
+        core,
+    );
+    trail(g, g - dir * (1.6 * k), 0.10 * k, with_a(dust, 0.4));
+    let rock = Color::new(0.62, 0.58, 0.55, 1.0);
+    for (j, off) in [-0.55f32, 0.0, 0.55].into_iter().enumerate() {
+        let bob = ((w.time * 14.0 + b.left * 9.0 + j as f32 * 2.1).sin() * 0.5 + 0.5) * 0.35 * k;
+        let at = g + side * off * k + Vec3::Y * bob - dir * 0.1;
+        let rot = Quat::from_rotation_y(w.time * 6.0 + j as f32);
+        shaded_tris(
+            at,
+            &octa_faces(vec2(0.11 * k, 0.09 * k), 0.16 * k, 0.06 * k),
+            rock,
+            0.7,
+            rot,
+        );
     }
 }
 
@@ -801,7 +840,7 @@ fn swing_crescent(w: &World, pp: Vec3, t: &Tuning, wpn: &crate::weapons::Weapon)
     if t[crate::tuning::P::RenderFx] >= 0.5 {
         if let PState::Attack { t: e, hit, .. } = w.player.state {
             // 몰아치기(0158 G2) 동안은 평타의 시계가 빨라진다 — 빛도 같은 배로.
-            let e = e * w.flurry_rate();
+            let e = e * w.swing_rate();
             let (s0, a0, _) = crate::world::hit_times(t, wpn, hit);
             if let Some(h) = w
                 .hit_of(hit)
@@ -1072,6 +1111,23 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                 } else {
                     let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
                     fl.lane_edge(at, dir, len, u.half * 2.0, with_a(steel, 0.5 * (1.0 - k)));
+                }
+            }
+            // 칼바람(0274 ④): 세계가 멈춘 동안 휩쓸 둘레의 잔불빛 테가 몸에서 바깥으로 자라고, 휘도는 동안 그 테가 옅게 남는다
+            // (휩쓸기마다의 빛은 이펙트가).
+            crate::skills::Ult::Tempest => {
+                let u = &crate::skills::TEMPEST;
+                let ember = Color::new(1.0, 0.72, 0.36, 1.0);
+                let r = u.radius_at(w.player.skill.ult_rank);
+                let at = pp + Vec3::Y * 0.06;
+                if !done {
+                    let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
+                    let k = if e > 0.0 { 1.0 } else { frozen };
+                    fl.ring(at, 0.4 + (r - 0.4) * k, 0.0, 360.0, with_a(ember, 0.85));
+                    fl.sector(at, r * k, 0.0, 360.0, with_a(ember, 0.10 * k));
+                } else {
+                    let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
+                    fl.ring(at, r, 0.0, 360.0, with_a(ember, 0.55 * (1.0 - k)));
                 }
             }
             // 그림자 습격(0274 ③): 세계가 멈춘 동안 고른 적의 발밑에 강철빛 테가 조여들고(숨어들 적), 찌르는 동안 그 테가 옅게 남는다.

@@ -47,6 +47,8 @@ pub struct Build {
     /// 봇의 손(0276 — 빈 손의 결을 재려고): 보통(패링 · 평타 콤보) · 구르기(패링할 때 옆으로 구르고 곧장 친다 — 그림자 걸음) ·
     /// 강공격(틈에 평타 대신 다 모은 강공격 — 두 손 내려베기 · 이어 꿰뚫기).
     pub style: Style,
+    /// 대검을 휘두르는 동안의 휘청 배를 바꾼다(0274 ④ — `Some(1.0)` = 휘청 줄임 없음: 그것이 보스전을 얼마나 줄이나 잰다).
+    pub flinch: Option<f32>,
 }
 
 /// 봇의 손(0276).
@@ -104,6 +106,7 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         w.set_shield(Some(crate::shield::Id::Pilgrim));
     }
     w.set_open_hand(b.bare);
+    w.flinch_probe = b.flinch;
     if b.rally > 0 {
         use crate::skills::{Id as Sk, Loadout, Pick, Slot, Ult};
         w.set_skills(Loadout {
@@ -515,6 +518,7 @@ pub fn builds() -> Vec<Build> {
             rally: 0,
             bare: false,
             style: Style::Plain,
+            flinch: None,
         },
         // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 패시브 칸 둘.
         Build {
@@ -534,6 +538,7 @@ pub fn builds() -> Vec<Build> {
             rally: 0,
             bare: false,
             style: Style::Plain,
+            flinch: None,
         },
         // 둘째 판 이후(문지기 핵 둘·패시브 칸 넷): 힘 3단(강타 +1).
         Build {
@@ -553,6 +558,7 @@ pub fn builds() -> Vec<Build> {
             rally: 0,
             bare: false,
             style: Style::Plain,
+            flinch: None,
         },
         // 정원 도착(0185): 문지기 둘·마을의 잔불 — 레벨 일곱, 패시브 칸 여섯.
         Build {
@@ -572,6 +578,7 @@ pub fn builds() -> Vec<Build> {
             rally: 0,
             bare: false,
             style: Style::Plain,
+            flinch: None,
         },
         // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
         Build {
@@ -591,6 +598,7 @@ pub fn builds() -> Vec<Build> {
             rally: 0,
             bare: false,
             style: Style::Plain,
+            flinch: None,
         },
     ]
 }
@@ -618,6 +626,7 @@ pub fn sanctuary_build() -> Build {
         rally: 0,
         bare: false,
         style: Style::Plain,
+        flinch: None,
     }
 }
 
@@ -906,6 +915,41 @@ fn class_fight_probe() {
             v("daggers", W::Daggers, None, false, 0),
             v("daggers/sub sword", W::Daggers, Some(W::Sword), false, 0),
             v("sword/sub daggers", W::Sword, Some(W::Daggers), false, 0),
+            // 0274 ④: 대검(주무기 · 보조무기로) · 휘청 줄임을 걷은 대검(그것이 싸움을 얼마나 줄이나).
+            v("greatsword", W::Greatsword, None, false, 0),
+            Build {
+                flinch: Some(1.0),
+                ..v("gs no steady", W::Greatsword, None, false, 0)
+            },
+            v(
+                "greatsword/sub sword",
+                W::Greatsword,
+                Some(W::Sword),
+                false,
+                0,
+            ),
+            v(
+                "sword/sub greatsw.",
+                W::Sword,
+                Some(W::Greatsword),
+                false,
+                0,
+            ),
+            // 다 모은 강공격의 덤(대검을 멘 보조특성)은 쥐어 모으는 손에서만 — 강공격의 손으로도 잰다.
+            Build {
+                style: Style::Heavy,
+                ..v("sword heavy-hand", W::Sword, None, false, 0)
+            },
+            Build {
+                style: Style::Heavy,
+                ..v(
+                    "sword heavy/sub gs",
+                    W::Sword,
+                    Some(W::Greatsword),
+                    false,
+                    0,
+                )
+            },
         ];
         println!("\n## {kind:?} — {}", b.name);
         println!("variant          | dummy  | p    | win  | secs(win) | taken | flasks");
@@ -942,7 +986,7 @@ fn bare_hand_probe() {
     let only = std::env::var("SIM_ONLY").ok();
     let all = builds();
     // (주무기, 봇의 손, 견줄 보조무기 슬롯 — None = 방패)
-    let rows: [(W, Style, &[Option<W>]); 8] = [
+    let rows: [(W, Style, &[Option<W>]); 10] = [
         (
             W::Sword,
             Style::Plain,
@@ -963,6 +1007,17 @@ fn bare_hand_probe() {
         (W::Daggers, Style::Plain, &[Some(W::Sword), Some(W::Hammer)]),
         (W::Daggers, Style::Dodge, &[Some(W::Sword), Some(W::Hammer)]),
         (W::Staff, Style::Plain, &[Some(W::Sword), Some(W::Hammer)]),
+        // 0274 ④: 대검(남김없이 휘두른다 — 분노가 두 배로 차고 가득이면 평타가 끝나지 않는다).
+        (
+            W::Greatsword,
+            Style::Plain,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
+        (
+            W::Greatsword,
+            Style::Heavy,
+            &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers)],
+        ),
     ];
     let mut worst: f32 = f32::MIN;
     for (kind, bi) in [

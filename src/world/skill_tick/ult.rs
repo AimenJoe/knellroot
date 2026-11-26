@@ -29,6 +29,10 @@ impl World {
         if kind == skills::Ult::Ambush {
             self.ambush_blink(cx);
         }
+        // 칼바람(0274 ④): 시작부터 맞아도 휘청이지 않는다(받는 피해는 그대로) — 휘도는 동안과 그 뒤 `steady`초.
+        if kind == skills::Ult::Tempest {
+            self.player.skill.steady = skills::TEMPEST.steady;
+        }
         if kind == skills::Ult::Rain {
             let (dir, dist) = self.rain_aim(cx);
             self.player.facing = dir.x.atan2(dir.z);
@@ -66,7 +70,7 @@ impl World {
                 skills::Ult::Blizzard => self.blizzard(),
                 skills::Ult::Rain => self.arrow_rain(),
                 // 질풍 찌르기 · 그림자 습격: 찌름은 아래에서 때마다(첫 찌름이 시동 끝).
-                skills::Ult::Gale | skills::Ult::Ambush => {}
+                skills::Ult::Gale | skills::Ult::Ambush | skills::Ult::Tempest => {}
             }
         }
         if kind == skills::Ult::Gale {
@@ -74,6 +78,14 @@ impl World {
                 let at = startup + skills::GALE.thrust_at(k);
                 if e < at && e1 >= at {
                     self.gale_thrust(cx.t, k);
+                }
+            }
+        }
+        if kind == skills::Ult::Tempest {
+            for k in 0..skills::TEMPEST.sweeps {
+                let at = startup + skills::TEMPEST.sweep_at(k);
+                if e < at && e1 >= at {
+                    self.tempest_sweep(cx.t, k);
                 }
             }
         }
@@ -216,6 +228,69 @@ impl World {
             dir,
             len,
             half: g.half,
+            last,
+        });
+        self.skill_ev = ev;
+    }
+
+    /// 칼바람(0274 ④)의 `k`째 휩쓸기: 몸 둘레(`TEMPEST.radius_at`)의 깨어 있는 적을 모두 벤다 — 앞의 휩쓸기는 가볍게(균열 · 밀지
+    /// 않는다 — 떼가 둘레에 남는다), 마지막은 크게: 큰 피해 · 큰 자세 피해 · 잔불(화상), 잡몹은 바깥으로 밀려 휘청인다(보스는 밀리지도
+    /// 휘청이지도 않는다 — `skill_touch`가 보스의 휘청을 거르고, 밀기는 여기서 뺀다). 휩쓸기마다 새 타 번호.
+    pub(super) fn tempest_sweep(&mut self, t: &Tuning, k: u8) {
+        let g = &skills::TEMPEST;
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let rank = self.player.skill.ult_rank;
+        let last = k + 1 >= g.sweeps;
+        let radius = g.radius_at(rank);
+        let (light, deep) = g.damage_at(rank);
+        let dose = self.dosed(if last { g.dose } else { g.light_dose });
+        self.player.swings += 1;
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            if dv.length() - en.radius > radius {
+                continue;
+            }
+            let out = dv.normalize_or(self.player.facing_dir());
+            let knock = if last && !en.boss {
+                out * g.push * KNOCK_DECAY
+            } else {
+                Vec3::ZERO
+            };
+            if last {
+                self.sparks.extend(sparks_at(
+                    en.pos + Vec3::Y * en.height * 0.55,
+                    out,
+                    self.player.swings,
+                    true,
+                ));
+            }
+            self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage: if last { deep } else { light },
+                    poise: if last { g.last_poise } else { g.poise },
+                    stagger: if last { g.stagger } else { 0.0 },
+                    knock,
+                    crit: last,
+                    dose,
+                    flat: false,
+                },
+            );
+        }
+        if last {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+        }
+        ev.push(Event::TempestSweep {
+            at: p,
+            radius,
             last,
         });
         self.skill_ev = ev;

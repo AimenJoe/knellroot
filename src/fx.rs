@@ -1321,6 +1321,26 @@ impl Fx {
                     STEEL,
                 );
             }
+            // 땅 내려찍기(0274 ④): 날이 땅에 닿은 발 앞의 흰 별 + 앞으로 번지는 흙빛 고리 한 겹 + 튀는 돌 + 먼지.
+            Event::Cast { at, look } if look == crate::weapons::QUAKE => {
+                let fwd = w.player.facing_dir();
+                let g = vec3(pp.x, w.ground_y(pp), pp.z) + fwd * 1.0;
+                self.star(g + Vec3::Y * 0.3, 1.5, 0.1, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir: fwd,
+                        r0: 0.3,
+                        r1: 2.2,
+                        arc_deg: 80.0,
+                    },
+                    0.22,
+                    QUAKE,
+                );
+                self.chips(g, fwd, 1.6, 70.0, 6);
+                self.dust_ring(g, 0.5, 8, 3.2, 0.5, DUST);
+                let _ = at;
+            }
             Event::Cast { at, look } if look == crate::weapons::STONE => {
                 self.spray(
                     at,
@@ -1772,6 +1792,52 @@ impl Fx {
                     );
                 }
             }
+            // 칼바람(0274 ④): 휩쓸기마다 둘레 끝까지 번지는 강철빛 고리 + 둘레에서 바깥으로 튀는 빛줄, 마지막은 큰 별 + 잔불빛 고리 둘 +
+            // 튀는 불씨 + 먼지 고리.
+            Event::TempestSweep { at, radius, last } => {
+                let g = vec3(at.x, w.ground_y(at), at.z);
+                if last {
+                    self.star(g + Vec3::Y * 1.0, 2.8, 0.14, WHITE_HOT);
+                    for i in 0..2 {
+                        self.mark_with(
+                            g,
+                            MarkKind::Ring {
+                                r0: radius * 0.3,
+                                r1: radius * (1.0 + 0.2 * i as f32),
+                            },
+                            0.45,
+                            if i == 0 { WHITE_HOT } else { AMBER },
+                            0.08 * i as f32,
+                            false,
+                            false,
+                        );
+                    }
+                    self.ring_sparks(g + Vec3::Y * 0.9, radius * 0.8, 18, 9.0, 0.3, AMBER, GOLD);
+                    self.dust_ring(g, radius * 0.6, 16, 6.0, 0.7, DUST);
+                } else {
+                    self.mark_with(
+                        g,
+                        MarkKind::Ring {
+                            r0: radius * 0.5,
+                            r1: radius,
+                        },
+                        0.16,
+                        STEEL,
+                        0.0,
+                        false,
+                        false,
+                    );
+                    self.ring_sparks(
+                        g + Vec3::Y * 0.9,
+                        radius * 0.75,
+                        10,
+                        6.5,
+                        0.18,
+                        WHITE_HOT,
+                        STEEL,
+                    );
+                }
+            }
             // 그림자 습격(0274 ③): 떠난 자리와 닿은 자리에 그늘빛 연기 한 줌씩 + 두 자리를 잇는 옅은 띠(숨어든 길).
             Event::Blink { from, to } => {
                 for p in [from, to] {
@@ -1909,6 +1975,12 @@ impl Fx {
                         let f = w.player.facing_dir();
                         self.star(pp + Vec3::Y * 1.0 + f * 0.6, 1.2, 0.3, STEEL);
                         self.implode(g, 2.0, 10, SMOKE);
+                    }
+                    // 0274 ④: 칼바람 = 들어 올린 날의 잔불빛 + 발밑으로 모이는 먼지(분노가 터지기 전).
+                    crate::skills::Ult::Tempest => {
+                        self.star(pp + Vec3::Y * 1.4, 1.4, 0.3, AMBER);
+                        self.implode(g, 2.6, 12, AMBER);
+                        self.dust_ring(g, 2.2, 12, -2.4, 0.45, DUST);
                     }
                 }
             }
@@ -2538,6 +2610,65 @@ impl Fx {
                     Shape::Dot,
                     0.12,
                     0.4,
+                    -1.0,
+                    GOLD,
+                    fade(AMBER),
+                );
+            }
+            // 땅 가르기(0274 ④): 내리친 자리의 흰 별 + 좁게 앞으로 달리는 충격파 + 길게 갈라지는 땅(균열의 보랏빛 — 생물의 색이 아니라
+            // 이펙트) + 튀는 돌.
+            (Sk::Sunder, Form::Cone { range, arc_deg, .. }) => {
+                let c = g + dir * 0.9;
+                self.star(c + Vec3::Y * 0.3, 2.0, 0.12, WHITE_HOT);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.6,
+                        r1: range,
+                        arc_deg,
+                    },
+                    0.24,
+                    QUAKE,
+                );
+                self.mark(
+                    g,
+                    MarkKind::Cracks {
+                        dir,
+                        r: range,
+                        n: 3,
+                        arc_deg: arc_deg * 0.5,
+                    },
+                    1.0,
+                    RIFT_ROOT,
+                );
+                self.dust_ring(c, 0.6, 10, 4.0, 0.6, DUST);
+                self.chips(g, dir, range, arc_deg, 8);
+            }
+            // 불씨 휩쓸기(0274 ④): 날이 지난 넓은 호의 잔불빛 충격파 + 날을 따라 흩어지는 불씨.
+            (Sk::Sear, Form::Cone { range, arc_deg, .. }) => {
+                let hand = g + Vec3::Y * 0.9 + dir * 0.8;
+                self.star(hand, 1.2, 0.1, AMBER);
+                self.mark(
+                    g,
+                    MarkKind::Shock {
+                        dir,
+                        r0: 0.5,
+                        r1: range,
+                        arc_deg,
+                    },
+                    0.28,
+                    AMBER,
+                );
+                self.spray(
+                    g + Vec3::Y * 0.8,
+                    dir,
+                    (arc_deg * 0.5).to_radians().sin().max(0.4),
+                    18,
+                    range * 2.0,
+                    Shape::Dot,
+                    0.12,
+                    0.45,
                     -1.0,
                     GOLD,
                     fade(AMBER),

@@ -637,6 +637,8 @@ impl App {
                 | Event::Mend { .. }
                 | Event::FlaskDenied
                 | Event::Ember { .. } => 0.0,
+                // 땅 내려찍기(0274 ④)는 땅을 친 만큼 조금 흔들린다.
+                Event::Cast { look, .. } if look == crate::weapons::QUAKE => SHAKE_HIT,
                 Event::Cast { .. } | Event::CastDenied | Event::Throw => 0.0,
                 Event::WeaponSwap { .. } | Event::SwapStrike { .. } => 0.0,
                 Event::Guard { .. } => SHAKE_HIT,
@@ -682,6 +684,9 @@ impl App {
                 Event::AmbushStab { last: true, .. } => SHAKE_ROUSE,
                 Event::AmbushStab { .. } => SHAKE_HIT,
                 Event::Blink { .. } => 0.0,
+                // 칼바람(0274 ④): 휩쓸기마다 가볍게, 마지막은 큰 기술만큼.
+                Event::TempestSweep { last: true, .. } => SHAKE_ROUSE,
+                Event::TempestSweep { .. } => SHAKE_HIT,
                 // 0158 G2: 터지는 것은 내려찍기만큼, 받아냄·울림·되돎은 가볍게, 불티의 타·손에 돌아옴·몰아치기의 시작은 조용히.
                 Event::ThrowBoom { .. } => SHAKE_PLUNGE,
                 Event::Soak { .. } | Event::EchoRing { .. } | Event::Interrupt { .. } => SHAKE_HIT,
@@ -732,7 +737,8 @@ impl App {
                 | Event::LineCut { .. }
                 | Event::GreatBell { .. }
                 | Event::GaleThrust { last: true, .. }
-                | Event::AmbushStab { last: true, .. } => ZOOM_SMASH,
+                | Event::AmbushStab { last: true, .. }
+                | Event::TempestSweep { last: true, .. } => ZOOM_SMASH,
                 // 0158 G2의 큰 순간: 땅울림이 찍는 순간, 셋을 다 받아낸 버팀의 터뜨림(받아낸 수는 다음 버팀까지 남는다).
                 Event::Skill {
                     id: crate::skills::Id::Quake,
@@ -1353,7 +1359,10 @@ impl App {
                         | Sk::Pin
                         | Sk::Pommel
                         | Sk::Shove
-                        | Sk::Slip => Id::Swing,
+                        | Sk::Slip
+                        | Sk::Sunder => Id::Swing,
+                        // 0274 ④: 불씨 휩쓸기 = 잔불 소리(달군 날).
+                        Sk::Sear => Id::Ember,
                         // 0274: 재기 = 발을 딛는 둔한 소리(숨을 몰아쉬고 선다).
                         Sk::Rally => Id::Thwack,
                         // 0272: 심지 볼트 = 잔불 소리(심지에 불이 붙는다).
@@ -1396,6 +1405,9 @@ impl App {
                         Sk::Rally => Id::Beat2,
                         // 0274 ③(쌍단검): 빠지며 베기 = 스치는 바람(물러나는 걸음 — 벤 것은 맞힘 소리가 따로).
                         Sk::Slip => Id::Dodge,
+                        // 0274 ④(대검): 땅 가르기 = 낮은 울림(땅이 갈라진다), 불씨 휩쓸기 = 휘두름(불은 `SkillStart`의 잔불 소리).
+                        Sk::Sunder => Id::Wake,
+                        Sk::Sear => Id::Swing,
                     }
                 }
                 Event::SkillDenied => Id::Deny,
@@ -1415,6 +1427,9 @@ impl App {
                 Event::Blink { .. } => Id::Dodge,
                 Event::AmbushStab { last: true, .. } => Id::Hit,
                 Event::AmbushStab { .. } => Id::Swing,
+                // 칼바람(0274 ④): 휩쓸기마다 휘두름, 마지막은 타격.
+                Event::TempestSweep { last: true, .. } => Id::Hit,
+                Event::TempestSweep { .. } => Id::Swing,
                 // 0270 C3: 큰 종 = 낮은 종, 눈보라 = 가장 높은 종.
                 Event::GreatBell { .. } => Id::Beat,
                 Event::Blizzard { .. } => Id::Beat3,
@@ -1425,6 +1440,8 @@ impl App {
                 // 둘째 음, 꽂힘 = 가장 높은 종(맞은 것은 맞힘 소리가 따로), 창이 손에 돌아옴 = 던지기의 돌아옴과 같은 종. 마법탄은 소리 없이(그대로).
                 Event::Cast { look, .. } if crate::weapons::Bolt::look_thrown(*look) => Id::Swing,
                 Event::Cast { look, .. } if *look == crate::weapons::LIGHT => Id::Beat2,
+                // 땅 내려찍기(0274 ④): 낮은 울림(땅이 갈라진다).
+                Event::Cast { look, .. } if *look == crate::weapons::QUAKE => Id::Wake,
                 Event::Smite { .. } => Id::Beat3,
                 Event::JavelinBack { .. } => Id::Beat,
                 // 0276(있는 소리를 겹친다): 기도하는 손 = 가운데 종 · 덫을 놓음 = 던짐 · 덫이 묾 = 쇳소리 · 방패가 튕김 = 낮은 종 ·

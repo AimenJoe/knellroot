@@ -484,6 +484,7 @@ fn wanderer_clips_start_and_end_facing_front_and_do_not_spin() {
                     | "fist_heavy"
                     | "spear_lunge"
                     | "dagger_lunge"
+                    | "gs_heavy"
             ) {
                 assert!(near(ys[0], front, 25.0), "{n} starts facing {:+.0}°", ys[0]);
             }

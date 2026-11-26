@@ -84,6 +84,8 @@ impl Memory {
         // 던지는 RB(0274 ②b — 손도끼 · 창 · 돌): 머리 위로 휘둘러 던지는 동작(스킬 던지기의 것).
         // 0276: 방패를 든 한손 무기면 방패를 던진다(같은 동작).
         let toss = !shot && w.rb_bolts().0.thrown();
+        // 땅 내려찍기(0274 ④ — 대검의 RB): 두 손으로 머리 위에서 내려찍는 동작(평타 끝 타 `gs5`)의 닿는 자리가 탄이 나가는 때에.
+        let slam = !shot && w.rb_bolts().0.look == crate::weapons::QUAKE;
         // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
         // 월드 시계로 지난 초(멈춤 창·히트스톱 동안 0) — 서 있는 몸짓·걸음 시계·섞기가 같이 쓴다.
         let wdt = (w.time - self.idle_at).clamp(0.0, 0.1);
@@ -137,7 +139,7 @@ impl Memory {
                 let rate = crate::weapons::clip_rate(combo_anim(hit), s0);
                 Pick::of(
                     &[combo_anim(hit), "attack", "attack"],
-                    e * w.flurry_rate() * rate,
+                    e * w.swing_rate() * rate,
                 )
             }
             // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다 — 무기마다(0051).
@@ -182,6 +184,10 @@ impl Memory {
             // 마법(0048): 손을 앞으로 내미는 자세(전용 동작이 생기기 전엔 패링 자세).
             PState::Cast { t: e, .. } if shot => Pick::of(shoot, e),
             // 던지기(0274 ②b): 손을 떠나는 자리(`TOSS_RELEASE`)가 탄이 나가는 때(`cast.startup s`)에 오게 돌린다.
+            PState::Cast { t: e, .. } if slam => Pick::of(
+                &["gs5", "hammer3", "cast"],
+                e * SLAM_RELEASE / t[crate::tuning::P::CastStartup].max(1e-3),
+            ),
             PState::Cast { t: e, .. } if toss => Pick::of(
                 &["sk_throw", "throw", "cast"],
                 e * TOSS_RELEASE / t[crate::tuning::P::CastStartup].max(1e-3),
@@ -194,6 +200,10 @@ impl Memory {
                 e * BOW_DRAW_CLIP / t[crate::tuning::P::CastCharge].max(1e-3),
             ),
             PState::CastCharge { t: e } if shot => Pick::of(draw, e),
+            // 내려찍을 것을 모으는 동안은 머리 위로 든 자세에 머문다(0274 ④).
+            PState::CastCharge { t: e } if slam => {
+                Pick::of(&["gs5", "hammer3", "cast"], e.min(SLAM_WINDUP))
+            }
             // 던질 것을 모으는 동안은 머리 위로 든 자세에 머문다.
             PState::CastCharge { t: e } if toss => {
                 Pick::of(&["sk_throw", "throw", "cast"], e.min(TOSS_WINDUP))
@@ -379,6 +389,9 @@ pub const PARRY_PUSH_FIRM: f32 = 0.2;
 pub const XBOW_RELEASE: f32 = 0.058;
 /// 던지기(0274 ②b — `sk_throw`): 손을 떠나는 자리(초)와 모으는 동안 머무는 든 자세(초). 활 당기기 동작의 길이(초 — `bow_draw`).
 pub const TOSS_RELEASE: f32 = 0.2;
+/// 땅 내려찍기(0274 ④ — `gs5`): 날이 땅에 닿는 자리(초 — 판정 구간의 시작)와 모으는 동안 머무는 든 자세(초).
+pub const SLAM_RELEASE: f32 = 0.128;
+pub const SLAM_WINDUP: f32 = 0.09;
 pub const TOSS_WINDUP: f32 = 0.12;
 pub const BOW_DRAW_CLIP: f32 = 0.3;
 pub const CAST_RELEASE: f32 = 0.075;

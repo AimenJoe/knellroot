@@ -105,6 +105,7 @@ const MODS0: Mods = Mods {
     stamina_regen: 1.0,
     poise: 1.0,
     heavy_dmg: 0,
+    charged_dmg: 0,
     light_dmg: 0,
     opened_dmg: 0,
     knock: 1.0,

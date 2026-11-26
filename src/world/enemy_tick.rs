@@ -774,11 +774,32 @@ impl World {
             // 버팀(0158 G2): 버티는 동안은 타마다 덜 다치고(0 아래로는 안 내려간다) 밀리지도 끊기지도 않는다 — 받아낸 타를 센다.
             let braced = self.bracing();
             // 디딘 발(0214): 스킬의 시동 동안 맞아도 끊기지 않는다 — 피해는 받는다.
-            let planted = self.tree.has(Cell::Planted)
+            // 칼바람(0274 ④): 휘도는 동안과 그 뒤 잠깐(`SkillState::steady`)도 — 피해는 받는다.
+            let planted = (self.tree.has(Cell::Planted)
                 && match self.player.state {
                     PState::Skill { id, t: e, .. } => e < self.skill_eff(id).skill.startup,
                     _ => false,
-                };
+                })
+                || self.player.skill.steady > 0.0;
+            // 대검을 휘두르는 동안(0274 ④): 맞아도 덜 휘청이고 덜 밀린다(덧옷 `flinch`와 같은 손잡이 — 받는 피해는 그대로).
+            let (flinch, knocked) = if self.swinging_greatsword() {
+                #[cfg(test)]
+                if let Some(k) = self.flinch_probe {
+                    (k, k)
+                } else {
+                    (
+                        crate::weapons::GREATSWORD_FLINCH,
+                        crate::weapons::GREATSWORD_KNOCK,
+                    )
+                }
+                #[cfg(not(test))]
+                (
+                    crate::weapons::GREATSWORD_FLINCH,
+                    crate::weapons::GREATSWORD_KNOCK,
+                )
+            } else {
+                (1.0, 1.0)
+            };
             // 뿌리내린 몸(0214 맺음): 서 있으면 덜 다치고 밀리지 않는다.
             let rooted = self.tree.keyed(crate::progression::Key::Rooted)
                 && self.player.hurt.still >= crate::progression::key::ROOTED_STILL;
@@ -823,7 +844,7 @@ impl World {
                 // `STUN_CHAIN_GRACE` 동안 또 맞으면 경직이 그전의 반 — 맞을수록 짧아져 떼 속에서도 빠져나갈 틈이 생긴다.
                 (pl.hurt.stun_chain, pl.hurt.stun_window) =
                     stun_chain_next(pl.hurt.stun_window, pl.hurt.stun_chain, t[P::HitStun]);
-                let dur = t[P::HitStun] * 0.5f32.powi(pl.hurt.stun_chain);
+                let dur = t[P::HitStun] * 0.5f32.powi(pl.hurt.stun_chain) * flinch;
                 if planted {
                     // 스킬은 그대로 나간다.
                 } else if dur > 0.0 {
@@ -834,7 +855,7 @@ impl World {
                 }
                 if !planted && !rooted {
                     let away = vec3(pl.pos.x - from.x, 0.0, pl.pos.z - from.z).normalize_or_zero();
-                    pl.vel = away * t[P::HitKnock] * KNOCK_DECAY;
+                    pl.vel = away * t[P::HitKnock] * KNOCK_DECAY * knocked;
                 }
             }
             if felt {

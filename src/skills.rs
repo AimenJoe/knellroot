@@ -39,11 +39,13 @@ pub const BOW: Hands = class_bit(Class::Bow);
 pub const SPEAR: Hands = class_bit(Class::Spear);
 /// 쌍단검(0274 ③ — 두 손에 날 하나씩: 방패와 들지 않는다).
 pub const DAGGER: Hands = class_bit(Class::Dagger);
+/// 대검(0274 ④ — 두 손으로 드는 긴 날: 방패와 들지 않는다).
+pub const GREATSWORD: Hands = class_bit(Class::Greatsword);
 /// 한손 계열과 방패(방패 판의 기술).
 pub const SHIELD: Hands = 1 << 15;
-/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도) · 양손 근접(지팡이 · 창 · 쌍단검 — 두 손이 다 찬다) · 근접 · 원거리 · 어느 것이나.
+/// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도) · 양손 근접(지팡이 · 창 · 쌍단검 · 대검 — 두 손이 다 찬다) · 근접 · 원거리 · 어느 것이나.
 pub const ONE: Hands = SWORD | HAMMER | SHIELD;
-pub const TWO: Hands = STAFF | SPEAR | DAGGER;
+pub const TWO: Hands = STAFF | SPEAR | DAGGER | GREATSWORD;
 pub const MELEE: Hands = ONE | TWO;
 pub const RANGED: Hands = CROSSBOW | BOW;
 pub const ANY: Hands = MELEE | RANGED;
@@ -309,10 +311,14 @@ pub enum Id {
     Rally,
     /// 빠지며 베기(0274 ③ — 쌍단검·관통): 앞을 베고 그 기세로 뒤로 물러난다(BG3 도적의 교활한 행동 — 치고 빠지기).
     Slip,
+    /// 땅 가르기(0274 ④ — 대검·균열): 두 손으로 내리쳐 앞의 땅을 길게 가른다.
+    Sunder,
+    /// 불씨 휩쓸기(0274 ④ — 대검·잔불): 달군 날로 둘레를 크게 휩쓴다.
+    Sear,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 28] = [
+pub const IDS: [Id; 30] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -341,6 +347,8 @@ pub const IDS: [Id; 28] = [
     Id::Shove,
     Id::Rally,
     Id::Slip,
+    Id::Sunder,
+    Id::Sear,
 ];
 pub const N: usize = IDS.len();
 
@@ -902,7 +910,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.15, 0.22, 0.30],
         },
         row: 0,
-        hands: ONE,
+        // 0274 ④: 대검도 휘돈다(광전사의 휩쓸기 — 대검 판의 가운데 열).
+        hands: ONE | GREATSWORD,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -928,7 +937,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.12, 0.20, 0.25],
         },
         row: 0,
-        hands: DAGGER,
+        // 0274 ④: 대검도 떼를 뚫고 지나간다(대검 판의 균열 계열 첫 줄).
+        hands: DAGGER | GREATSWORD,
         kind: Kind::Rift,
         build: 1.0,
         branch: Branch::Beat,
@@ -1054,7 +1064,8 @@ pub const SKILLS: [Skill; N] = [
             seg: [0.25, 0.0, 0.20],
         },
         row: 1,
-        hands: SHIELD | STAFF | RANGED,
+        // 0274 ④: 한손검(전사)도 — 방패 없이 받아치면 둘레가 울린다(한손검 판 가운데 둘째 줄이 비어 있었다).
+        hands: SHIELD | SWORD | STAFF | RANGED,
         kind: Kind::Knell,
         build: 1.0,
         branch: Branch::Riposte,
@@ -1723,6 +1734,72 @@ pub const SKILLS: [Skill; N] = [
         ],
         cap: Cap::Refund { part: 0.5 },
     },
+    // ---- 0274 ④: 대검 = 광전사(균열 · 잔불) ----
+    // 땅 가르기: 두 손으로 내리쳐 앞의 땅을 길게(6 m · 좁은 36°) 가른다 — 줄 선 떼를 한 번에, 균열을 한 번에 쌓는다. 넓게 가르기(ㄱ) ·
+    // 갈라진 땅(ㄴ — 땅울림의 ㄴ과 같은 꼴: 금 간 자리에 선 적이 느려진다) · 최종 효과 = 갈린 적이 2초 동안 피해를 더 받는다.
+    Skill {
+        id: Id::Sunder,
+        cooldown: 9.0,
+        startup: 0.30,
+        recover: 0.40,
+        damage: 2 * HP_UNIT,
+        poise: 3.5,
+        form: Form::Cone {
+            range: 6.0,
+            arc_deg: 36.0,
+            stagger: 0.5,
+            push: 0.0,
+        },
+        anim: "gs5",
+        clip: Clip {
+            name: "sk_sunder",
+            seg: [0.30, 0.0, 0.40],
+        },
+        row: 1,
+        hands: GREATSWORD,
+        kind: Kind::Rift,
+        build: 1.0,
+        branch: Branch::Footing,
+        picks: [
+            Twist::Wide { arc_deg: 70.0 },
+            Twist::Crack {
+                secs: 2.5,
+                slow: 0.5,
+            },
+        ],
+        cap: Cap::Frail {
+            secs: 2.0,
+            mult: 1.2,
+        },
+    },
+    // 불씨 휩쓸기: 달군 날로 둘레를 크게(3 m · 220°) 휩쓴다 — 맞은 적에 잔불을 한 번에 쌓고 조금 밀어낸다. 다 도는 휩쓸기(ㄱ — 300°) ·
+    // 타는 땅(ㄴ — 불길의 ㄴ과 같은 꼴: 휩쓴 자리에 불티가 남는다) · 최종 효과 = 자세가 깨진 적에게 피해 ×1.5.
+    Skill {
+        id: Id::Sear,
+        cooldown: 8.0,
+        startup: 0.18,
+        recover: 0.35,
+        damage: 2 * HP_UNIT,
+        poise: 2.0,
+        form: Form::Cone {
+            range: 3.0,
+            arc_deg: 220.0,
+            stagger: 0.3,
+            push: 1.2,
+        },
+        anim: "gs4",
+        clip: Clip {
+            name: "sk_sear",
+            seg: [0.18, 0.0, 0.35],
+        },
+        row: 0,
+        hands: GREATSWORD,
+        kind: Kind::Ember,
+        build: 1.0,
+        branch: Branch::Beat,
+        picks: [Twist::Wide { arc_deg: 300.0 }, Twist::Scorch { secs: 3.0 }],
+        cap: Cap::Shatter { mult: 1.5 },
+    },
 ];
 
 impl Id {
@@ -1764,6 +1841,8 @@ impl Id {
             Id::Shove => "shove",
             Id::Rally => "rally",
             Id::Slip => "slip",
+            Id::Sunder => "sunder",
+            Id::Sear => "sear",
         }
     }
 
@@ -1799,10 +1878,12 @@ pub enum Ult {
     Gale,
     /// 그림자 습격(0274 ③ — 쌍단검 판): 한 적의 등 뒤로 숨어들어 잇달아 찌르고 마지막에 깊게 벤다.
     Ambush,
+    /// 칼바람(0274 ④ — 대검 판): 제자리에서 잇달아 휘돌며 둘레를 거듭 베고 마지막에 크게 휩쓴다 — 그동안과 그 뒤 잠깐 맞아도 휘청이지 않는다.
+    Tempest,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 8] = [
+pub const ULTS: [Ult; 9] = [
     Ult::Upend,
     Ult::Flurry,
     Ult::Line,
@@ -1811,6 +1892,7 @@ pub const ULTS: [Ult; 8] = [
     Ult::Rain,
     Ult::Gale,
     Ult::Ambush,
+    Ult::Tempest,
 ];
 pub const NU: usize = ULTS.len();
 
@@ -1835,6 +1917,7 @@ impl Ult {
             Ult::Rain => "rain",
             Ult::Gale => "gale",
             Ult::Ambush => "ambush",
+            Ult::Tempest => "tempest",
         }
     }
 
@@ -1846,7 +1929,7 @@ impl Ult {
     pub fn branch(self) -> Branch {
         match self {
             Ult::Upend | Ult::Blizzard | Ult::Rain => Branch::Footing,
-            Ult::Flurry | Ult::Ambush => Branch::Beat,
+            Ult::Flurry | Ult::Ambush | Ult::Tempest => Branch::Beat,
             Ult::Line | Ult::Bell | Ult::Gale => Branch::Riposte,
         }
     }
@@ -1862,6 +1945,7 @@ impl Ult {
             Ult::Rain => RAIN.anim,
             Ult::Gale => GALE.anim,
             Ult::Ambush => AMBUSH.anim,
+            Ult::Tempest => TEMPEST.anim,
         }
     }
 
@@ -1875,6 +1959,7 @@ impl Ult {
             Ult::Rain => RAIN.clip,
             Ult::Gale => GALE.clip,
             Ult::Ambush => AMBUSH.clip,
+            Ult::Tempest => TEMPEST.clip,
         }
     }
 
@@ -1889,6 +1974,7 @@ impl Ult {
             Ult::Rain => (RAIN.freeze, RAIN.startup, RAIN.recover),
             Ult::Gale => (GALE.freeze, GALE.startup, GALE.recover()),
             Ult::Ambush => (AMBUSH.freeze, AMBUSH.startup, AMBUSH.recover()),
+            Ult::Tempest => (TEMPEST.freeze, TEMPEST.startup, TEMPEST.recover()),
         }
     }
 
@@ -1897,6 +1983,17 @@ impl Ult {
     pub fn clip_at(self, e: f32, frozen: f32) -> f32 {
         let (freeze, startup, _) = self.times();
         let c = self.clip();
+        // 칼바람(0274 ④): 멈춤 동안 들어 올리고, 첫 휩쓸기(시동 끝)부터 휩쓸기마다 한 바퀴를 되풀이한 뒤 후딜.
+        if self == Ult::Tempest {
+            let t = &TEMPEST;
+            if e <= 0.0 {
+                return c.seg[0] * frozen.clamp(0.0, 1.0);
+            }
+            if e < startup {
+                return c.seg[0];
+            }
+            return c.at(e - startup, 0.0, t.sweeps as f32 * t.gap, Some(t.gap));
+        }
         if freeze <= 0.0 {
             return c.at(e, startup, 0.0, None);
         }
@@ -2379,6 +2476,89 @@ impl Ambush {
     }
 }
 
+/// 큰 기술 "칼바람"(0274 ④ — 대검 판, 광전사의 분노가 터진다): 세계 멈춤 뒤 시동 끝부터 `gap`초마다 `sweeps`번 제자리에서 휘돌며 둘레
+/// `radius` m(2단 `radius2`)를 벤다 — 앞의 휩쓸기는 `damage` · 자세 `poise` · 균열 `light_dose`(밀지 않는다 — 떼가 둘레에 남는다), 마지막은
+/// 크게 `last` · 자세 `last_poise` · 잔불 `dose`(화상), 잡몹은 `push` m 밀려 `stagger`초 휘청. 그동안과 시작에서 `steady`초는 맞아도 휘청이지
+/// 않는다(받는 피해는 그대로 — 0095 원칙 2). 보스는 다치고 자세가 깎이되 휘청이지 않는다(큰 기술의 규칙). 3단 = 피해 `damage3` · `last3`.
+pub struct Tempest {
+    pub freeze: f32,
+    pub startup: f32,
+    pub sweeps: u8,
+    pub gap: f32,
+    pub tail: f32,
+    pub radius: f32,
+    pub radius2: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub last: i32,
+    pub last3: i32,
+    pub poise: f32,
+    pub last_poise: f32,
+    pub push: f32,
+    pub stagger: f32,
+    pub light_dose: Dose,
+    pub dose: Dose,
+    pub steady: f32,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+pub const TEMPEST: Tempest = Tempest {
+    freeze: 0.3,
+    startup: 0.2,
+    sweeps: 5,
+    gap: 0.16,
+    tail: 0.45,
+    radius: 3.0,
+    radius2: 3.8,
+    damage: HP_UNIT,
+    damage3: 2 * HP_UNIT,
+    last: 4 * HP_UNIT,
+    last3: 6 * HP_UNIT,
+    poise: 1.0,
+    last_poise: 6.0,
+    push: 2.0,
+    stagger: 0.8,
+    light_dose: (Kind::Rift, 0.3),
+    dose: (Kind::Ember, 1.5),
+    steady: 3.0,
+    anim: "sk_whirl",
+    // 휘돌이와 같은 한 바퀴(시동 · 한 바퀴 · 후딜) — 휩쓸기마다 한 바퀴를 되풀이한다(`Ult::clip_at`).
+    clip: Clip {
+        name: "ult_tempest",
+        seg: [0.15, 0.22, 0.30],
+    },
+};
+
+impl Tempest {
+    /// 후딜(초): 휩쓸기가 모두 이 안에 — 첫 휩쓸기는 시동 끝.
+    pub const fn recover(&self) -> f32 {
+        (self.sweeps as f32 - 1.0) * self.gap + self.tail
+    }
+
+    /// `k`째 휩쓸기의 때(시동 끝에서 초).
+    pub fn sweep_at(&self, k: u8) -> f32 {
+        k as f32 * self.gap
+    }
+
+    pub fn radius_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.radius2
+        } else {
+            self.radius
+        }
+    }
+
+    /// `rank`단의 (앞 휩쓸기의 피해, 마지막 휩쓸기의 피해).
+    pub fn damage_at(&self, rank: u8) -> (i32, i32) {
+        if rank >= ULT_MAX_RANK {
+            (self.damage3, self.last3)
+        } else {
+            (self.damage, self.last)
+        }
+    }
+}
+
 /// 큰 기술의 단(0158 다): 쟁반 뒤집기는 처음부터 1단, 큰 기술 줄이 열리면 2단(휘청 +0.6초 — 보스의 짧은 휘청은 그대로)·
 /// 3단(벽에 박힌 피해 ×1.5). 몰아치기·한 줄기는 줄이 열리면 2점으로 배우고(1단) 2·3단은 1점씩.
 pub const ULT_MAX_RANK: u8 = 3;
@@ -2554,6 +2734,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Pin),
     // 0274 — 한손검 판의 충격 갈래 첫 줄
     Entry::Skill(Id::Pommel),
+    // 0274 ④ — 대검 판의 잔불 갈래 첫 줄
+    Entry::Skill(Id::Sear),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -2580,6 +2762,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Rally),
     // 0274 ③ — 쌍단검 판의 둘째 줄(가운데)
     Entry::Skill(Id::Slip),
+    // 0274 ④ — 대검 판의 둘째 줄(균열)
+    Entry::Skill(Id::Sunder),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -2596,6 +2780,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Ult(Ult::Gale),
     // 0274 ③ — 쌍단검 판의 큰 기술
     Entry::Ult(Ult::Ambush),
+    // 0274 ④ — 대검 판의 큰 기술
+    Entry::Ult(Ult::Tempest),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),
@@ -3455,7 +3641,7 @@ mod tests {
     fn the_board_stands_as_the_0161_table_says() {
         use Branch::{Beat, Footing, Riposte};
         use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-        let table: [(usize, Branch, &[Entry]); 42] = [
+        let table: [(usize, Branch, &[Entry]); 45] = [
             (
                 0,
                 Beat,
@@ -3486,6 +3672,8 @@ mod tests {
             (0, Riposte, &[S(Id::Pin)]),
             // 0274: 한손검 판의 전투 기술.
             (0, Riposte, &[S(Id::Pommel)]),
+            // 0274 ④: 대검 판.
+            (0, Beat, &[S(Id::Sear)]),
             (
                 1,
                 Beat,
@@ -3516,6 +3704,7 @@ mod tests {
             (1, Riposte, &[S(Id::Rally)]),
             // 0274 ③: 쌍단검 판.
             (1, Beat, &[S(Id::Slip)]),
+            (1, Footing, &[S(Id::Sunder)]),
             (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
             (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
             (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -3523,6 +3712,7 @@ mod tests {
             (2, Footing, &[U(Ult::Blizzard), U(Ult::Rain)]),
             (2, Riposte, &[U(Ult::Gale)]),
             (2, Beat, &[U(Ult::Ambush)]),
+            (2, Beat, &[U(Ult::Tempest)]),
             (
                 3,
                 Beat,
@@ -3569,7 +3759,7 @@ mod tests {
                 assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
             }
         }
-        assert_eq!(NE, 72);
+        assert_eq!(NE, 75);
         for (i, e) in ENTRIES.iter().enumerate() {
             assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
         }
@@ -4389,7 +4579,8 @@ mod tests {
                 Ult::Blizzard,
                 Ult::Rain,
                 Ult::Gale,
-                Ult::Ambush
+                Ult::Ambush,
+                Ult::Tempest
             ]
         );
         for u in ULTS {
@@ -4566,7 +4757,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 36] = [
+    const FACES: [(&str, Face); 39] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -4607,6 +4798,10 @@ mod clip_facing {
         // 0274 ③ 쌍단검.
         ("sk_slip", Face::Tip),
         ("ult_ambush", Face::Hips),
+        // 0274 ④ 대검.
+        ("sk_sunder", Face::Tip),
+        ("sk_sear", Face::Tip),
+        ("ult_tempest", Face::Spin),
     ];
 
     fn deg(a: f32) -> f32 {

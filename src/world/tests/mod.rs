@@ -13,6 +13,7 @@ mod deep_tree;
 mod dodge_stamina;
 mod enemies;
 mod flask;
+mod greatsword;
 mod growth;
 mod heavy;
 mod hurt;

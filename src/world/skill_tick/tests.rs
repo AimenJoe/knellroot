@@ -502,6 +502,7 @@ fn hold_for(w: &mut World, id: Sk) {
         W::Staff,
         W::Spear,
         W::Daggers,
+        W::Greatsword,
     ] {
         w.set_weapon(arm);
         if def.fits(w.grip()) {
@@ -3432,4 +3433,101 @@ fn ambush_does_not_slip_into_a_wall() {
     let p = w.player.pos;
     assert!(p.z > -5.6, "not in the wall: {p:?}");
     assert!(flat(p, vec3(0.0, 0.0, -5.0)) < 1.6, "beside the foe: {p:?}");
+}
+
+/// 칼바람(0274 ④): 세계가 멈춘 뒤 제자리에서 휩쓸기 다섯이 둘레(`TEMPEST.radius`)의 적을 모두 벤다 — 둘레 밖은 아니다. 마지막 휩쓸기는
+/// 잔불(화상)을 크게 쌓고 잡몹을 밀어 휘청이게 한다. 휘도는 동안과 그 뒤 `steady`초는 맞아도 휘청이지 않는다(받는 피해는 그대로).
+/// 보스는 다치되 휘청이지 않는다.
+#[test]
+fn tempest_spins_and_cuts_all_around_without_flinching() {
+    use crate::skills::{Ult, TEMPEST};
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        w.set_weapon(crate::weapons::Id::Greatsword);
+        wear_ult(&mut w, Ult::Tempest, 1);
+        for (k, at) in [
+            vec3(0.0, 0.0, -2.0),
+            vec3(2.0, 0.0, 0.0),
+            vec3(0.0, 0.0, 2.0),
+            vec3(-2.0, 0.0, 0.0),
+            vec3(0.0, 0.0, -9.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if boss && k == 0 {
+                w.spawn_boss(at);
+            } else {
+                w.spawn_mob(at);
+            }
+        }
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        w.player.skill.gauge = 1.0;
+        let mut ev = w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= TEMPEST.freeze - 1e-4, "the world stops");
+        assert!(w.player.skill.steady > 0.0, "steady from the start");
+        let mut staggered = false;
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+            still_keep(&mut w);
+        }
+        (w, ev, staggered)
+    };
+    let (w, ev, staggered) = go(false);
+    assert_eq!(
+        ev.iter()
+            .filter(|e| matches!(e, Event::TempestSweep { .. }))
+            .count(),
+        TEMPEST.sweeps as usize
+    );
+    let (light, deep) = TEMPEST.damage_at(1);
+    for i in 0..4 {
+        assert!(
+            900 - w.enemies[i].hp >= 4 * light + deep,
+            "foe {i} cut by every sweep: {}",
+            900 - w.enemies[i].hp
+        );
+        assert!(w.enemies[i].ail.burn > 0, "foe {i} burns");
+    }
+    assert_eq!(w.enemies[4].hp, 900, "out of reach");
+    assert!(staggered, "a mob reels on the last sweep");
+    let (w, _, staggered) = go(true);
+    assert!(w.enemies[0].hp < 900, "a boss is cut");
+    assert!(!staggered, "a boss is not staggered");
+    // 휘청이지 않는 몸: 앞의 잡몹이 내려치면 피해는 그대로 받고 휘청(맞음 상태)은 없다.
+    let t = Tuning::default();
+    let hurt = |steady: bool| {
+        let mut w = crate::world::World::new("test", 20.0);
+        w.spawn_mob(vec3(0.0, 0.0, -1.2));
+        let en = &mut w.enemies[0];
+        en.facing = 0.0;
+        en.atk = crate::enemy::Atk::Smash;
+        en.state = EState::Tele { t: en.tele_dur() };
+        w.player.facing = PI;
+        if steady {
+            w.player.skill.steady = TEMPEST.steady;
+        }
+        let hp0 = w.player.hp;
+        let mut flinched = false;
+        for _ in 0..40 {
+            w.step(&Actions::default(), &t);
+            flinched |= matches!(w.player.state, PState::Hurt { .. });
+        }
+        (hp0 - w.player.hp, flinched)
+    };
+    let (plain, steady) = (hurt(false), hurt(true));
+    assert!(plain.0 > 0 && plain.1, "an ordinary blow staggers");
+    assert_eq!(steady.0, plain.0, "the same damage");
+    assert!(!steady.1, "no flinch while steady");
 }

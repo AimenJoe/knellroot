@@ -395,6 +395,12 @@ pub enum Event {
         dir: Vec3,
         last: bool,
     },
+    /// 칼바람(0274 ④)의 휩쓸기 하나 — `at`(방랑자) 둘레 `radius` m, 마지막 휩쓸기면 `last`.
+    TempestSweep {
+        at: Vec3,
+        radius: f32,
+        last: bool,
+    },
     /// 기도하는 손(0276 — 망치의 빈 손): 한 모금을 삼킨 순간 둘레 `radius` m에 울림 고리가 퍼졌다.
     Prayer {
         at: Vec3,
@@ -751,6 +757,8 @@ pub struct Player {
     /// 콤보: 다음 타 번호와 그 타를 이어 갈 남은 초.
     pub combo_next: u8,
     pub combo_left: f32,
+    /// 쪼개기(0274 ④ 대검): 지금 휘두르기의 번호와 그것이 이미 맞힌 적의 수(`Hit::cleave`까지).
+    pub cleaved: (u32, u8),
 }
 
 /// 보조 손의 일(0276 — `Player::off`): 빈 손의 결(`World::bare`)이 틱을 넘어 기억하는 것과 방패의 들이받기.
@@ -840,6 +848,8 @@ pub struct SkillState {
     pub rain_at: Vec3,
     /// 그림자 습격(0274 ③)이 찌르는 적(누른 순간에 정한다 — 없으면 앞을 찌른다).
     pub ambush_on: Option<usize>,
+    /// 칼바람(0274 ④): 맞아도 휘청이지 않는 남은 초(시작에서 `TEMPEST.steady` — 받는 피해는 그대로).
+    pub steady: f32,
 }
 
 /// 솟은 뿌리 하나(0214 뿌리 솟기 — 그림만): 자리·지난 초·쪽(기울기).
@@ -894,6 +904,9 @@ pub struct BeatState {
     pub since_perfect: f32,
     /// 이어지는 숨(0214): 다음 회피가 기력을 쓰지 않는다.
     pub free_dodge: bool,
+    /// 분노(0274 ④ 대검): 이 휘두르기의 평타 빠르기에 얹힌 덤(0 = 그대로, 0.2 = ×1.2) — 휘두르기를 시작한 틱에 정하고 그 휘두르기
+    /// 동안 머문다(`World::latch_fury`).
+    pub fury: f32,
 }
 
 /// 마법·사격·수류탄(0048·0051·0111): 마법 칸, 공중 사격과 체공, 쇠뇌의 탄과 재장전, 수류탄. `Player::ranged`.
@@ -980,6 +993,10 @@ pub struct World {
     /// 헤드리스 시험만(개발판 웹 `window.knellTestFlags` 1): 방랑자가 맞지 않는다 — 긴 터치·메뉴 스크립트가 도중에 쓰러져
     /// 엉뚱한 화면을 찍지 않게. 운영판에서는 앱이 켜지 않는다.
     pub unhurt: bool,
+    /// 시험 · 모의만(0274 ④): 대검을 휘두르는 동안 맞을 때 휘청 · 밀림의 배를 바꾼다(`None` = 표의 `GREATSWORD_FLINCH` ·
+    /// `GREATSWORD_KNOCK`) — 휘청 줄임이 보스전을 얼마나 빠르게 하나 재려고(`balance::class_fight_probe`).
+    #[cfg(test)]
+    pub flinch_probe: Option<f32>,
     /// 지난 틱의 락온 앞(수평 단위), 락온이 아니면 None — 풀리는 틱에 `hold`로 넘긴다.
     last_lock_fwd: Option<Vec3>,
     /// 풀린 뒤 쥔 스틱의 기준(앞, 경과 초). 스틱을 놓거나 `move.hold after unlock s`가 지나면 끝.
@@ -1143,6 +1160,7 @@ impl World {
                     hop_first: None,
                     rain_at: Vec3::ZERO,
                     ambush_on: None,
+                    steady: 0.0,
                 },
                 parry: ParryState {
                     since: f32::MAX,
@@ -1171,6 +1189,7 @@ impl World {
                     swing_beat: false,
                     since_perfect: f32::MAX,
                     free_dodge: false,
+                    fury: 0.0,
                 },
                 running: false,
                 faces_away: false,
@@ -1206,6 +1225,7 @@ impl World {
                 pending_left: 0.0,
                 combo_next: 0,
                 combo_left: 0.0,
+                cleaved: (0, 0),
             },
             enemies: Vec::new(),
             lock: None,
@@ -1241,6 +1261,8 @@ impl World {
             lock_lose: 26.0,
             view_yaw: None,
             unhurt: false,
+            #[cfg(test)]
+            flinch_probe: None,
             last_lock_fwd: None,
             hold: None,
             turn_now: None,
@@ -1419,13 +1441,18 @@ impl World {
             Next::Ult => pl.skill.gauge >= 1.0,
         };
         let ready = self.cancel_ready(n, t);
+        // 남김없이 휘두르는 대검(0274 ④)은 끝 타 뒤에도 잇는다 — `next_hit` 한 곳.
+        let next = match self.player.state {
+            PState::Attack { hit, .. } => Some(self.next_hit(hit)),
+            _ => None,
+        };
+        let closing_cell = self.tree.has(Cell::ClosingBlow);
         let pl = &mut self.player;
         if ready && can {
-            if let PState::Attack { hit, .. } = pl.state {
+            if let Some(after) = next {
                 // 다음 타로 잇는다(마지막 타 뒤면 처음부터). 맺음타(0107·0108)는 마지막 타 뒤에도 콤보를 기억한다 —
                 // 박자에 누른 마지막 타 뒤의 누름은 대개 이 캔슬 길로 나간다(끝까지 기다리지 않는다).
-                let after = wpn.after(hit);
-                let closing = after.is_none() && self.tree.has(Cell::ClosingBlow);
+                let closing = after.is_none() && closing_cell;
                 pl.combo_next = after.unwrap_or(0);
                 pl.parry.closing_ready = closing;
                 pl.combo_left = if after.is_some() || closing {
@@ -1458,7 +1485,7 @@ impl World {
                 let (s0, a0, r0) = hit_times(t, wpn, hit);
                 let k = wpn.hit(hit).map_or(0.0, |h| h.cancel);
                 let base = s0 + a0 + r0 * k;
-                let last = wpn.after(hit).is_none();
+                let last = self.next_hit(hit).is_none();
                 if n == Next::Attack && !last {
                     e >= base.max(s0 + a0 + r0 * t[P::ComboLink])
                 } else {
@@ -1987,7 +2014,7 @@ impl World {
         if self.tree.keyed(Key::Rooted) {
             o.bend(P::DodgeDist, o[P::DodgeDist] * key::ROOTED_DODGE);
         }
-        let rate = self.flurry_rate();
+        let rate = self.swing_rate();
         if rate != 1.0 {
             for p in [P::AttackStartup, P::AttackActive, P::AttackRecovery] {
                 o.bend(p, o[p] / rate);
@@ -1996,17 +2023,81 @@ impl World {
         o
     }
 
-    /// 몰아치기 동안의 평타 빠르기 배(아니면 1) — 렌더가 평타 동작을 같은 배로 돌린다.
-    pub fn flurry_rate(&self) -> f32 {
-        if self.player.skill.flurry_left > 0.0 {
+    /// 평타의 빠르기 배(아니면 1): 몰아치기(0158 G2) × 이 휘두르기에 얹힌 분노(0274 ④ 대검 — `latch_fury`). 렌더가 평타 동작을
+    /// 같은 배로 돌린다.
+    pub fn swing_rate(&self) -> f32 {
+        let flurry = if self.player.skill.flurry_left > 0.0 {
             skills::FLURRY.speed
         } else {
             1.0
+        };
+        flurry * (1.0 + self.player.beat.fury)
+    }
+
+    /// 분노(0274 ④ — 대검의 주특성 `Art::fury`) 0..1: 둘레 `FURY_RADIUS` m의 깨어 있는 적 수 ÷ `FURY_CROWD` + 잃은 체력의 몫, 1에서
+    /// 멈춘다. 남김없이 휘두르는 손(빈 손의 결 — `Bare::Reckless`)은 곱절로 찬다. 분노가 없는 종류는 0.
+    pub fn fury(&self) -> f32 {
+        let pl = &self.player;
+        if pl.weapon.art().fury <= 1.0 {
+            return 0.0;
         }
+        let p = pl.pos;
+        let crowd = self
+            .enemies
+            .iter()
+            .filter(|en| {
+                en.active()
+                    && !en.harmless()
+                    && (en.pos.y - p.y).abs() <= HIT_DY
+                    && vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z).length() - en.radius
+                        <= weapons::FURY_RADIUS
+            })
+            .count() as f32;
+        let wound = 1.0 - pl.hp.max(0) as f32 / pl.max_hp.max(1) as f32;
+        let rate = if self.bare() == Some(weapons::Bare::Reckless) {
+            weapons::BARE_FURY_RATE
+        } else {
+            1.0
+        };
+        ((crowd / weapons::FURY_CROWD + wound) * rate).clamp(0.0, 1.0)
+    }
+
+    /// 분노를 이 휘두르기의 빠르기에 얹는다(틱 들머리 — `step`): 평타가 아닌 동안과 막 시작한 평타(시각 0)에서만 다시 재고, 휘두르는
+    /// 동안은 그대로 둔다(동작 시계 · 판정 · 캔슬 시점이 한 휘두르기 안에서 흔들리지 않게).
+    fn latch_fury(&mut self) {
+        if matches!(self.player.state, PState::Attack { t, .. } if t > 0.0) {
+            return;
+        }
+        let k = self.player.weapon.art().fury - 1.0;
+        self.player.beat.fury = if k > 0.0 { k * self.fury() } else { 0.0 };
+    }
+
+    /// 평타 `hit` 다음에 이을 타(마지막이면 None): 무기 표 그대로 — 남김없이 휘두르는 대검(빈 손의 결 `Bare::Reckless`)은 분노가 가득
+    /// 차 있으면 끝 타 뒤에 둘째 타로 되돌아 이어진다(평타가 끝나지 않는다).
+    pub fn next_hit(&self, hit: u8) -> Option<u8> {
+        let wpn = self.player.weapon.def();
+        wpn.after(hit).or_else(|| {
+            (self.bare() == Some(weapons::Bare::Reckless)
+                && hit != weapons::DASH
+                && wpn.combo.len() > 1
+                && self.fury() >= 1.0)
+                .then_some(1)
+        })
+    }
+
+    /// 대검을 휘두르는 동안인가(0274 ④ — 맞아도 덜 휘청인다 `GREATSWORD_FLINCH`): 평타 · 모으기 · 강공격.
+    pub fn swinging_greatsword(&self) -> bool {
+        self.player.weapon.class() == Some(weapons::Class::Greatsword)
+            && matches!(
+                self.player.state,
+                PState::Attack { .. } | PState::Charging { .. } | PState::Heavy { .. }
+            )
     }
 
     /// 한 틱. 히트스톱 중엔 로직 시계만 멈춘다.
     pub fn step(&mut self, a: &Actions, t: &Tuning) -> Vec<Event> {
+        // 분노(0274 ④): 이 휘두르기의 빠르기를 먼저 정한다 — 휜 랩 값이 읽는다.
+        self.latch_fury();
         // 장신구·성장이 휜 랩 값(0064 M3) — 이 틱의 로직은 이것만 읽는다.
         let tuned = self.tuned(t);
         let t = &tuned;
@@ -2650,6 +2741,8 @@ struct Strike {
     /// 박자에 맞춘 평타인가·대시 공격인가(나무 칸, 0107).
     beat: bool,
     dash: bool,
+    /// 쪼개기(0274 ④ 대검): 한 휘두르기가 맞히는 적의 수 상한(가까운 것부터 — 0 = 상한 없음).
+    cleave: u8,
 }
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
@@ -2736,7 +2829,7 @@ impl World {
         let live = match pl.state {
             PState::Attack { hit, .. } => {
                 hit == pl.beat.swing_hit
-                    && (wpn.after(hit).is_some() || self.tree.has(Cell::ClosingBlow))
+                    && (self.next_hit(hit).is_some() || self.tree.has(Cell::ClosingBlow))
             }
             PState::Idle | PState::Dodge { .. } | PState::Parry { .. } => pl.combo_left > 0.0,
             _ => false,

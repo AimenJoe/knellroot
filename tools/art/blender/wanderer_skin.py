@@ -93,6 +93,9 @@ SKILL_FACE = {
     "sk_rally": ((0.20, 0.0, 0.35), "hold"),
     # 0274 ③ 쌍단검: 빠지며 베기(벤 날이 정면) · 그림자 습격(숨어든 자리에서 그 적을 본 채 찌른다 — 몸이 정면).
     "sk_slip": ((0.10, 0.18, 0.20), "tip"), "ult_ambush": ((0.30, 0.15, 0.76), "hips"),
+    # 0274 ④ 대검: 땅 가르기(두 손 내리치기 — 날이 정면) · 불씨 휩쓸기(크게 휩쓴 날이 정면) · 칼바람(휘돌이와 같은 한 바퀴 — 바퀴마다 되풀이).
+    "sk_sunder": ((0.30, 0.0, 0.40), "tip"), "sk_sear": ((0.18, 0.0, 0.35), "tip"),
+    "ult_tempest": ((0.15, 0.22, 0.30), "spin"),
     "throw": ((0.2, 0.0, 0.3), "hips"),  # 0204: 수류탄이 손을 떠나는 순간 몸이 정면(원본 M16은 몸 왼쪽으로 휘둘러 던진다)
     "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
     "block": ((0.0, 0.2, 0.0), "hold"),  # 방패 막기(0223) — 내내 정면
@@ -115,7 +118,7 @@ FACE_STILL = {"turn_l", "turn_r"}
 FACE_TRAVEL = {"dodge": "front", "dodge_back": "back", "dodge_rise": "dodge"}
 # 모아 친 강타는 모으기 동작이 끝난 쪽에서 시작한다(0196 — 망치 모으기는 몸을 −60° 감아 쥔다: 정면에서 시작하면 떼는 순간 홱 돈다).
 CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "staff_charge", "fist_heavy": "fist_charge",
-         "spear_lunge": "spear_charge", "dagger_lunge": "dagger_charge"}
+         "spear_lunge": "spear_charge", "dagger_lunge": "dagger_charge", "gs_heavy": "gs_charge"}
 # 떠 있는 동안 엉덩이를 올리지 않는 동작(0196): 게임이 몸을 `air`만큼 올린다 — 원본의 뛰어오름(엉덩이 +0.2)을 그대로 두면 두 번 뜬다.
 # 엉덩이 높이를 서기의 높이 위로 올리지 않는다(웅크림은 남는다).
 FLAT = {"jump", "land"}
@@ -164,6 +167,9 @@ HIT_WINDOWS = {
     # 0274 ③ 쌍단검: 찌르기 둘 · 가로 베기 · 올려 베기 · 달려들며 찌르기 · 꿰뚫고 지나가기 — 랩 시간에 표의 배 0.8 · 0.85 · 1.05 · 0.8 · 강타 0.8.
     "dagger1": (0.064, 0.08), "dagger2": (0.064, 0.08), "dagger3": (0.068, 0.085), "dagger4": (0.084, 0.105),
     "dagger_dash": (0.064, 0.08), "dagger_lunge": (0.048, 0.096),
+    # 0274 ④ 대검: 휩쓸기 다섯 · 달려들며 올려 베기 · 두 손 내려베기 — 랩 시간에 표의 배 1.3 · 1.3 · 1.3 · 1.4 · 1.6 · 1.1 · 강타 1.4.
+    "gs1": (0.104, 0.13), "gs2": (0.104, 0.13), "gs3": (0.104, 0.13), "gs4": (0.112, 0.14), "gs5": (0.128, 0.16),
+    "gs_dash": (0.088, 0.11), "gs_heavy": (0.084, 0.168),
 }
 # 판정 순간에 무엇을 정면에 두나(0198): 기본은 칼끝(오른손), 왼 잽은 왼손(오른손은 막는 자리 — 원본은 옆으로 선 권투 자세라 엉덩이가
 # −80°를 본다), 발차기는 몸(엉덩이).
@@ -352,6 +358,23 @@ CLIPS = [
     ("sk_slip", "Double_Combo_Attack", ("anchors", [(0.0, 4), (0.10, 15), (0.28, 19), (0.48, 23)])),
     ("ult_ambush", "Thrust_Slash", ("anchors", [(0.0, 8), (0.30, 13), (0.45, 18), (0.51, 14), (0.57, 18), (0.63, 14), (0.69, 18),
                                                (0.75, 12), (0.81, 19), (0.90, 21), (1.21, 25)])),
+    # 0274 ④ 대검(있는 원본에서 — 0 크레딧): 1타 = 오른쪽에서 크게 후려치기(M11 첫 타 — 망치의 옆 휘두름), 2타 = 되받아 올려 베기(검 2타
+    # Double_Combo_Attack), 3타 = 다시 오른쪽에서(Weapon_Combo의 셋째 휘두르기), 4타 = 크게 되받아 휩쓸기(Charged_Slash — 검 강타의 큰 휩쓸기),
+    # 5타 = 두 손으로 머리 위에서 내려찍기(Attack), 달려들며 올려 베기(Charged_Upward_Slash — 검 대시), 모으기 · 강공격 = 도끼를 모아 들었다
+    # 내려찍기(Charged_Axe_Chop — 두 손). 길이 = 판정 구간 + 후딜(무기 표의 배 × 랩 시간), 닿는 순간 = 판정 구간 가운데.
+    ("gs1", "M11", ("hit", 10, (18, 30), 36, 0.559, 0.169)),
+    ("gs2", "Double_Combo_Attack", ("hit", 23, (26, 31), 36, 0.559, 0.169)),
+    ("gs3", "Weapon_Combo", ("hit", 44, (48, 56), 60, 0.559, 0.169)),
+    ("gs4", "Charged_Slash", ("hit", 22, (25, 30), 51, 0.602, 0.182)),
+    ("gs5", "Attack", ("hit", 8, (18, 28), 40, 0.688, 0.208)),
+    ("gs_dash", "Charged_Upward_Slash", ("hit", 6, (19, 27), 36, 0.473, 0.143)),
+    ("gs_charge", "Charged_Axe_Chop", ("anchors", [(0.0, 74), (0.3, 93)])),
+    ("gs_heavy", "Charged_Axe_Chop", ("anchors", [(0.0, 93), (0.084, 103), (0.252, 108), (0.812, 124)])),
+    # 땅 가르기 = 두 손 내리치기(Attack — 종 치기와 같은 원본), 불씨 휩쓸기 = 크게 휩쓸기(Charged_Slash), 칼바람 = 휘돌이(Skill_03)와 같은
+    # 한 바퀴(게임이 바퀴를 휩쓸기마다 되풀이한다 — `Ult::clip_at`).
+    ("sk_sunder", "Attack", ("hitseg", 8, (18, 28), 40, [0.30, 0.0, 0.40])),
+    ("sk_sear", "Charged_Slash", ("hitseg", 13, (25, 30), 51, [0.18, 0.0, 0.35])),
+    ("ult_tempest", "Skill_03", ("anchors", [(0.0, 16), (0.15, 24), (0.37, 33), (0.67, 39)])),
 ]
 LOOPS = {"idle", "walk", "run", "walk_back"}
 
@@ -410,7 +433,7 @@ def load_old():
         "hand_r": rig.matrix_world @ rig.data.bones["hand_r"].head_local,
         "hand_l": rig.matrix_world @ rig.data.bones["hand_l"].head_local,
         "atlas": m.mat.node_tree.nodes["Image Texture"].image,
-        "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow", "w_daggers")],
+        "weapons": [m.objects[n] for n in ("sword", "w_hammer", "w_staff", "w_crossbow", "w_daggers", "w_greatsword")],
         "bow": m.objects["w_bow"],
         "spear": m.objects["w_spear"],
         "dagger_l": m.objects["w_dagger_l"],
@@ -1949,8 +1972,11 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
         if os.environ.get("KR_SHEET_DAGGERS"):  # 쌍단검만(0274 ③ — 두 손의 날을 본다)
             for o in old["weapons"] + [old["shield"], old["bow"], old["spear"]]:
                 o.hide_render = True
-            for o in (old["weapons"][-1], old["dagger_l"]):
+            for o in [w for w in old["weapons"] if w.name == "w_daggers"] + [old["dagger_l"]]:
                 o.hide_render = False
+        if os.environ.get("KR_SHEET_GREATSWORD"):  # 대검만(0274 ④ — 긴 날의 휩쓸기를 본다)
+            for o in old["weapons"] + [old["shield"], old["bow"], old["spear"], old["dagger_l"]]:
+                o.hide_render = o.name != "w_greatsword"
         only = [x for x in os.environ.get("KR_SHEET_ONLY", "").split(",") if x]  # 몇 동작만(이름 쉼표로)
         for name, _, _ in CLIPS:
             if only and name not in only:

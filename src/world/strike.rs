@@ -72,6 +72,7 @@ impl World {
                     perfect: false,
                     beat: self.player.beat.swing_beat,
                     dash: hit == weapons::DASH,
+                    cleave: h.cleave,
                 }
             }
             PState::Heavy {
@@ -100,6 +101,12 @@ impl World {
                         } else {
                             0
                         }
+                        // 다 모은 강공격의 덤(0274 ④ — 대검을 멘 보조특성): 쥐어 모은 것만, 패링 반격은 아니다.
+                        + if full && swing != self.player.parry.riposte_swing {
+                            self.stats.charged_dmg
+                        } else {
+                            0
+                        }
                         + perfect as i32 * HP_UNIT,
                     poise: h.poise * if perfect { 1.5 } else { 1.0 },
                     knock: t[P::HeavyKnock] * if perfect { 1.5 } else { 1.0 },
@@ -108,6 +115,7 @@ impl World {
                     // 받아치는 박(0215 다리): 박자로 친 반격(`swing_pays`가 그 스윙에 표시했다).
                     beat: swing == self.player.parry.riposte_swing && self.player.beat.swing_beat,
                     dash: false,
+                    cleave: 0,
                 }
             }
             _ => return,
@@ -336,7 +344,20 @@ impl World {
         let lane_len = s
             .lane
             .map(|_| self.lane_reach(p + Vec3::Y * self.player.air, f, s.range));
-        for en in &mut self.enemies {
+        // 쪼개기(0274 ④ — 대검): 한 휘두르기에 앞의 `cleave`까지 — 가까운 적부터 센다(틱을 넘어 `Player::cleaved`에).
+        let mut order: Vec<usize> = (0..self.enemies.len()).collect();
+        if s.cleave > 0 {
+            if self.player.cleaved.0 != swing {
+                self.player.cleaved = (swing, 0);
+            }
+            let dist = |i: usize| {
+                let q = self.enemies[i].pos;
+                vec3(q.x - p.x, 0.0, q.z - p.z).length() - self.enemies[i].radius
+            };
+            order.sort_by(|&a, &b| dist(a).total_cmp(&dist(b)));
+        }
+        for i in order {
+            let en = &mut self.enemies[i];
             if !en.active() || en.hit_by == swing {
                 continue;
             }
@@ -361,6 +382,12 @@ impl World {
                 if !s.circle && dir.dot(f) < half {
                     continue;
                 }
+            }
+            if s.cleave > 0 {
+                if self.player.cleaved.1 >= s.cleave {
+                    continue;
+                }
+                self.player.cleaved.1 += 1;
             }
             en.hit_by = swing;
             // 등딱지(0120): 앞에서 든 평타는 튕긴다 — 피해·자세 없음. 강타·옆/뒤·내려찍기(다른 길)는 들어간다.

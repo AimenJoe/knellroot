@@ -342,10 +342,11 @@ pub(super) struct WVal {
 
 /// 종류의 원거리 수단(0274 ②b — `weapons::Bolt::look`)의 이름.
 pub(super) fn rb_name(look: u8) -> &'static str {
-    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, SHIELD, STONE};
+    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, QUAKE, SHIELD, STONE};
     let s = s();
     match look {
         SHIELD => s.rb_shield,
+        QUAKE => s.rb_quake,
         AXE => s.rb_axe,
         KNIFE => s.rb_knives,
         LIGHT => s.rb_light,
@@ -353,6 +354,22 @@ pub(super) fn rb_name(look: u8) -> &'static str {
         STONE => s.rb_stone,
         _ => s.rb_magic,
     }
+}
+
+/// 평타의 타마다 피해(0274 ④): "10·10·20" — 같은 수가 셋 넘게 이으면 "10×3"으로 줄인다(대검의 다섯 타가 칸에 들게).
+fn damage_text(dmgs: &[i32]) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < dmgs.len() {
+        let n = dmgs[i..].iter().take_while(|d| **d == dmgs[i]).count();
+        if n >= 3 {
+            parts.push(format!("{}×{n}", dmgs[i]));
+        } else {
+            parts.extend(dmgs[i..i + n].iter().map(|d| d.to_string()));
+        }
+        i += n;
+    }
+    parts.join("·")
 }
 
 /// 무기의 숫자들. `t` = 장신구까지 휜 랩 값(`Stats::tune`), `st` = 장신구·성장의 피해 +
@@ -370,11 +387,7 @@ pub(super) fn weapon_numbers(
         let dmgs: Vec<i32> = w.combo.iter().map(|h| h.damage + light).collect();
         out.push(WVal {
             line: WLine::Damage,
-            text: dmgs
-                .iter()
-                .map(|d| d.to_string())
-                .collect::<Vec<_>>()
-                .join("·"),
+            text: damage_text(&dmgs),
             score: dmgs.iter().sum::<i32>() as f32 / dmgs.len() as f32,
         });
         let (s0, a0, r0) = crate::world::hit_times(t, w, 0);
@@ -392,7 +405,7 @@ pub(super) fn weapon_numbers(
         if let Some(h) = w.heavy {
             let (lo, hi) = (
                 h.damage + heavy,
-                h.damage + heavy + t[P::HeavyFullBonus] as i32,
+                h.damage + heavy + t[P::HeavyFullBonus] as i32 + st.charged_dmg,
             );
             out.push(WVal {
                 line: WLine::Heavy,
@@ -508,6 +521,7 @@ fn weapon_desc(id: weapons::Id) -> &'static str {
         weapons::Id::Bow => s.weapon_bow_d,
         weapons::Id::Spear => s.weapon_spear_d,
         weapons::Id::Daggers => s.weapon_daggers_d,
+        weapons::Id::Greatsword => s.weapon_greatsword_d,
     }
 }
 
@@ -1403,6 +1417,9 @@ mod tests {
         let line = |v: &[WVal], l: WLine| v.iter().find(|x| x.line == l).unwrap().clone();
         assert_eq!(line(&sword, WLine::Damage).text, "10·10·20");
         assert_eq!(line(&hammer, WLine::Damage).text, "10·10·30");
+        // 0274 ④: 같은 수가 셋 넘게 이으면 줄인다(대검의 다섯 타).
+        let gs = weapon_numbers(weapons::Id::Greatsword.def(), &t, &none);
+        assert_eq!(line(&gs, WLine::Damage).text, "10×3·20·20");
         assert!(line(&hammer, WLine::Speed).score > line(&sword, WLine::Speed).score);
         let cmp = weapon_compare(&sword, &hammer);
         let ch = |l: WLine| cmp.iter().find(|(v, _)| v.line == l).unwrap().1;

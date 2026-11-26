@@ -86,7 +86,7 @@ fn the_sneak_attack_lands_from_behind_or_on_a_reeling_foe() {
 }
 
 /// 서 있는 적 하나를 `secs`초 동안 쳐서 준 피해(초당) — 적은 방랑자를 보거나(`behind` 거짓) 등을 돌린다. 마구 눌러/박자에 맞춰.
-fn foe_dps(id: W, behind: bool, secs: f32, on_beat: bool) -> f32 {
+pub(super) fn foe_dps(id: W, behind: bool, secs: f32, on_beat: bool) -> f32 {
     let t = Tuning::default();
     let mut w = World::new("test", 40.0);
     w.set_weapon(id);
@@ -118,7 +118,7 @@ fn foe_dps(id: W, behind: bool, secs: f32, on_beat: bool) -> f32 {
 }
 
 /// 방랑자 앞 1.2 m에 부채꼴로 선 셋(−35° · 0° · +35°)에게 준 피해의 합(초당) — 붙은 떼.
-fn huddle_dps(id: W, secs: f32, on_beat: bool) -> f32 {
+pub(super) fn huddle_dps(id: W, secs: f32, on_beat: bool) -> f32 {
     let t = Tuning::default();
     let mut w = World::new("test", 40.0);
     w.set_weapon(id);

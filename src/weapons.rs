@@ -50,7 +50,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 31] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 38] = [
     ("attack", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack3", Sweep::Center, (0.10, 0.12)),
@@ -85,6 +85,15 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 31] = [
     ("dagger4", Sweep::Center, (0.084, 0.105)),
     ("dagger_dash", Sweep::Center, (0.064, 0.08)),
     ("dagger_lunge", Sweep::Center, (0.048, 0.096)),
+    // 대검(0274 ④): 오른쪽에서 휩쓸기 · 되받아 휩쓸기 · 다시 오른쪽에서 · 크게 되받아 · 머리 위에서 내려찍기 · 달려들며 올려 베기 ·
+    // 강공격 = 두 손으로 모아 내려베기 — 랩 시간에 표의 배 1.3 · 1.3 · 1.3 · 1.4 · 1.6 · 1.1 · 강타 1.4.
+    ("gs1", Sweep::RightToLeft, (0.104, 0.13)),
+    ("gs2", Sweep::LeftToRight, (0.104, 0.13)),
+    ("gs3", Sweep::RightToLeft, (0.104, 0.13)),
+    ("gs4", Sweep::LeftToRight, (0.112, 0.14)),
+    ("gs5", Sweep::Center, (0.128, 0.16)),
+    ("gs_dash", Sweep::RightToLeft, (0.088, 0.11)),
+    ("gs_heavy", Sweep::Center, (0.084, 0.168)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -123,6 +132,8 @@ pub struct Hit {
     pub anim: &'static str,
     /// 캔슬 시점(0057): 활성 뒤 후딜레이의 이만큼(비율)이 지나야 다음 행동으로 끊는다 — 0 = 활성 끝나자마자. 무기 성격.
     pub cancel: f32,
+    /// 쪼개기(0274 ④ — 대검, BG3 대검의 Cleave "앞의 셋까지"): 한 휘두르기가 맞히는 적의 수 상한(가까운 것부터). 0 = 상한 없음.
+    pub cleave: u8,
 }
 
 /// 강타(공격 꾹, 0030).
@@ -254,10 +265,12 @@ pub enum Id {
     Spear,
     /// 빈집의 쌍단검(0274 ③ — 쌍단검 종류의 첫 무기): 두 손에 하나씩 쥐는 짧은 날 한 벌(아이템 하나). 빠르고, 등 뒤의 적에게 세다.
     Daggers,
+    /// 가지치기 대검(0274 ④ — 대검 종류의 첫 무기): 잔뿌리의 정원을 돌보던 이가 뿌리를 쳐내던 긴 날. 멈추지 않고 넓게 휩쓴다.
+    Greatsword,
 }
 
 /// 표 순서. 맨손은 옛 끝에(옛 기록의 무기 번호가 그대로 읽히게 — `app::legacy_weapon`), 그 뒤에 새 무기.
-pub const IDS: [Id; 8] = [
+pub const IDS: [Id; 9] = [
     Id::Sword,
     Id::Hammer,
     Id::Staff,
@@ -266,6 +279,7 @@ pub const IDS: [Id; 8] = [
     Id::Bow,
     Id::Spear,
     Id::Daggers,
+    Id::Greatsword,
 ];
 
 impl Id {
@@ -280,6 +294,7 @@ impl Id {
             Id::Bow => "bow",
             Id::Spear => "spear",
             Id::Daggers => "daggers",
+            Id::Greatsword => "greatsword",
         }
     }
 
@@ -331,6 +346,8 @@ pub const JAVELIN: u8 = 7;
 pub const STONE: u8 = 8;
 /// 쌍단검의 RB(0274 ③): 투척 단검 셋 — 좁은 부채꼴로 곧게 난다(던지는 것).
 pub const KNIFE: u8 = 9;
+/// 대검의 RB(0274 ④): 땅 내려찍기 — 날지 않고 땅을 따라 앞으로 달리는 짧은 충격파(마법 탄처럼 땅을 탄다 · 길 위를 모두 친다).
+pub const QUAKE: u8 = 11;
 /// 던진 방패(0276 — 하데스의 방패): 한손 무기 + 방패의 RB. 곧게 날아 맞힌 적에서 가까운 적으로 튕기고(`tuning::SHIELD_BOUNCES`)
 /// 손에 돌아온다(창 던지기와 같은 길 — `Bolt::returns`).
 pub const SHIELD: u8 = 10;
@@ -421,6 +438,7 @@ const fn hit(
         knock: 1.0,
         anim,
         cancel: 0.0,
+        cleave: 0,
     }
 }
 
@@ -605,6 +623,36 @@ pub const KNIFE_TOSS: Toss = Toss {
 /// 투척 단검의 부채꼴 — 이웃한 두 날 사이의 각(°).
 pub const KNIFE_SPREAD: f32 = 12.0;
 
+/// 대검(광전사)의 RB — 땅 내려찍기(0274 ④): 칼을 땅에 내려찍어 앞으로 달리는 짧은 충격파(7.4 m — 손도끼만큼) — 날지 않고 땅을 따라
+/// 흐른다(마법 탄의 길 `bolt_lands`), 길 위의 적을 모두 친다(10 · 자세 2 · 균열 0.35 — 셋이면 금이 간다). 모으면 더 멀리(9.4 m) · 20 · 균열 0.7 ·
+/// 잡몹 0.4초 휘청. 근접 무기의 RB는 평타의 4~5할(시험 `every_rb_stays_under_seven_tenths_of_melee_at_a_safe_distance`).
+pub const QUAKE_TOSS: Toss = Toss {
+    bolt: Bolt {
+        speed: 0.9,
+        range: 0.62,
+        poise: 2.0,
+        pierce: true,
+        look: QUAKE,
+        scale: 1.2,
+        dose: (Kind::Rift, 0.35),
+        ..MAGIC
+    },
+    charged: Bolt {
+        speed: 1.0,
+        range: 0.78,
+        damage: 20,
+        poise: 4.0,
+        pierce: true,
+        stagger: 0.4,
+        look: QUAKE,
+        scale: 1.7,
+        dose: (Kind::Rift, 0.7),
+        ..MAGIC
+    },
+    fan: 1,
+    spread: 0.0,
+};
+
 /// 방패 던지기(0276 — 하데스의 방패, 한손 무기 + 방패의 RB): 곧게 9 m를 날아 첫 적을 치고(20 · 자세 3 · 울림 0.35) 가까운 적으로
 /// 튕긴다(`tuning::SHIELD_BOUNCES` · `SHIELD_BOUNCE_R`), 다 튕기거나 더 갈 적이 없으면 손으로 돌아온다. 칸을 쓰지 않고 모으지 않는다 —
 /// 값은 "돌아올 때까지 막지 못한다"(그동안 RB는 막히고, 평타를 누르면 곧바로 손에 돌아온다 `World::recall_javelin`). 종류의
@@ -731,7 +779,41 @@ const DAGGER_COMBO: [Hit; 4] = [
 /// 쌍단검 강공격의 곧은 길 반 폭(m — 적의 몸 반지름이 더해진다): 적을 꿰뚫고 지나 등 뒤에 선다.
 pub const DAGGER_HALF: f32 = 0.4;
 
-pub const WEAPONS: [Weapon; 8] = [
+/// 가지치기 대검(0274 ④ — 광전사, "멈추지 않는 칼"): 넓은 휩쓸기 다섯이 끊김 없이 이어진다 — 오른쪽에서 · 되받아 · 다시 오른쪽에서 ·
+/// 크게 되받아 · 머리 위에서 내려찍기. 한 타가 넓고(180° 안팎 · 2.3 m) 앞의 셋까지 벤다(`cleave` — 가까운 것부터), 한 적에게는 검과
+/// 비슷하거나 조금 아래(타마다 ×1.3 — 느리다). 자세 피해는 타마다 1.5(검보다 조금 크다), 끝의 내려찍기는 좁고 무겁다.
+pub const GREATSWORD_CLEAVE: u8 = 3;
+const GREATSWORD_COMBO: [Hit; 5] = [
+    Hit {
+        cleave: GREATSWORD_CLEAVE,
+        cancel: 0.1,
+        ..hit(1.3, 1.3, 1.5, 0.8, 10, 1.0, "gs1")
+    },
+    Hit {
+        cleave: GREATSWORD_CLEAVE,
+        cancel: 0.1,
+        ..hit(1.3, 1.3, 1.5, 0.8, 10, 1.0, "gs2")
+    },
+    Hit {
+        cleave: GREATSWORD_CLEAVE,
+        cancel: 0.1,
+        ..hit(1.3, 1.3, 1.5, 0.8, 10, 1.0, "gs3")
+    },
+    Hit {
+        cleave: GREATSWORD_CLEAVE,
+        knock: 1.4,
+        cancel: 0.15,
+        ..hit(1.4, 1.35, 1.6, 1.0, 20, 2.0, "gs4")
+    },
+    Hit {
+        cleave: GREATSWORD_CLEAVE,
+        knock: 1.7,
+        cancel: 0.3,
+        ..hit(1.6, 1.4, 0.6, 1.4, 20, 3.0, "gs5")
+    },
+];
+
+pub const WEAPONS: [Weapon; 9] = [
     Weapon {
         id: Id::Sword,
         combo: &SWORD_COMBO,
@@ -1110,6 +1192,41 @@ pub const WEAPONS: [Weapon; 8] = [
         stamina: 0.7,
         forge: Some(MELEE_FORGE),
     },
+    // 가지치기 대검(0274 ④): 넓은 휩쓸기 다섯(앞의 셋까지) · 달려들며 올려 베기 · 강공격 = 두 손으로 모아 크게 내려베기(넓은 앞
+    // 부채꼴 · 자세 피해 큼 — 망치처럼 땅을 울리지는 않는다). RB는 땅 내려찍기(종류의 칸).
+    Weapon {
+        id: Id::Greatsword,
+        combo: &GREATSWORD_COMBO,
+        dash: Some(Hit {
+            cleave: GREATSWORD_CLEAVE,
+            knock: 1.4,
+            cancel: 0.25,
+            ..hit(1.1, 1.3, 1.0, 2.4, 20, 2.0, "gs_dash")
+        }),
+        heavy: Some(Heavy {
+            time: 1.4,
+            charge: 1.2,
+            reach: 1.25,
+            arc: 1.3,
+            lunge: 1.2,
+            shape: Shape::Arc,
+            damage: 30,
+            poise: 4.0,
+            walk: 0.8,
+            aftershock: None,
+            breaks_primed: None,
+            anim_charge: "gs_charge",
+            anim_heavy: "gs_heavy",
+            cancel: 0.4,
+        }),
+        rb: Rb::Toss,
+        grenade: None,
+        node: "w_greatsword",
+        off_hand: "",
+        // 창(1.25)과 망치(1.4) 사이 — 긴 날을 쉬지 않고 휘두르는 값.
+        stamina: 1.3,
+        forge: Some(MELEE_FORGE),
+    },
 ];
 
 /// 무기 종류(0272): 계열(`Hand` — 화면에 드러내지 않는 묶음) → **종류** → 낱낱의 무기(`Id`). 판 · 물리 속성 · 주특성은 종류에,
@@ -1124,16 +1241,20 @@ pub enum Class {
     Spear,
     /// 쌍단검(0274 ③ — 도적).
     Dagger,
+    /// 대검(0274 ④ — 광전사).
+    Greatsword,
 }
 
 /// 무기의 주특성이 얹는 배(0225 → 0272 — 종류마다): `force` = 타입 없는(물리) 스킬의 피해·자세 피해, `channel` = 스킬의 타가
 /// 쌓는 타입 게이지, `sneak` = 급소(0274 ③ 쌍단검) — 등 뒤에서 · 휘청이거나 기절하거나 묶인 적에게 주는 방랑자의 모든 타(평타 ·
 /// 강공격 · 탄 · 스킬 · 궁극기)의 피해 배(`world::Knack` → `hurt_by` 한 곳). 앞의 둘은 스킬에만, 급소는 손의 타 모두에.
+/// `fury` = 분노(0274 ④ 대검): 둘레의 적이 많고 잃은 체력이 클수록 평타가 빨라진다 — 가장 빠를 때의 배(`World::fury`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Art {
     pub force: f32,
     pub channel: f32,
     pub sneak: f32,
+    pub fury: f32,
 }
 
 impl Art {
@@ -1142,11 +1263,12 @@ impl Art {
         force: 1.0,
         channel: 1.0,
         sneak: 1.0,
+        fury: 1.0,
     };
 
-    /// 주특성 글의 `{0}`에 넣는 수(%): 셋 가운데 큰 배의 덤.
+    /// 주특성 글의 `{0}`에 넣는 수(%): 넷 가운데 큰 배의 덤.
     pub fn percent(self) -> i32 {
-        ((self.force.max(self.channel).max(self.sneak) - 1.0) * 100.0).round() as i32
+        ((self.force.max(self.channel).max(self.sneak).max(self.fury) - 1.0) * 100.0).round() as i32
     }
 }
 
@@ -1158,6 +1280,16 @@ pub const ART_CHANNEL: f32 = 1.5;
 pub const ART_SNEAK: f32 = 1.5;
 /// 급소의 "등 뒤": 적의 앞에서 이 각(°)보다 더 돌아선 자리(뒤쪽 140°의 부채꼴).
 pub const SNEAK_BACK_DEG: f32 = 110.0;
+/// 대검의 분노(0274 ④ — BG3 광전사의 분노 · "몰릴수록 거세다"): 평타가 가장 빠를 때의 배(+20%). 분노 0..1 =
+/// 둘레 `FURY_RADIUS` m의 깨어 있는 적 수 ÷ `FURY_CROWD` + 잃은 체력의 몫(1에서 멈춘다 — `World::fury`). 보스 하나 = 0.25(+5%),
+/// 넷에 에워싸이거나 체력이 바닥이면 가득. 한 휘두르기 동안은 그 처음의 빠르기에 머문다(동작이 흔들리지 않게). 값은 보스 모의로.
+pub const ART_FURY: f32 = 1.2;
+pub const FURY_RADIUS: f32 = 3.5;
+pub const FURY_CROWD: f32 = 4.0;
+/// 대검을 휘두르는 동안(평타 · 강공격 · 모으기) 맞으면 휘청이는 시간의 배(0274 ④ — 덧옷의 `Mods::flinch`와 같은 손잡이 `hurt.stun s`,
+/// 밀림은 `GREATSWORD_KNOCK`). 받는 피해는 그대로다(0095 원칙 2 — 시험).
+pub const GREATSWORD_FLINCH: f32 = 0.4;
+pub const GREATSWORD_KNOCK: f32 = 0.5;
 
 /// 보조특성(0272 1b): 보조무기 슬롯에 멘 종류가 **손에 쥐지 않아도** 보태는 한 가지(방패의 막기와 같은 말 — 0224). 주무기로 든
 /// 동안에는 없다 — 바꿔 들면 특성도 맞바뀐다. 숫자는 능력치의 있는 칸(`stats::Mods`)으로만, 능력치를 합치는 한 곳
@@ -1181,7 +1313,11 @@ impl SubTrait {
         let d = [m.stamina_regen, m.poise, m.ail, m.skill_cd, m.ember]
             .into_iter()
             .map(|x| (x - 1.0).abs())
-            .chain([m.kill_stamina / base, m.heal as f32 / sip])
+            .chain([
+                m.kill_stamina / base,
+                m.heal as f32 / sip,
+                m.charged_dmg as f32 / SUB_CHARGED_BASE,
+            ])
             .fold(0.0, f32::max);
         (d * 100.0).round() as i32
     }
@@ -1202,6 +1338,12 @@ pub const SUB_SKILL_CD: f32 = 0.95;
 /// 칠 때 −9.5% — 봇이 틈마다 한 타를 더 넣는다, 지팡이는 +5에서 −24%) — 어느 값도 4% 기준 안에 못 든다. 쓰러뜨림의 기력은 보스
 /// 싸움(쓰러뜨릴 것이 없다)을 줄이지 않는다.
 pub const SUB_KILL_STAMINA: f32 = 8.0;
+/// 대검의 보조특성(0274 ④ — 광전사의 맛보기, 힘): **다 모은** 강공격의 피해 +3(검의 다 모은 강공격 30의 10% — 주특성 분노 +20%의 반).
+/// 처음 안(강공격 · 패링 반격 모두 +2 → +1)은 보스 모의에서 "검 / 보조 대검"이 문지기를 5.7% 빨리 쓰러뜨렸다(패링 반격도 강공격이라
+/// 한 대가 문턱을 넘는다 — 0272 1b의 자세 피해와 같은 꼴) — 쥐어 다 모은 것만으로 좁혔다(0274 "④ 만든 것").
+pub const SUB_CHARGED: i32 = 3;
+/// 보조특성 글의 몫의 바탕(검의 다 모은 강공격 — `{0}%`의 분모).
+pub const SUB_CHARGED_BASE: f32 = 30.0;
 /// 쌍단검의 보조특성(0274 ③ — 도적의 맛보기, 손버릇): 쓰러뜨린 적이 남기는 잔불 ×1.10(주특성 급소 +50%의 다섯에 하나). 싸움의 수
 /// (피해 · 자세 · 기력 · 회피 · 막기)를 하나도 건드리지 않아 보스 싸움을 줄이지 않는다(모의 0% — 1b의 4% 기준은 저절로).
 pub const SUB_EMBER: f32 = 1.10;
@@ -1272,6 +1414,9 @@ pub enum Bare {
     LongGrip,
     /// 쌍단검 — 그림자 걸음: 회피가 끝난 뒤(`SHADOW_STEP_LATE`초 안) 첫 타는 급소로 친다(회피 자체는 그대로).
     ShadowStep,
+    /// 대검 — 남김없이 휘두른다(0274 ④ — BG3 광전사의 무모한 공격): 분노가 곱절로 빨리 차고(`BARE_FURY_RATE`), 가득 차 있으면 평타
+    /// 다섯의 끝에서 멈추지 않고 둘째 타로 되돌아 이어진다(`World::next_hit`).
+    Reckless,
 }
 
 /// 빈 손의 결 값(0276 — 처음 값, 판정에서 고친다). 보스 모의(`balance::bare_hand_probe`)로 골랐다 — 어느 싸움도 같은 무기 + 가장
@@ -1290,9 +1435,11 @@ pub const BARE_BOW_LAME: f32 = 3.0;
 pub const BARE_SPEAR_REACH: f32 = 1.2;
 /// 그림자 걸음: 회피가 끝난 뒤 첫 타가 급소인 창(초).
 pub const SHADOW_STEP_LATE: f32 = 0.8;
+/// 남김없이 휘두른다(대검의 빈 손): 분노가 차는 배(둘레의 적 · 잃은 체력의 몫에 곱한다).
+pub const BARE_FURY_RATE: f32 = 2.0;
 
 /// 종류 표(판 줄의 차례 — `plates::PLATES`가 이 차례로 선다). 대검 · 창은 뒤에 한 줄씩(0272 2단계).
-pub const CLASSES: [ClassDef; 7] = [
+pub const CLASSES: [ClassDef; 8] = [
     ClassDef {
         class: Class::Sword,
         hand: Hand::One,
@@ -1459,6 +1606,33 @@ pub const CLASSES: [ClassDef; 7] = [
         bare_name: |s| s.bare_dagger,
         bare_trait: |s| s.bare_dagger_d,
     },
+    // 대검(0274 ④ — 광전사의 결): 두 손으로 드는 긴 날(방패와 들지 않는다) · 참격(한손검과 같은 물리 속성 — 둘 다 베는 날이다: 갈리는
+    // 것은 속성 짝 · 무브셋 · 주특성) · 균열과 잔불(분노 — 쪼개고 태운다) · 주특성 분노 · 보조특성 힘(강공격 피해).
+    ClassDef {
+        class: Class::Greatsword,
+        hand: Hand::Two,
+        name: |s| s.class_greatsword,
+        attribute: |s| s.attr_slash,
+        pair: [Kind::Rift, Kind::Ember],
+        great: Ult::Tempest,
+        art: Art {
+            fury: ART_FURY,
+            ..Art::PLAIN
+        },
+        main_trait: |s| s.trait_greatsword,
+        sub: SubTrait {
+            mods: Mods {
+                charged_dmg: SUB_CHARGED,
+                ..Mods::NONE
+            },
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_greatsword,
+        toss: Some(QUAKE_TOSS),
+        bare: Bare::Reckless,
+        bare_name: |s| s.bare_greatsword,
+        bare_trait: |s| s.bare_greatsword_d,
+    },
 ];
 
 impl Class {
@@ -1472,6 +1646,7 @@ impl Class {
             Class::Bow => 4,
             Class::Spear => 5,
             Class::Dagger => 6,
+            Class::Greatsword => 7,
         }
     }
 
@@ -1503,6 +1678,7 @@ impl Id {
             Id::Bow => Some(Class::Bow),
             Id::Spear => Some(Class::Spear),
             Id::Daggers => Some(Class::Dagger),
+            Id::Greatsword => Some(Class::Greatsword),
             Id::Fists => None,
         }
     }
@@ -1686,6 +1862,7 @@ mod tests {
                 got.kill_stamina != none.kill_stamina,
                 got.heal != none.heal,
                 got.ember != none.ember,
+                got.charged_dmg != none.charged_dmg,
             ];
             let n = knobs.iter().filter(|k| **k).count();
             assert_eq!(n + c.sub.stowed_reload as usize, 1, "{:?}", c.class);
@@ -1697,12 +1874,13 @@ mod tests {
                 kill_stamina: none.kill_stamina,
                 heal: none.heal,
                 ember: none.ember,
+                charged_dmg: none.charged_dmg,
                 ..got
             };
             assert_eq!(only, none, "{:?}: nothing else moves", c.class);
             assert!(got.stamina_regen >= 1.0 && got.poise >= 1.0 && got.ail >= 1.0);
             assert!(got.skill_cd <= 1.0 && got.kill_stamina >= 0.0 && got.heal >= 0);
-            assert!(got.ember >= 1.0);
+            assert!(got.ember >= 1.0 && got.charged_dmg >= 0);
             // 작게: 어느 것도 15%를 넘지 않고, 주특성의 배가 있는 종류는 그 반 아래.
             let p = c.sub.percent();
             assert_eq!(p == 0, c.sub.stowed_reload, "{:?}", c.class);
@@ -1721,6 +1899,10 @@ mod tests {
         // 0274 ③: 쌍단검 = 쓰러뜨린 적의 잔불 +10%(손버릇) — 주특성 급소 +50%의 다섯에 하나.
         assert_eq!(Class::Dagger.def().sub.percent(), 10);
         assert_eq!(Class::Dagger.def().art.percent(), 50);
+        // 0274 ④: 대검 = 다 모은 강공격 피해 +3(검의 다 모은 강공격 30의 10% — 힘) · 주특성 분노 +20%의 반.
+        assert_eq!(Class::Greatsword.def().sub.percent(), 10);
+        assert_eq!(Class::Greatsword.def().sub.mods.charged_dmg, SUB_CHARGED);
+        assert_eq!(Class::Greatsword.def().art.percent(), 20);
         assert!(Class::Crossbow.def().sub.stowed_reload);
         assert_eq!(Id::Fists.sub_trait(), None, "bare hands are no class");
         assert_eq!(Id::Hammer.sub_trait(), Some(Class::Hammer.def().sub));
@@ -1842,7 +2024,7 @@ mod tests {
         charged: i32,
         grenade: i32,
     }
-    const OLD_WEAPONS: [Old; 8] = [
+    const OLD_WEAPONS: [Old; 9] = [
         Old {
             id: Id::Sword,
             combo: &[1, 1, 2],
@@ -1928,6 +2110,17 @@ mod tests {
             combo: &[1, 1, 1, 2],
             dash: 2,
             heavy: 2,
+            aftershock: 0,
+            rb: 1,
+            charged: 2,
+            grenade: 0,
+        },
+        // 0274 ④: 대검도 그 뒤 — 옛 눈금으로(땅 내려찍기는 충격파 한 번의 피해).
+        Old {
+            id: Id::Greatsword,
+            combo: &[1, 1, 1, 2, 2],
+            dash: 2,
+            heavy: 3,
             aftershock: 0,
             rb: 1,
             charged: 2,

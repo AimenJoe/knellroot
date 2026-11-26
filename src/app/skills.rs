@@ -72,6 +72,8 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Shove => (s.skill_shove, s.skill_shove_d),
         sk::Id::Rally => (s.skill_rally, s.skill_rally_d),
         sk::Id::Slip => (s.skill_slip, s.skill_slip_d),
+        sk::Id::Sunder => (s.skill_sunder, s.skill_sunder_d),
+        sk::Id::Sear => (s.skill_sear, s.skill_sear_d),
     }
 }
 
@@ -87,6 +89,7 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Rain => (s.ult_rain, s.ult_rain_d),
         sk::Ult::Gale => (s.ult_gale, s.ult_gale_d),
         sk::Ult::Ambush => (s.ult_ambush, s.ult_ambush_d),
+        sk::Ult::Tempest => (s.ult_tempest, s.ult_tempest_d),
     }
 }
 
@@ -191,6 +194,10 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Rally, Pick::B) => (s.pick_rally_b, s.pick_rally_b_d),
         (sk::Id::Slip, Pick::A) => (s.pick_slip_a, s.pick_slip_a_d),
         (sk::Id::Slip, Pick::B) => (s.pick_slip_b, s.pick_slip_b_d),
+        (sk::Id::Sunder, Pick::A) => (s.pick_sunder_a, s.pick_sunder_a_d),
+        (sk::Id::Sunder, Pick::B) => (s.pick_sunder_b, s.pick_sunder_b_d),
+        (sk::Id::Sear, Pick::A) => (s.pick_sear_a, s.pick_sear_a_d),
+        (sk::Id::Sear, Pick::B) => (s.pick_sear_b, s.pick_sear_b_d),
     };
     (mark, name, desc)
 }
@@ -227,6 +234,8 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Shove => s.cap_shove,
         sk::Id::Rally => s.cap_rally,
         sk::Id::Slip => s.cap_slip,
+        sk::Id::Sunder => s.cap_sunder,
+        sk::Id::Sear => s.cap_sear,
     }
 }
 
@@ -320,6 +329,8 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         (sk::Ult::Gale, _) => fill(s.rk_line_dmg, &[&sk::GALE.last3.to_string()]),
         (sk::Ult::Ambush, 2) => fill(s.rk_ambush_range, &[&num(sk::AMBUSH.range2)]),
         (sk::Ult::Ambush, _) => fill(s.rk_line_dmg, &[&sk::AMBUSH.last3.to_string()]),
+        (sk::Ult::Tempest, 2) => fill(s.rk_tempest_radius, &[&num(sk::TEMPEST.radius2)]),
+        (sk::Ult::Tempest, _) => fill(s.rk_line_dmg, &[&sk::TEMPEST.last3.to_string()]),
     }
 }
 
@@ -2593,7 +2604,11 @@ mod tests {
         let s = s();
         assert_eq!(hands_text(Id::Gather), s.hands_any);
         // 0274 ③: 가로지르기는 쌍단검의 것(두 손이 다 찬 종류라 "방패 없이"를 붙이지 않는다), 자루 치기는 한손검만.
-        assert_eq!(hands_text(Id::Cut), s.class_dagger);
+        // 0274 ④: 대검도(떼를 뚫고 지나가는 광전사).
+        assert_eq!(
+            hands_text(Id::Cut),
+            format!("{} · {}", s.class_dagger, s.class_greatsword)
+        );
         assert_eq!(
             hands_text(Id::Pommel),
             fill(s.hands_no_shield, &[s.class_sword])
@@ -2601,7 +2616,10 @@ mod tests {
         assert_eq!(hands_text(Id::Bash), s.hands_shield);
         assert_eq!(
             hands_text(Id::Whirl),
-            format!("{} · {}", s.class_sword, s.class_hammer)
+            format!(
+                "{} · {} · {}",
+                s.class_sword, s.class_hammer, s.class_greatsword
+            )
         );
         assert_eq!(
             hands_text(Id::Toll),
@@ -2625,6 +2643,7 @@ mod tests {
                 s.class_bow,
                 s.class_spear,
                 s.class_dagger,
+                s.class_greatsword,
                 s.plate_shield
             ]
         );
@@ -2643,6 +2662,7 @@ mod tests {
                 s.attr_pierce,
                 s.attr_pierce,
                 s.attr_pierce,
+                s.attr_slash,
                 s.attr_guard
             ]
         );

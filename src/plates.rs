@@ -295,6 +295,7 @@ mod tests {
     const BOW: Plate = Plate::Class(Class::Bow);
     const SPEAR: Plate = Plate::Class(Class::Spear);
     const DAGGER: Plate = Plate::Class(Class::Dagger);
+    const GREATSWORD: Plate = Plate::Class(Class::Greatsword);
 
     #[test]
     fn every_weapon_plate_pairs_two_different_types_and_every_type_has_a_home() {
@@ -330,6 +331,7 @@ mod tests {
                 BOW,
                 SPEAR,
                 DAGGER,
+                GREATSWORD,
                 Plate::Shield
             ]
         );
@@ -361,6 +363,12 @@ mod tests {
             Some(DAGGER),
             "two blades"
         );
+        // 0274 ④: 대검도 두 손 — 방패를 메어도 대검 트리.
+        assert_eq!(
+            Plate::held(W::Greatsword.grip(true)),
+            Some(GREATSWORD),
+            "two hands on the hilt"
+        );
         assert_eq!(Plate::held(W::Crossbow.grip(false)), Some(CROSSBOW));
         assert_eq!(Plate::held(W::Bow.grip(false)), Some(BOW));
     }
@@ -386,7 +394,8 @@ mod tests {
         assert_eq!(at(Col::Right, 0), sk(&[Id::Brace]));
         assert_eq!(at(Col::Right, 1), sk(&[Id::Rally]));
         assert_eq!(at(Col::Mid, 0), sk(&[Id::Whirl, Id::Gather]));
-        assert_eq!(at(Col::Mid, 1), sk(&[]));
+        // 0274 ④: 비어 있던 가운데 둘째 줄에 되울림(전사의 받아치기 — 방패 없이 받아치면 둘레가 울린다, 있는 스킬의 `hands`).
+        assert_eq!(at(Col::Mid, 1), sk(&[Id::Echo]));
         assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Shock)]);
         assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Flurry)]);
         assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Drain)]);
@@ -394,7 +403,7 @@ mod tests {
             assert!(!SWORD.has(Entry::Skill(id)), "{id:?} left for the daggers");
         }
         assert!(!SWORD.has(Entry::Vein(Vein::Rift)));
-        assert_eq!(SWORD.seats().len(), 9);
+        assert_eq!(SWORD.seats().len(), 10);
         // 새 셋은 한손검만의 것(방패 없이 — 방패를 들면 방패 트리).
         for id in [Id::Pommel, Id::Shove, Id::Rally] {
             assert!(
@@ -433,6 +442,44 @@ mod tests {
         for p in PLATES {
             assert_eq!(p.has(Entry::Skill(Id::Slip)), p == DAGGER, "{p:?}");
         }
+    }
+
+    /// 0274 ④: 대검 판 = 광전사의 결 — 왼쪽 균열(가로지르기 / 땅 가르기(새) / 결), 오른쪽 잔불(불씨 휩쓸기(새) / 결), 가운데 참격
+    /// (휘돌이 · 끌어모으기 · 버팀 / 궁극기 칼바람(새)). 9노드 — 첫 줄 스킬은 다섯.
+    #[test]
+    fn the_greatsword_plate_seats_rift_slash_and_ember() {
+        assert_eq!(GREATSWORD.pair(), Some([Kind::Rift, Kind::Ember]));
+        assert_eq!(GREATSWORD.great(), Some(Ult::Tempest));
+        let at = |col: Col, row: u8| -> Vec<Entry> {
+            GREATSWORD
+                .seats()
+                .into_iter()
+                .filter(|s| s.col == col && s.row == row)
+                .map(|s| s.entry)
+                .collect()
+        };
+        let sk = |ids: &[Id]| ids.iter().map(|&i| Entry::Skill(i)).collect::<Vec<_>>();
+        assert_eq!(at(Col::Left, 0), sk(&[Id::Cut]));
+        assert_eq!(at(Col::Left, 1), sk(&[Id::Sunder]));
+        assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Rift)]);
+        assert_eq!(at(Col::Mid, 0), sk(&[Id::Whirl, Id::Gather, Id::Brace]));
+        assert_eq!(at(Col::Mid, 1), sk(&[]));
+        assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Tempest)]);
+        assert_eq!(at(Col::Right, 0), sk(&[Id::Sear]));
+        assert_eq!(at(Col::Right, 1), sk(&[]));
+        assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Ember)]);
+        assert_eq!(GREATSWORD.seats().len(), 9);
+        for p in PLATES {
+            for id in [Id::Sunder, Id::Sear] {
+                assert_eq!(p.has(Entry::Skill(id)), p == GREATSWORD, "{p:?} {id:?}");
+            }
+        }
+        let s = crate::i18n::s();
+        assert_eq!(
+            GREATSWORD.attribute().map(|a| a(s)),
+            SWORD.attribute().map(|a| a(s)),
+            "both blades cut"
+        );
     }
 
     #[allow(non_snake_case)]
@@ -482,9 +529,13 @@ mod tests {
                 n(STAFF),
                 n(CROSSBOW),
                 n(BOW),
-                n(Plate::Shield)
+                n(Plate::Shield),
+                n(SPEAR),
+                n(DAGGER),
+                n(GREATSWORD)
             ],
-            [9, 11, 10, 9, 8, 10]
+            // 0274 ④: 한손검 9 → 10(가운데 둘째 줄의 되울림), 대검 9.
+            [10, 11, 10, 9, 8, 10, 10, 9, 9]
         );
         // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
         for id in [

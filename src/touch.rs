@@ -107,6 +107,12 @@ pub enum Kind {
     /// 그림만(0276): 던지는 방패(하데스의 방패 — 한손 무기 + 방패의 RB) · 쇠 덫(빈 손의 쇠뇌 — 수류탄 자리).
     ShieldToss,
     IronSnare,
+    /// 대검(0274 ④): 공격 그림(세워 든 넓은 날) · 땅 가르기 · 불씨 휩쓸기 · 칼바람 · 땅 내려찍기(RB).
+    Greatsword,
+    Sunder,
+    Sear,
+    Tempest,
+    Quake2,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -948,7 +954,8 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Fist
         | Kind::Bow
         | Kind::Spear
-        | Kind::Daggers => a.attack = true,
+        | Kind::Daggers
+        | Kind::Greatsword => a.attack = true,
         Kind::Dodge => a.dodge = true,
         Kind::Parry => a.parry = true,
         Kind::Jump => a.jump = true,
@@ -1003,7 +1010,11 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Ambush
         | Kind::Knives
         | Kind::ShieldToss
-        | Kind::IronSnare => {}
+        | Kind::IronSnare
+        | Kind::Sunder
+        | Kind::Sear
+        | Kind::Tempest
+        | Kind::Quake2 => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1063,6 +1074,7 @@ pub fn attack_icon(w: crate::weapons::Id) -> Kind {
         Id::Bow => Kind::Bow,
         Id::Spear => Kind::Spear,
         Id::Daggers => Kind::Daggers,
+        Id::Greatsword => Kind::Greatsword,
     }
 }
 
@@ -1101,6 +1113,8 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Shove => Kind::Shove,
         Id::Rally => Kind::Rally,
         Id::Slip => Kind::Slip,
+        Id::Sunder => Kind::Sunder,
+        Id::Sear => Kind::Sear,
     }
 }
 
@@ -1116,6 +1130,7 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Rain => Kind::Rain,
         Ult::Gale => Kind::Gale,
         Ult::Ambush => Kind::Ambush,
+        Ult::Tempest => Kind::Tempest,
     }
 }
 
@@ -1144,9 +1159,10 @@ pub fn rb_icon(w: &crate::world::World) -> Kind {
 
 /// 종류의 RB 꼴(`weapons::Bolt::look`) → 그림(0274 ②b). 마법 탄(0 · 1 · 2)은 별.
 pub fn toss_icon(look: u8) -> Kind {
-    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, SHIELD, STONE};
+    use crate::weapons::{AXE, JAVELIN, KNIFE, LIGHT, QUAKE, SHIELD, STONE};
     match look {
         AXE => Kind::HandAxe,
+        QUAKE => Kind::Quake2,
         KNIFE => Kind::Knives,
         SHIELD => Kind::ShieldToss,
         LIGHT => Kind::Smite,
@@ -2205,6 +2221,86 @@ pub fn icon_mask(k: Kind) -> [&'static str; ICON_N] {
             "..#.......#..",
             ".#.........#.",
         ],
+        // 대검(0274 ④): 세워 든 넓은 날(끝이 뾰족) + 넓은 코등이 + 긴 손잡이 — 검(대각선의 가는 날)과 갈린다.
+        Kind::Greatsword => [
+            "......#......",
+            ".....###.....",
+            "....#####....",
+            "....#####....",
+            "....#####....",
+            "....#####....",
+            "....#####....",
+            "....#####....",
+            ".###########.",
+            ".###########.",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+        ],
+        // 땅 가르기(0274 ④): 아래로 꽂힌 날 + 땅의 줄 + 아래로 벌어지는 금.
+        Kind::Sunder => [
+            ".....###.....",
+            ".....###.....",
+            "...#######...",
+            ".....###.....",
+            ".....###.....",
+            ".....###.....",
+            "......#......",
+            "#############",
+            ".....#.#.....",
+            "....#...#....",
+            "...#.....#...",
+            "..#.......#..",
+            ".#.........#.",
+        ],
+        // 불씨 휩쓸기(0274 ④): 크게 휜 휩쓸기의 호 + 위로 튀는 불씨 줄.
+        Kind::Sear => [
+            "..#..#..#..#.",
+            ".#..#..#..#..",
+            ".............",
+            "..#########..",
+            ".##.......##.",
+            "##.........##",
+            "#...........#",
+            "#.....#.....#",
+            ".....###.....",
+            ".....###.....",
+            "......#......",
+            ".............",
+            ".............",
+        ],
+        // 칼바람(0274 ④): 가운데를 두고 도는 날 넷(바람개비).
+        Kind::Tempest => [
+            "....##.......",
+            "....###......",
+            ".....###..##.",
+            "..#...##.###.",
+            ".###..######.",
+            "..#######....",
+            "....#####....",
+            "....#######..",
+            ".######..###.",
+            ".###.##...#..",
+            ".##..###.....",
+            "......###....",
+            ".......##....",
+        ],
+        // 땅 내려찍기(0274 ④ — 대검의 RB): 바닥을 친 날 + 앞(위)으로 번지는 물결 셋.
+        Kind::Quake2 => [
+            ".............",
+            "...#######...",
+            "..#.......#..",
+            ".#..#####..#.",
+            "#..#.....#..#",
+            "..#..###..#..",
+            ".#..#...#..#.",
+            "...#.....#...",
+            "......#......",
+            ".....###.....",
+            "....#####....",
+            "#############",
+            "#############",
+        ],
         // 빠지며 베기(0274 ③): 앞(오른쪽 위)의 벤 자국 + 뒤로 물러나는 화살.
         Kind::Slip => [
             ".......####..",
@@ -2608,6 +2704,11 @@ mod tests {
             Kind::Knives,
             Kind::ShieldToss,
             Kind::IronSnare,
+            Kind::Greatsword,
+            Kind::Sunder,
+            Kind::Sear,
+            Kind::Tempest,
+            Kind::Quake2,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

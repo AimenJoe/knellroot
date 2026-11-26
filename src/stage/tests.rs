@@ -1913,3 +1913,39 @@ fn the_empty_house_daggers_wait_in_the_villages_fourth_chest() {
         "an old record"
     );
 }
+
+/// 0274 ④: 가지치기 대검은 잔뿌리의 정원의 셋째 상자 — 서쪽 샛길의 막다른 끝(되풀이 꼬투리 Y가 지키는 곳, 본길에서 비켜 둔 보상).
+/// 옛 상자 둘(장신구 · 잔뿌리 활)의 기록 번호(위 → 아래 차례)는 그대로다: 둘을 연 옛 기록은 대검의 상자를 연 것으로 읽히지 않는다.
+#[test]
+fn the_pruners_greatsword_waits_in_the_gardens_third_chest() {
+    let def = &garden::DEF;
+    assert_eq!(
+        def.chest_loot,
+        &[
+            Loot::Charm(crate::charms::Id::Feet),
+            Loot::Weapon(crate::weapons::Id::Bow),
+            Loot::Weapon(crate::weapons::Id::Greatsword),
+        ]
+    );
+    let (mut run, _) = StageRun::start(def);
+    assert_eq!(run.chest.at.len(), 3);
+    let g = run.level.ground();
+    let cell = |p: Vec3| g.cell_of(p).unwrap();
+    assert_eq!(
+        cell(run.chest.at[0]),
+        (3, 23),
+        "the charm's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[1]),
+        (40, 34),
+        "the bow's chest keeps its place"
+    );
+    assert_eq!(
+        cell(run.chest.at[2]),
+        (3, 44),
+        "the end of the west side path"
+    );
+    run.set_opened(&[0, 1]);
+    assert_eq!(run.chest.open, vec![true, true, false], "an old record");
+}
