@@ -516,7 +516,7 @@ impl Ui {
             return;
         }
         // 좁은 화면(4:3)에서는 글을 자르기 전에 먼저 줄인다 — 안내의 끝이 "…"이면 닫는 법을 못 읽는다.
-        let k = (max_w / self.width(&line, 1.0).max(1.0)).clamp(0.6, 1.0);
+        let k = hint_scale(max_w, self.width(&line, 1.0));
         let line = self.fit(&line, max_w, k);
         self.text(&line, x, y + (self.px(1.0) - self.px(k)) * 0.5, k, DIM);
     }
@@ -1485,6 +1485,32 @@ pub fn all_text(s: &Strings) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// 0278: 키 안내 줄을 줄여 맞출 때 줄인 폭이 칸을 넘지 않는다 — 꼭 맞춘 배의 곱이 반올림으로 칸을 넘으면 `fit`이 끝 낱말을
+    /// 잘랐다(영어 폰 가로 844px "ESC Cl…"). 조각마다 따로 곱해 더하는 `width_with`와 같은 셈으로 잰다.
+    #[test]
+    fn a_shrunk_hint_line_never_spills_its_room() {
+        let segs = [37.31f32, 52.9, 28.07, 61.3, 19.99, 44.4, 23.17, 38.6];
+        let width = |k: f32| segs.iter().map(|w| w * k).sum::<f32>();
+        let full = width(1.0);
+        let mut spilled = 0;
+        for i in 0..4000 {
+            let room = full * 0.6 + i as f32 * 0.037;
+            if room >= full {
+                break;
+            }
+            let k = super::hint_scale(room, full);
+            assert!(width(k) <= room, "{room}: {} with k {k}", width(k));
+            // 예전 셈(꼭 맞춘 배)은 반올림으로 넘을 때가 있었다.
+            if width(room / full) > room {
+                spilled += 1;
+            }
+        }
+        assert!(
+            spilled > 0,
+            "the old exact scale never spilled — the probe proves nothing"
+        );
+    }
+
     /// 0164 → 0233: 큰 창의 탭 줄 — 넉넉하면 여백 18, 모자라면 여백부터(6까지), 그래도 넘치면 글을 줄이지 않고 굴린다(여백 10).
     #[test]
     fn small_tab_strips_fill_when_they_fit_and_scroll_when_they_do_not() {
@@ -1942,4 +1968,11 @@ mod wrap_tests {
         );
         assert_eq!(plain(&t), "W/S 고르기   ENTER 확인");
     }
+}
+
+/// 키 안내 줄을 `max_w`에 맞추는 배(0.6~1): 배 1에서 `full`(px)인 줄. 폭은 배에 곧게 비례하니 `max_w / full`이면 꼭 맞지만, 그 곱이
+/// 부동소수점 반올림으로 `max_w`를 아주 조금 넘으면 `fit`이 끝 낱말을 "…"로 잘랐다(0278 — 영어 폰 가로 844px의 탭 안내 줄
+/// "ESC Cl…", `tools/test/tabs.js`). 반 px를 남겨 둔다.
+pub fn hint_scale(max_w: f32, full: f32) -> f32 {
+    ((max_w - 0.5) / full.max(1.0)).clamp(0.6, 1.0)
 }
