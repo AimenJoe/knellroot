@@ -85,7 +85,7 @@ impl Memory {
         // 0276: 방패를 든 한손 무기면 방패를 던진다(같은 동작).
         let toss = !shot && w.rb_bolts().0.thrown();
         // 땅 내려찍기(0274 ④ — 대검의 RB): 두 손으로 머리 위에서 내려찍는 동작(평타 끝 타 `gs5`)의 닿는 자리가 탄이 나가는 때에.
-        let slam = !shot && w.rb_bolts().0.look == crate::weapons::QUAKE;
+        let slam = !shot && w.rb_bolts().0.look == crate::weapons::Look::Quake;
         // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
         // 월드 시계로 지난 초(멈춤 창·히트스톱 동안 0) — 서 있는 몸짓·걸음 시계·섞기가 같이 쓴다.
         let wdt = (w.time - self.idle_at).clamp(0.0, 0.1);

@@ -481,7 +481,7 @@ impl Renderer {
         for b in w
             .bolts
             .iter()
-            .filter(|b| b.def.look == crate::weapons::JAVELIN)
+            .filter(|b| b.def.look == crate::weapons::Look::Javelin)
         {
             let p = b.prev.lerp(b.pos, alpha);
             // 돌아오는 길은 꼬리가 앞(촉은 던진 쪽을 본 채 당겨 오듯).
@@ -533,7 +533,7 @@ impl Renderer {
         for b in w
             .bolts
             .iter()
-            .filter(|b| b.def.look == crate::weapons::SHIELD)
+            .filter(|b| b.def.look == crate::weapons::Look::Shield)
         {
             let p = b.prev.lerp(b.pos, alpha);
             let rot =

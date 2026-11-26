@@ -1350,11 +1350,13 @@ impl Fx {
         match *e {
             // 종류의 RB(0274 ②b): 던지는 것은 손끝의 쇳빛 바람 줄(손도끼·창 — 돌은 먼지 한 줌), 신성한 빛은 손 위로 솟는 금빛 —
             // 내려 꽂히는 순간은 `Smite`.
-            Event::Cast { at, look }
-                if look == crate::weapons::AXE
-                    || look == crate::weapons::JAVELIN
-                    || look == crate::weapons::KNIFE =>
-            {
+            Event::Cast {
+                at,
+                look:
+                    crate::weapons::Look::Axe
+                    | crate::weapons::Look::Javelin
+                    | crate::weapons::Look::Knife,
+            } => {
                 let fwd = w.player.facing_dir();
                 self.star(at, 0.7, 0.06, WHITE_HOT);
                 self.spray(
@@ -1372,7 +1374,10 @@ impl Fx {
                 );
             }
             // 땅 내려찍기(0274 ④): 날이 땅에 닿은 발 앞의 흰 별 + 앞으로 번지는 흙빛 고리 한 겹 + 튀는 돌 + 먼지.
-            Event::Cast { at, look } if look == crate::weapons::QUAKE => {
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Quake,
+            } => {
                 let fwd = w.player.facing_dir();
                 let g = vec3(pp.x, w.ground_y(pp), pp.z) + fwd * 1.0;
                 self.star(g + Vec3::Y * 0.3, 1.5, 0.1, WHITE_HOT);
@@ -1392,13 +1397,19 @@ impl Fx {
                 let _ = at;
             }
             // 저주탄을 날렸다(0274 ⑥ — 완드의 주된 공격): 돌끝의 작은 하늘빛 별 + 앞으로 흩어지는 잿빛 부스러기 몇(탄은 렌더가 `bolts`로).
-            Event::Cast { at, look } if look == crate::weapons::CURSE => {
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Curse,
+            } => {
                 let fwd = w.player.facing_dir();
                 self.star(at, 0.7, 0.07, SKY);
                 self.spray(at, fwd, 0.4, 4, 3.0, Shape::Dot, 0.05, 0.22, 0.0, SKY, ASH);
             }
             // 가시 씨앗을 던졌다(0274 ⑤): 손의 작은 민트 별 + 흩어지는 흙 몇(씨가 날아가는 것은 렌더가 `smites`로).
-            Event::Cast { at, look } if look == crate::weapons::SEED => {
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Seed,
+            } => {
                 self.star(at, 0.8, 0.08, MINT);
                 self.rise(at, 0.2, 4, Shape::Dot, (0.06, 0.03), 0.3, MINT, LIFE, true);
             }
@@ -1432,7 +1443,10 @@ impl Fx {
                     true,
                 );
             }
-            Event::Cast { at, look } if look == crate::weapons::STONE => {
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Stone,
+            } => {
                 self.spray(
                     at,
                     w.player.facing_dir(),
@@ -1447,7 +1461,10 @@ impl Fx {
                     ASH,
                 );
             }
-            Event::Cast { at, look } if look == crate::weapons::LIGHT => {
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Light,
+            } => {
                 self.star(at + Vec3::Y * 0.4, 0.9, 0.09, GOLD);
                 self.rise(
                     at,
@@ -4045,36 +4062,39 @@ mod tests {
             Event::Slam { at },
             Event::Boom { at },
             Event::Gulp { at },
-            Event::Cast { at, look: 0 },
             Event::Cast {
                 at,
-                look: crate::weapons::AXE,
+                look: crate::weapons::Look::Magic,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::LIGHT,
+                look: crate::weapons::Look::Axe,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::QUAKE,
+                look: crate::weapons::Look::Light,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::JAVELIN,
+                look: crate::weapons::Look::Quake,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::STONE,
+                look: crate::weapons::Look::Javelin,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Stone,
             },
             Event::Smite { at, radius: 1.4 },
             Event::Cast {
                 at,
-                look: crate::weapons::SEED,
+                look: crate::weapons::Look::Seed,
             },
             Event::Sprout { at, radius: 1.6 },
             Event::Cast {
                 at,
-                look: crate::weapons::CURSE,
+                look: crate::weapons::Look::Curse,
             },
             Event::JavelinBack { at },
             Event::Prayer { at, radius: 3.0 },
@@ -4383,36 +4403,39 @@ mod tests {
             Event::AilBurst { at, radius: 2.0 },
             Event::RootSpike { at },
             Event::Mend { at },
-            Event::Cast { at, look: 0 },
             Event::Cast {
                 at,
-                look: crate::weapons::AXE,
+                look: crate::weapons::Look::Magic,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::LIGHT,
+                look: crate::weapons::Look::Axe,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::QUAKE,
+                look: crate::weapons::Look::Light,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::JAVELIN,
+                look: crate::weapons::Look::Quake,
             },
             Event::Cast {
                 at,
-                look: crate::weapons::STONE,
+                look: crate::weapons::Look::Javelin,
+            },
+            Event::Cast {
+                at,
+                look: crate::weapons::Look::Stone,
             },
             Event::Smite { at, radius: 1.4 },
             Event::Cast {
                 at,
-                look: crate::weapons::SEED,
+                look: crate::weapons::Look::Seed,
             },
             Event::Sprout { at, radius: 1.6 },
             Event::Cast {
                 at,
-                look: crate::weapons::CURSE,
+                look: crate::weapons::Look::Curse,
             },
             Event::Sneak { at },
             Event::FuryFull { at },

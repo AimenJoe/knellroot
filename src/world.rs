@@ -247,7 +247,7 @@ pub enum Event {
     /// RB가 나갔다(0048 마법 탄 → 0274 ②b 종류마다): `look` = 탄의 꼴(`weapons::Bolt::look` — 소리·번쩍임이 꼴로 갈린다).
     Cast {
         at: Vec3,
-        look: u8,
+        look: weapons::Look,
     },
     /// 신성한 빛이 내려 꽂혔다(0274 ②b — 망치의 RB): 그 자리 둘레 `radius` m를 쳤다.
     Smite {
@@ -623,7 +623,7 @@ impl Event {
             Event::Smash { at },
             Event::Cast {
                 at,
-                look: weapons::AXE,
+                look: weapons::Look::Axe,
             },
             Event::Smite { at, radius: 1.4 },
             Event::Sprout { at, radius: 1.6 },
@@ -768,8 +768,8 @@ pub struct Smite {
     pub dose: crate::status::Dose,
     /// 꽂혔다(그 뒤 `SMITE_SHOW`초 동안 빛기둥이 남아 옅어진다 — 그림만, `left`는 음수로 흐른다).
     pub struck: bool,
-    /// 탄의 꼴(`weapons::LIGHT` 신성한 빛 · `SEED` 가시 씨앗 0274 ⑤)과 떠난 자리(씨앗이 날아가는 포물선의 처음 — 그림만).
-    pub look: u8,
+    /// 탄의 꼴(`Look::Light` 신성한 빛 · `Look::Seed` 가시 씨앗 0274 ⑤)과 떠난 자리(씨앗이 날아가는 포물선의 처음 — 그림만).
+    pub look: weapons::Look,
     pub from: Vec3,
 }
 
@@ -1892,7 +1892,9 @@ impl World {
 
     /// 던진 방패가 날고 있나(0276 — 가는 길이든 돌아오는 길이든). 그동안 왼손에는 방패가 없다(렌더 `hide_unheld`).
     pub fn shield_out(&self) -> bool {
-        self.bolts.iter().any(|b| b.def.look == weapons::SHIELD)
+        self.bolts
+            .iter()
+            .any(|b| b.def.look == weapons::Look::Shield)
     }
 
     /// 손으로 돌아올 RB가 날고 있나(던진 창 0274 ②b · 던진 방패 0276) — 그동안 RB는 막힌다.
@@ -1928,7 +1930,7 @@ impl World {
             let (mut a, mut b) = self.player.weapon.bolts();
             if self.bare() == Some(weapons::Bare::GroundHand) {
                 for x in [&mut a, &mut b] {
-                    if x.look == weapons::SEED {
+                    if x.look == weapons::Look::Seed {
                         x.scale *= weapons::BARE_GROUND_REACH;
                     }
                 }

@@ -4,7 +4,7 @@
 use super::*;
 use crate::status::Kind;
 use crate::weapons::{
-    Id as W, ART_SAP, BARE_GROUND_REACH, PULL_STOP, SCYTHE_HEAVY_PULL, SCYTHE_PULL, SEED,
+    Id as W, Look, ART_SAP, BARE_GROUND_REACH, PULL_STOP, SCYTHE_HEAVY_PULL, SCYTHE_PULL,
     SUB_KILL_HEAL,
 };
 
@@ -272,7 +272,7 @@ fn a_hand_on_the_ground_widens_root_skills_and_the_seed() {
 fn the_thorn_seed_falls_where_aimed_and_binds() {
     let t = Tuning::default();
     let (bolt, charged) = W::Scythe.bolts();
-    assert_eq!((bolt.look, charged.look), (SEED, SEED));
+    assert_eq!((bolt.look, charged.look), (Look::Seed, Look::Seed));
     assert!(bolt.smites() && !bolt.straight());
     assert_eq!(bolt.dose.0, Kind::Root);
     assert!(charged.dose.1 >= 1.0, "a full seed binds at once");

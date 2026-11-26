@@ -238,9 +238,8 @@ pub struct Bolt {
     pub pierce: bool,
     /// 맞은 적이 이 초 휘청(0 = 없음).
     pub stagger: f32,
-    /// 그림 색·꼴(0 = 마법 라벤더, 1 = 무거운 탄 놋쇠, 2 = 꿰뚫는 탄 민트, 3 = 쇠뇌 볼트, 4 = 활의 화살 — 0231,
-    /// 0274 ②b: `AXE` 손도끼 · `LIGHT` 신성한 빛 · `JAVELIN` 던진 창 · `STONE` 돌).
-    pub look: u8,
+    /// 탄의 꼴(0278 R17 — 그림 · 이름 · 나는 법은 `Look::def`).
+    pub look: Look,
     /// 크기 배율(그림·맞는 반지름, 모은 탄은 크다 — 0056). 신성한 빛은 빛기둥의 반지름 배(`tuning::SMITE_RADIUS`).
     pub scale: f32,
     /// 맞은 적에게 쌓는 속성 게이지(0274 ②b — 신성한 빛 = 울림). 없으면 `NO_DOSE`.
@@ -362,27 +361,155 @@ pub struct Forge {
     pub mag: i32,
 }
 
-/// 활의 화살 그림(`Bolt::look`, 0231) — 원거리 무기의 탄(곧게 난다·벼린 몫을 받는다)이다.
-pub const ARROW: u8 = 4;
-/// 종류의 RB(0274 ②b): 던지는 손도끼(한손검) · 신성한 빛(망치 — 날지 않고 겨눈 자리에 내려 꽂힌다) · 던진 창(곧게 꿰뚫고 손에
-/// 돌아온다) · 돌(맨손). 던지는 것은 곧게 난다(볼트처럼 겨눈 줄 위 첫 적의 몸통으로 — `World::shot_line`).
-pub const AXE: u8 = 5;
-pub const LIGHT: u8 = 6;
-pub const JAVELIN: u8 = 7;
-pub const STONE: u8 = 8;
-/// 쌍단검의 RB(0274 ③): 투척 단검 셋 — 좁은 부채꼴로 곧게 난다(던지는 것).
-pub const KNIFE: u8 = 9;
-/// 대검의 RB(0274 ④): 땅 내려찍기 — 날지 않고 땅을 따라 앞으로 달리는 짧은 충격파(마법 탄처럼 땅을 탄다 · 길 위를 모두 친다).
-pub const QUAKE: u8 = 11;
-/// 낫의 RB(0274 ⑤): 가시 씨앗 — 겨눈 자리로 던져져(날지 않는 탄 — 신성한 빛과 같은 길 `World::smite_spot`) 땅에 떨어지면 둘레에
-/// 가시 뿌리가 솟는다(뿌리 게이지 — 둘이면 묶인다).
-pub const SEED: u8 = 12;
-/// 완드의 RB(0274 ⑥): 저주탄 — 곧게 날아(땅을 따라 흐르지 않는다 — 볼트처럼 겨눈 줄 위 첫 적의 몸통으로 `World::shot_line`) 맞은 적에게
-/// 균열을 쌓는다. 꿰뚫지 않는다. 칸이 많고 빨리 찬다(완드의 주된 공격 — `Toss::charges` · `refill`).
-pub const CURSE: u8 = 13;
-/// 던진 방패(0276 — 하데스의 방패): 한손 무기 + 방패의 RB. 곧게 날아 맞힌 적에서 가까운 적으로 튕기고(`tuning::SHIELD_BOUNCES`)
-/// 손에 돌아온다(창 던지기와 같은 길 — `Bolt::returns`).
-pub const SHIELD: u8 = 10;
+/// 탄의 꼴(0278 R17 — 옛 `Bolt::look: u8`의 수마다 한 갈래): 그림 · 이름 · 터치 그림 · 나는 법이 꼴로 갈린다. 성질은
+/// `Look::def`(`LookDef`) 한 곳, 소리(`app::cue`)·빛과 몸의 그림(`render::overlays`)은 그 자리의 와일드카드 없는 match.
+/// 새 꼴 = 갈래 하나 + `ALL` + `code` + `def` 한 줄 + 컴파일러가 짚는 match(소리 · 그림 · 이펙트를 낼 꼴이면 `fx`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Look {
+    /// 마법 탄(지팡이 — 꿰뚫는 민트, 옛 2): 땅을 따라 흐른다.
+    Magic,
+    /// 쇠뇌 볼트(옛 3): 곧게 난다 · 벼린 몫을 받는다.
+    Bolt,
+    /// 활의 화살(0231, 옛 4).
+    Arrow,
+    /// 던지는 손도끼(한손검, 0274 ②b — 옛 5).
+    Axe,
+    /// 신성한 빛(망치 — 날지 않고 겨눈 자리에 내려 꽂힌다, 옛 6).
+    Light,
+    /// 던진 창(곧게 꿰뚫고 손에 돌아온다, 옛 7).
+    Javelin,
+    /// 돌(맨손, 옛 8).
+    Stone,
+    /// 투척 단검 셋(쌍단검 0274 ③, 옛 9).
+    Knife,
+    /// 던진 방패(0276 — 튕기고 돌아온다, 옛 10).
+    Shield,
+    /// 땅 내려찍기(대검 0274 ④ — 땅을 타고 달리는 충격파, 옛 11).
+    Quake,
+    /// 가시 씨앗(낫 0274 ⑤ — 신성한 빛과 같은 길로 떨어져 뿌리가 솟는다, 옛 12).
+    Seed,
+    /// 저주탄(완드 0274 ⑥ — 곧게 난다, 옛 13).
+    Curse,
+}
+
+/// 탄이 가는 법(0278 R17 — `LookDef::flight`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flight {
+    /// 땅을 따라 흐른다(마법 탄 · 땅 내려찍기 — 0173, `bolt_lands`).
+    Ground,
+    /// 곧게 난다(볼트 · 화살 · 던지는 것 · 저주탄 — 0218).
+    Straight,
+    /// 날지 않고 겨눈 자리에 내려 꽂힌다(신성한 빛 · 가시 씨앗 — `World::smite_spot`).
+    Smite,
+}
+
+/// 꼴의 성질 한 줄(0278 R17).
+#[derive(Clone, Copy)]
+pub struct LookDef {
+    pub flight: Flight,
+    /// 원거리 무기의 사격(볼트 · 화살 — 0180 벼린 쇠뇌의 피해 몫을 받는다).
+    pub shot: bool,
+    /// 손으로 던지는 것(손도끼 · 창 · 돌 · 단검 · 방패 — 몸으로 그린다, 휘두름 바람 소리).
+    pub thrown: bool,
+    /// 멈춘 자리에서 손으로 돌아온다(던진 창 · 방패 0276).
+    pub returns: bool,
+    /// 맞힌 적에서 가까운 적으로 튕긴다(던진 방패 — `tuning::SHIELD_BOUNCES`).
+    pub bounces: bool,
+    /// 장비 탭 · 도감의 RB 이름. 사격(볼트 · 화살)은 RB 줄에 오지 않는다 — 옛 넘어감 그대로 마법탄의 이름.
+    pub name: Tr,
+    /// 터치 · HUD의 RB 그림. 사격은 옛 넘어감 그대로 별(`Cast`).
+    pub icon: crate::touch::Kind,
+}
+
+impl Look {
+    /// 꼴 모두(시험이 돈다).
+    #[cfg(test)]
+    pub const ALL: [Look; 12] = [
+        Look::Magic,
+        Look::Bolt,
+        Look::Arrow,
+        Look::Axe,
+        Look::Light,
+        Look::Javelin,
+        Look::Stone,
+        Look::Knife,
+        Look::Shield,
+        Look::Quake,
+        Look::Seed,
+        Look::Curse,
+    ];
+
+    /// 옛 수(`u8`) — 골든 트레이스 · 신호 표의 글(`Debug`)이 이것을 쓴다. 바꾸지 않는다.
+    pub const fn code(self) -> u8 {
+        match self {
+            Look::Magic => 2,
+            Look::Bolt => 3,
+            Look::Arrow => 4,
+            Look::Axe => 5,
+            Look::Light => 6,
+            Look::Javelin => 7,
+            Look::Stone => 8,
+            Look::Knife => 9,
+            Look::Shield => 10,
+            Look::Quake => 11,
+            Look::Seed => 12,
+            Look::Curse => 13,
+        }
+    }
+
+    /// 꼴의 성질(와일드카드 없이 — 새 꼴은 여기서 컴파일이 깨진다).
+    pub const fn def(self) -> LookDef {
+        use crate::touch::Kind as K;
+        const fn row(flight: Flight, name: Tr, icon: K) -> LookDef {
+            LookDef {
+                flight,
+                shot: false,
+                thrown: false,
+                returns: false,
+                bounces: false,
+                name,
+                icon,
+            }
+        }
+        const fn throw(name: Tr, icon: K) -> LookDef {
+            LookDef {
+                thrown: true,
+                ..row(Flight::Straight, name, icon)
+            }
+        }
+        match self {
+            Look::Magic => row(Flight::Ground, |s| s.rb_magic, K::Cast),
+            Look::Bolt | Look::Arrow => LookDef {
+                shot: true,
+                ..row(Flight::Straight, |s| s.rb_magic, K::Cast)
+            },
+            Look::Axe => throw(|s| s.rb_axe, K::HandAxe),
+            Look::Light => row(Flight::Smite, |s| s.rb_light, K::Smite),
+            Look::Javelin => LookDef {
+                returns: true,
+                ..throw(|s| s.rb_javelin, K::Javelin)
+            },
+            Look::Stone => throw(|s| s.rb_stone, K::Pebble),
+            Look::Knife => throw(|s| s.rb_knives, K::Knives),
+            Look::Shield => LookDef {
+                returns: true,
+                bounces: true,
+                ..throw(|s| s.rb_shield, K::ShieldToss)
+            },
+            Look::Quake => row(Flight::Ground, |s| s.rb_quake, K::Quake2),
+            Look::Seed => row(Flight::Smite, |s| s.rb_seed, K::ThornSeed),
+            Look::Curse => row(Flight::Straight, |s| s.rb_curse, K::CurseBolt),
+        }
+    }
+}
+
+/// `Debug` = 옛 수(`code`): 사건의 글(`Event::Cast { look: 5 }`)이 골든 트레이스의 해시와 신호 표(`cue_snapshot.txt`)에 그대로
+/// 들어간다 — 꼴을 enum으로 바꿔도 그 글이 바뀌지 않게(0278 R17, 동작은 그대로).
+impl std::fmt::Debug for Look {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.code())
+    }
+}
 
 /// 쇠뇌의 덧장전(0274 ②b): 쏘지 않고 멈춰 선 지 이 초 뒤부터, 한 발마다 이 초(빈 탄창의 장전은 표의 `reload`).
 pub const XBOW_TOPUP_WAIT: f32 = 0.5;
@@ -414,39 +541,34 @@ const MELEE_FORGE: [Forge; 3] = [
 ];
 
 impl Bolt {
-    /// 쇠뇌의 볼트인가(0180 — 벼린 쇠뇌의 피해 몫을 받는다. 근접 무기의 마법 탄은 아니다).
+    /// 원거리 무기의 사격인가(0180 — 벼린 쇠뇌의 피해 몫을 받는다. 근접 무기의 마법 탄은 아니다) — `LookDef::shot`.
     pub fn is_shot(&self) -> bool {
-        self.look == 3 || self.look == ARROW
+        self.look.def().shot
     }
 
-    /// 손으로 던지는 것(0274 ②b — 손도끼 · 창 · 돌): 땅을 따라 흐르지 않고 곧게 난다.
+    /// 손으로 던지는 것(0274 ②b — 손도끼 · 창 · 돌 · 단검 · 방패): 땅을 따라 흐르지 않고 곧게 난다 — `LookDef::thrown`.
     pub fn thrown(&self) -> bool {
-        Bolt::look_thrown(self.look)
+        self.look.def().thrown
     }
 
-    /// 그 그림 번호가 손으로 던지는 것인가(사건 `Cast`의 `look`을 읽는 쪽 — 소리).
-    pub fn look_thrown(look: u8) -> bool {
-        matches!(look, AXE | JAVELIN | STONE | KNIFE | SHIELD)
-    }
-
-    /// 곧게 나는 탄(볼트·화살·던지는 것·저주탄 0274 ⑥) — 마법 탄만 땅을 따라 흐른다(0173 → 0218).
+    /// 곧게 나는 탄(볼트·화살·던지는 것·저주탄 0274 ⑥) — 마법 탄과 땅 내려찍기만 땅을 따라 흐른다(0173 → 0218).
     pub fn straight(&self) -> bool {
-        self.is_shot() || self.thrown() || self.look == CURSE
+        self.look.def().flight == Flight::Straight
     }
 
     /// 멈춘 자리에서 손으로 돌아온다(던진 창 · 던진 방패 0276).
     pub fn returns(&self) -> bool {
-        matches!(self.look, JAVELIN | SHIELD)
+        self.look.def().returns
     }
 
     /// 맞힌 적에서 가까운 적으로 튕긴다(던진 방패 0276 — `tuning::SHIELD_BOUNCES`번까지, 그 뒤 돌아온다).
     pub fn bounces(&self) -> bool {
-        self.look == SHIELD
+        self.look.def().bounces
     }
 
     /// 날지 않고 겨눈 자리에 내려 꽂힌다(신성한 빛 — `World::smite_spot`) · 떨어져 솟는다(가시 씨앗 0274 ⑤ — 같은 길, 그림과 솟는 것만 다르다).
     pub fn smites(&self) -> bool {
-        matches!(self.look, LIGHT | SEED)
+        self.look.def().flight == Flight::Smite
     }
 }
 
@@ -503,7 +625,7 @@ const MAGIC: Bolt = Bolt {
     poise: 1.0,
     pierce: false,
     stagger: 0.0,
-    look: 0,
+    look: Look::Magic,
     scale: 1.0,
     dose: NO_DOSE,
     lame: 0.0,
@@ -515,7 +637,7 @@ pub const MAGIC_TOSS: Toss = Toss {
         speed: 1.3,
         range: 1.2,
         pierce: true,
-        look: 2,
+        look: Look::Magic,
         ..MAGIC
     },
     charged: Bolt {
@@ -524,7 +646,7 @@ pub const MAGIC_TOSS: Toss = Toss {
         damage: 30,
         poise: 3.0,
         pierce: true,
-        look: 2,
+        look: Look::Magic,
         scale: 1.5,
         ..MAGIC
     },
@@ -543,7 +665,7 @@ pub const AXE_TOSS: Toss = Toss {
         damage: 20,
         poise: 4.0,
         stagger: 0.3,
-        look: AXE,
+        look: Look::Axe,
         ..MAGIC
     },
     charged: Bolt {
@@ -552,7 +674,7 @@ pub const AXE_TOSS: Toss = Toss {
         damage: 30,
         poise: 7.0,
         stagger: 0.6,
-        look: AXE,
+        look: Look::Axe,
         scale: 1.5,
         ..MAGIC
     },
@@ -569,7 +691,7 @@ pub const LIGHT_TOSS: Toss = Toss {
         range: 0.75,
         damage: 20,
         poise: 3.0,
-        look: LIGHT,
+        look: Look::Light,
         dose: (Kind::Knell, 0.5),
         ..MAGIC
     },
@@ -577,7 +699,7 @@ pub const LIGHT_TOSS: Toss = Toss {
         range: 0.85,
         damage: 30,
         poise: 5.0,
-        look: LIGHT,
+        look: Look::Light,
         scale: 1.5,
         dose: (Kind::Knell, 1.0),
         ..MAGIC
@@ -597,7 +719,7 @@ pub const JAVELIN_TOSS: Toss = Toss {
         damage: 20,
         poise: 2.0,
         pierce: true,
-        look: JAVELIN,
+        look: Look::Javelin,
         ..MAGIC
     },
     charged: Bolt {
@@ -607,7 +729,7 @@ pub const JAVELIN_TOSS: Toss = Toss {
         poise: 4.0,
         pierce: true,
         stagger: 0.5,
-        look: JAVELIN,
+        look: Look::Javelin,
         scale: 1.3,
         ..MAGIC
     },
@@ -622,7 +744,7 @@ pub const STONE_TOSS: Toss = Toss {
     bolt: Bolt {
         range: 0.7,
         poise: 0.5,
-        look: STONE,
+        look: Look::Stone,
         ..MAGIC
     },
     charged: Bolt {
@@ -631,7 +753,7 @@ pub const STONE_TOSS: Toss = Toss {
         damage: 20,
         poise: 2.0,
         stagger: 0.3,
-        look: STONE,
+        look: Look::Stone,
         scale: 1.4,
         ..MAGIC
     },
@@ -647,7 +769,7 @@ pub const KNIFE_TOSS: Toss = Toss {
         speed: 1.5,
         range: 0.6,
         poise: 0.4,
-        look: KNIFE,
+        look: Look::Knife,
         dose: (Kind::Sharp, 0.45),
         ..MAGIC
     },
@@ -656,7 +778,7 @@ pub const KNIFE_TOSS: Toss = Toss {
         range: 0.75,
         damage: 20,
         poise: 0.8,
-        look: KNIFE,
+        look: Look::Knife,
         scale: 1.3,
         dose: (Kind::Sharp, 0.6),
         ..MAGIC
@@ -678,7 +800,7 @@ pub const QUAKE_TOSS: Toss = Toss {
         range: 0.62,
         poise: 2.0,
         pierce: true,
-        look: QUAKE,
+        look: Look::Quake,
         scale: 1.2,
         dose: (Kind::Rift, 0.35),
         ..MAGIC
@@ -690,7 +812,7 @@ pub const QUAKE_TOSS: Toss = Toss {
         poise: 4.0,
         pierce: true,
         stagger: 0.4,
-        look: QUAKE,
+        look: Look::Quake,
         scale: 1.7,
         dose: (Kind::Rift, 0.7),
         ..MAGIC
@@ -711,7 +833,7 @@ pub const SHIELD_TOSS: Toss = Toss {
         range: 0.75,
         damage: 20,
         poise: 3.0,
-        look: SHIELD,
+        look: Look::Shield,
         dose: (Kind::Knell, 0.35),
         ..MAGIC
     },
@@ -720,7 +842,7 @@ pub const SHIELD_TOSS: Toss = Toss {
         range: 0.75,
         damage: 20,
         poise: 3.0,
-        look: SHIELD,
+        look: Look::Shield,
         dose: (Kind::Knell, 0.35),
         ..MAGIC
     },
@@ -738,7 +860,7 @@ pub const SEED_TOSS: Toss = Toss {
         range: 0.75,
         damage: 10,
         poise: 1.5,
-        look: SEED,
+        look: Look::Seed,
         scale: 1.15,
         dose: (Kind::Root, 0.5),
         ..MAGIC
@@ -747,7 +869,7 @@ pub const SEED_TOSS: Toss = Toss {
         range: 0.85,
         damage: 20,
         poise: 3.0,
-        look: SEED,
+        look: Look::Seed,
         scale: 1.6,
         dose: (Kind::Root, 1.0),
         ..MAGIC
@@ -770,7 +892,7 @@ pub const CURSE_TOSS: Toss = Toss {
         range: 0.85,
         damage: 10,
         poise: 0.5,
-        look: CURSE,
+        look: Look::Curse,
         scale: 0.9,
         dose: (Kind::Rift, 0.34),
         ..MAGIC
@@ -782,7 +904,7 @@ pub const CURSE_TOSS: Toss = Toss {
         poise: 1.5,
         pierce: true,
         stagger: 0.3,
-        look: CURSE,
+        look: Look::Curse,
         scale: 1.4,
         dose: (Kind::Rift, 1.0),
         ..MAGIC
@@ -1092,7 +1214,7 @@ pub const WEAPONS: [Weapon; 11] = [
                 poise: 1.0,
                 pierce: false,
                 stagger: 0.0,
-                look: 3,
+                look: Look::Bolt,
                 scale: 1.0,
                 dose: NO_DOSE,
                 lame: 0.0,
@@ -1110,7 +1232,7 @@ pub const WEAPONS: [Weapon; 11] = [
                 poise: 6.0,
                 pierce: true,
                 stagger: 0.4,
-                look: 3,
+                look: Look::Bolt,
                 scale: 1.6,
                 dose: NO_DOSE,
                 lame: 0.0,
@@ -1202,7 +1324,7 @@ pub const WEAPONS: [Weapon; 11] = [
                 poise: 0.8,
                 pierce: false,
                 stagger: 0.0,
-                look: ARROW,
+                look: Look::Arrow,
                 scale: 1.0,
                 dose: NO_DOSE,
                 lame: 0.0,
@@ -1222,7 +1344,7 @@ pub const WEAPONS: [Weapon; 11] = [
                 poise: 3.0,
                 pierce: true,
                 stagger: 0.35,
-                look: ARROW,
+                look: Look::Arrow,
                 scale: 1.4,
                 dose: NO_DOSE,
                 lame: BOW_LAME,
@@ -1237,7 +1359,7 @@ pub const WEAPONS: [Weapon; 11] = [
                     poise: 1.6,
                     pierce: false,
                     stagger: 0.0,
-                    look: ARROW,
+                    look: Look::Arrow,
                     scale: 1.2,
                     dose: NO_DOSE,
                     lame: 0.0,
@@ -2320,7 +2442,7 @@ mod tests {
                 looks.push(t.bolt.look);
             }
         }
-        assert!(!looks.contains(&STONE), "bare hands only");
+        assert!(!looks.contains(&Look::Stone), "bare hands only");
         for id in IDS {
             assert_eq!(id.toss().is_some(), !id.is_ranged(), "{id:?}");
         }
@@ -2907,5 +3029,70 @@ mod swing_tests {
             "the running kick is baked for the dash (0199)"
         );
         assert_eq!(clip_rate("idle", 0.1), 1.0);
+    }
+}
+
+#[cfg(test)]
+mod look_tests {
+    use super::*;
+    use crate::touch::Kind as K;
+
+    /// 0278 R17: 꼴은 모두 쓰인다 — 무기 · 맨손 · 방패의 줄(종류의 RB 톡 · 모은 것, 사격의 탄 · 반쯤 당긴 화살, 돌, 방패 던지기) 가운데
+    /// 적어도 하나가 그 꼴을 낸다(죽은 갈래가 없다). 옛 수 0(라벤더) · 1(놋쇠)은 낼 줄이 없어 갈래를 두지 않았다.
+    #[test]
+    fn every_look_is_thrown_by_some_row() {
+        let mut used = Vec::new();
+        for id in IDS {
+            let (a, b) = id.bolts();
+            used.extend([a.look, b.look]);
+            if let Some(Rhythm::Draw { mid_bolt, .. }) = id.rhythm() {
+                used.push(mid_bolt.look);
+            }
+        }
+        for t in [STONE_TOSS, SHIELD_TOSS] {
+            used.extend([t.bolt.look, t.charged.look]);
+        }
+        for l in Look::ALL {
+            assert!(used.contains(&l), "{l:?} is used by no row");
+        }
+    }
+
+    /// 0278 R17: `def()`의 값은 옛 `u8` 술어 · 이름 · 그림과 같다(이행 때 옛 술어와 꼴마다 견준 표를 그대로 박았다 — 옛 수 `code`도).
+    #[test]
+    fn look_defs_keep_the_old_behaviour() {
+        use Flight::{Ground, Smite, Straight};
+        let s = crate::i18n::s();
+        #[rustfmt::skip]
+        let want: [(Look, u8, Flight, bool, bool, bool, bool, &str, K); 12] = [
+            // 꼴, 옛 수, 나는 법, 사격, 던짐, 돌아옴, 튕김, 이름, 그림
+            (Look::Magic, 2, Ground, false, false, false, false, s.rb_magic, K::Cast),
+            (Look::Bolt, 3, Straight, true, false, false, false, s.rb_magic, K::Cast),
+            (Look::Arrow, 4, Straight, true, false, false, false, s.rb_magic, K::Cast),
+            (Look::Axe, 5, Straight, false, true, false, false, s.rb_axe, K::HandAxe),
+            (Look::Light, 6, Smite, false, false, false, false, s.rb_light, K::Smite),
+            (Look::Javelin, 7, Straight, false, true, true, false, s.rb_javelin, K::Javelin),
+            (Look::Stone, 8, Straight, false, true, false, false, s.rb_stone, K::Pebble),
+            (Look::Knife, 9, Straight, false, true, false, false, s.rb_knives, K::Knives),
+            (Look::Shield, 10, Straight, false, true, true, true, s.rb_shield, K::ShieldToss),
+            (Look::Quake, 11, Ground, false, false, false, false, s.rb_quake, K::Quake2),
+            (Look::Seed, 12, Smite, false, false, false, false, s.rb_seed, K::ThornSeed),
+            (Look::Curse, 13, Straight, false, false, false, false, s.rb_curse, K::CurseBolt),
+        ];
+        for (l, code, flight, shot, thrown, returns, bounces, name, icon) in want {
+            let d = l.def();
+            assert_eq!(l.code(), code, "{l:?}");
+            assert_eq!(format!("{l:?}"), code.to_string(), "Debug = the old number");
+            assert_eq!(d.flight, flight, "{l:?}");
+            assert_eq!(
+                (d.shot, d.thrown, d.returns, d.bounces),
+                (shot, thrown, returns, bounces),
+                "{l:?}"
+            );
+            assert_eq!((d.name)(s), name, "{l:?}");
+            assert_eq!(d.icon, icon, "{l:?}");
+        }
+        let mut codes: Vec<u8> = Look::ALL.iter().map(|l| l.code()).collect();
+        codes.dedup();
+        assert_eq!(codes.len(), Look::ALL.len(), "codes are distinct");
     }
 }

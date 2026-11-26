@@ -3,7 +3,7 @@
 //! 않는다) · RB 땅 내려찍기(땅을 따라 앞으로 달리는 짧은 충격파 — 길 위를 모두, 균열).
 use super::*;
 use crate::weapons::{
-    Id as W, ART_FURY, BARE_FURY_RATE, FURY_CROWD, GREATSWORD_CLEAVE, GREATSWORD_FLINCH, QUAKE,
+    Id as W, Look, ART_FURY, BARE_FURY_RATE, FURY_CROWD, GREATSWORD_CLEAVE, GREATSWORD_FLINCH,
 };
 
 fn wait(w: &mut World, t: &Tuning, secs: f32) -> Vec<Event> {
@@ -253,7 +253,7 @@ fn nothing_held_back_fills_fury_twice_as_fast_and_never_ends_the_combo() {
 fn the_ground_slam_runs_along_the_ground_through_a_line() {
     let t = Tuning::default();
     let (bolt, charged) = W::Greatsword.bolts();
-    assert_eq!(bolt.look, QUAKE);
+    assert_eq!(bolt.look, Look::Quake);
     assert!(!bolt.straight() && bolt.pierce && charged.pierce);
     assert_eq!(bolt.dose.0, crate::status::Kind::Rift);
     let mut w = World::new("test", 30.0);

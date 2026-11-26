@@ -14,6 +14,7 @@ use crate::tuning::{
     SHAKE_HURT, SHAKE_PARRY, SHAKE_PLUNGE, SHAKE_ROUSE, SHAKE_SLAM, SHAKE_SMASH, SHAKE_TURN,
     ZOOM_CRIT, ZOOM_PARRY, ZOOM_PERFECT, ZOOM_SMASH,
 };
+use crate::weapons::Look;
 use crate::world::Event;
 
 /// 수레 · 적의 큰 타가 화면을 흔드는 거리(m) — 멀리 있는 것이 화면을 흔들지 않게.
@@ -181,11 +182,7 @@ pub(super) fn cue(e: &Event, cx: &CueCtx) -> Cue {
         // 종류의 RB(0274 ②b): 꼴마다의 소리(`cast_sound`), 땅 내려찍기(0274 ④)는 땅을 친 만큼 조금 흔들린다.
         Event::Cast { look, .. } => Cue::of(
             cast_sound(look),
-            if look == crate::weapons::QUAKE {
-                SHAKE_HIT
-            } else {
-                0.0
-            },
+            if look == Look::Quake { SHAKE_HIT } else { 0.0 },
         ),
         // 신성한 빛(0274 ②b)이 꽂히는 순간 = 가장 높은 종, 여진만큼(맞은 것은 맞힘 소리가 따로).
         Event::Smite { .. } => Cue::snd(Id::Beat3, SHAKE_PLUNGE),
@@ -275,16 +272,14 @@ const fn last_or(last: bool, end: Id, each: Id) -> Cue {
 }
 
 /// 종류의 RB의 소리(0274 ②b — 있는 소리를 겹쳐 쓴다): 던지는 것(손도끼 · 창 · 돌 · 단검 · 방패) = 휘두름 바람, 신성한 빛을 부름 =
-/// 맑은 종 둘째 음, 땅 내려찍기 = 낮은 울림(땅이 갈라진다). 마법탄 · 저주탄 · 가시 씨앗 · 사격은 소리 없이(그대로). 꼴은 아직 `u8`(R17).
-fn cast_sound(look: u8) -> Option<Id> {
-    if crate::weapons::Bolt::look_thrown(look) {
-        Some(Id::Swing)
-    } else if look == crate::weapons::LIGHT {
-        Some(Id::Beat2)
-    } else if look == crate::weapons::QUAKE {
-        Some(Id::Wake)
-    } else {
-        None
+/// 맑은 종 둘째 음, 땅 내려찍기 = 낮은 울림(땅이 갈라진다). 마법탄 · 저주탄 · 가시 씨앗 · 사격은 소리 없이(그대로). 꼴마다 와일드카드
+/// 없이(0278 R17 — 소리는 앱의 것이라 `LookDef`가 아니라 여기).
+fn cast_sound(look: Look) -> Option<Id> {
+    match look {
+        Look::Axe | Look::Javelin | Look::Stone | Look::Knife | Look::Shield => Some(Id::Swing),
+        Look::Light => Some(Id::Beat2),
+        Look::Quake => Some(Id::Wake),
+        Look::Magic | Look::Bolt | Look::Arrow | Look::Seed | Look::Curse => None,
     }
 }
 
@@ -510,7 +505,7 @@ pub(super) mod tests {
                 kind,
             });
         }
-        for look in (0..=14).chain([crate::weapons::DASH]) {
+        for look in crate::weapons::Look::ALL {
             events.push(E::Cast { at, look });
         }
         let blows = [

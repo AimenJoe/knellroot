@@ -1,7 +1,7 @@
 //! 덧그림: 탄·조각·폭발, 휘두름의 초승달과 박자 부채꼴, 모으기·강타, 스킬·큰 기술의 모양, 패링, 발밑 고리, 적 머리 위·락온 표시.
 use super::*;
+use crate::weapons::Look;
 
-/// 탄의 색(0048·0051, `weapons::Bolt::look`): 마법 라벤더, 무거운 탄 놋쇠, 꿰뚫는 탄 민트, 쇠뇌 볼트 밝은 나무 — 붉은색(위험)은 쓰지 않는다.
 /// 박자 타의 휘두름 색·발밑 고리가 퍼지는 시간(0076).
 // 박자 금빛(0076 → 0098 사장 "너무 강한 노란색, 조금만 더 옅게"): 노랑을 흰빛 쪽으로(채도 낮춤) + 진하기 30% 안팎 내림.
 const BEAT_GOLD: Color = Color::new(1.0, 0.9, 0.62, 0.24);
@@ -10,53 +10,47 @@ pub const BEAT_RING_LIFE: f32 = 0.35;
 const PERFECT_RING_LIFE: f32 = 0.45;
 /// 휘두름 초승달의 진하기(0242 — 사장 설문 13-8 "조금 더 연해도 좋겠다").
 const SLASH_ALPHA: f32 = 0.7;
-const BOLT_LOOKS: [(Color, Color); 9] = [
-    (
-        Color::new(0.92, 0.88, 1.0, 1.0),
-        Color::new(0.7, 0.6, 1.0, 0.45),
-    ),
-    (
-        Color::new(1.0, 0.86, 0.55, 1.0),
-        Color::new(0.9, 0.65, 0.3, 0.45),
-    ),
-    (
+/// 탄의 빛(알맹이 · 빛무리 — 0048·0051, 0278 R17: 꼴마다 와일드카드 없이) — 붉은색(위험)은 쓰지 않는다. 모으는 손의 빛 덩이 ·
+/// 발밑 고리(`wpn_look`)도 이것이라 몸으로 그리는 꼴(던지는 것 · 땅 내려찍기 · 신성한 빛 · 가시 씨앗)에도 빛이 있다. 옛 표는 수의
+/// 차례였고 끝 줄(돌의 잿빛)에 멈췄다 — 단검 · 방패 · 땅 내려찍기 · 가시 씨앗이 그 잿빛, 그대로 둔다.
+fn bolt_colors(look: Look) -> (Color, Color) {
+    // 꿰뚫는 마법 탄(지팡이) 민트 · 쇠뇌 볼트 밝은 나무.
+    const MINT: (Color, Color) = (
         Color::new(0.85, 1.0, 0.92, 1.0),
         Color::new(0.45, 0.9, 0.7, 0.45),
-    ),
-    (
+    );
+    const BRASS: (Color, Color) = (
         Color::new(0.95, 0.85, 0.65, 1.0),
         Color::new(0.8, 0.65, 0.4, 0.3),
-    ),
+    );
     // 활의 화살(0231): 잔뿌리의 연두 — 쇠뇌의 놋쇠 볼트와 갈린다(빨강은 쓰지 않는다).
-    (
+    const SPROUT: (Color, Color) = (
         Color::new(0.88, 1.0, 0.78, 1.0),
         Color::new(0.55, 0.85, 0.5, 0.3),
-    ),
-    // 0274 ②b: 손도끼(쇳빛) · 신성한 빛(금빛) · 던진 창(쇳빛) · 돌(잿빛) — 모으는 손의 빛 덩이·발밑 고리가 쓴다(몸은 `thrown`).
-    (
+    );
+    // 0274 ②b: 손도끼 · 던진 창(쇳빛) · 신성한 빛(금빛) · 돌(잿빛).
+    const STEEL: (Color, Color) = (
         Color::new(0.92, 0.94, 1.0, 1.0),
         Color::new(0.7, 0.76, 0.9, 0.35),
-    ),
-    (
+    );
+    const GOLD: (Color, Color) = (
         Color::new(1.0, 0.95, 0.78, 1.0),
         Color::new(1.0, 0.85, 0.45, 0.4),
-    ),
-    (
-        Color::new(0.92, 0.94, 1.0, 1.0),
-        Color::new(0.7, 0.76, 0.9, 0.35),
-    ),
-    (
+    );
+    const ASH: (Color, Color) = (
         Color::new(0.8, 0.77, 0.72, 1.0),
         Color::new(0.6, 0.58, 0.55, 0.3),
-    ),
-];
-
-/// 탄의 빛(알맹이 · 빛무리) — 표의 줄, 저주탄(0274 ⑥)은 하늘빛(균열)으로.
-fn bolt_colors(look: u8) -> (Color, Color) {
-    if look == crate::weapons::CURSE {
-        return CURSE_LOOK;
+    );
+    match look {
+        Look::Magic => MINT,
+        Look::Bolt => BRASS,
+        Look::Arrow => SPROUT,
+        Look::Axe | Look::Javelin => STEEL,
+        Look::Light => GOLD,
+        Look::Stone | Look::Knife | Look::Shield | Look::Quake | Look::Seed => ASH,
+        // 저주탄(0274 ⑥)은 하늘빛(균열).
+        Look::Curse => CURSE_LOOK,
     }
-    BOLT_LOOKS[(look as usize).min(BOLT_LOOKS.len() - 1)]
 }
 /// 저주탄(0274 ⑥): 하늘빛 알맹이 · 빛무리(균열의 빛 `status::INK` — 보라 · 빨강은 쓰지 않는다).
 const CURSE_LOOK: (Color, Color) = (
@@ -429,12 +423,12 @@ fn bolts(w: &World, alpha: f32) {
         }
         // 땅 내려찍기(0274 ④ — 대검의 RB): 빛 덩이가 아니라 땅을 타고 달리는 물결 — 앞머리의 가로 띠(흙빛 + 흰 속) · 지나온 금 ·
         // 앞머리에서 솟았다 가라앉는 돌 조각.
-        if b.def.look == crate::weapons::QUAKE {
+        if b.def.look == Look::Quake {
             quake_wave(w, b, p);
             continue;
         }
         // 저주탄(0274 ⑥ — 완드의 주된 공격): 잿빛 돌 조각 같은 어두운 알맹이를 하늘빛 빛무리가 감싸고, 뒤에 꺾인 금(지그재그 띠)이 남는다.
-        if b.def.look == crate::weapons::CURSE {
+        if b.def.look == Look::Curse {
             curse_bolt(w, b, p);
             continue;
         }
@@ -481,7 +475,6 @@ pub(super) fn drawn_reach(parts: &[(Vec3, Vec3)]) -> f32 {
 /// 던지는 RB의 몸(0274 ②b): 손도끼 = 쇳빛 날 + 나무 자루를 나는 쪽의 옆 축으로 세로로 돌린다(날이 보이게), 돌 = 굴러 가는 잿빛
 /// 덩이. 꼬리는 옅은 바람 띠 하나(빛 덩이가 아니다 — 마법과 갈린다). 창은 모델 부위로(`Renderer::javelins`) — 여기서는 바람 띠만.
 fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
-    use crate::weapons::{AXE, KNIFE, STONE};
     let k = b.def.scale;
     let wind = Color::new(0.92, 0.94, 1.0, 0.28);
     if b.back {
@@ -492,7 +485,7 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
     let side = vec3(-b.dir.z, 0.0, b.dir.x).normalize_or(Vec3::X);
     let spin = w.time * 18.0 + b.left;
     match b.def.look {
-        AXE => {
+        Look::Axe => {
             // 자루(나무)와 머리(쇠): 자루 가운데를 돌림의 가운데로. 0277: 게임 거리에서 읽히게 키웠다 — 굵은 자루 · 넓은 날, 그래도 도는
             // 몸 전체가 탄의 맞는 반지름(`BOLT_RADIUS` × 크기 배) 안이다(`AXE_PARTS` — 시험). 옅은 쇳빛 빛무리가 날을 감싼다.
             let rot = Quat::from_axis_angle(side, spin)
@@ -503,7 +496,7 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
             }
         }
         // 투척 단검(0274 ③): 날을 앞세워 곧게 — 돌지 않는다(쇠 날 + 짧은 가죽 자루).
-        KNIFE => {
+        Look::Knife => {
             let rot = Quat::from_rotation_arc(Vec3::Y, b.dir.normalize_or(Vec3::Z));
             let s = 1.2 * k;
             shaded_box_rot(
@@ -523,7 +516,7 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
                 p,
             );
         }
-        STONE => {
+        Look::Stone => {
             let rot = Quat::from_axis_angle(side, spin * 0.7);
             shaded_tris(
                 p,
@@ -533,7 +526,16 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
                 rot,
             );
         }
-        _ => {}
+        // 창 · 방패는 모델 부위로 그린다(`Renderer::javelins` · `shields`) — 여기서는 바람 띠만. 던지지 않는 꼴은 이 길에 오지 않는다.
+        Look::Javelin
+        | Look::Shield
+        | Look::Magic
+        | Look::Bolt
+        | Look::Arrow
+        | Look::Light
+        | Look::Quake
+        | Look::Seed
+        | Look::Curse => {}
     }
 }
 
@@ -714,7 +716,7 @@ fn smites(w: &World, fl: &Drape) {
     let gold = Color::new(1.0, 0.9, 0.6, 1.0);
     let white = Color::new(1.0, 0.98, 0.9, 1.0);
     for s in &w.smites {
-        if s.look == crate::weapons::SEED {
+        if s.look == Look::Seed {
             seed(w, s, fl);
             continue;
         }
@@ -2098,7 +2100,7 @@ pub(super) fn crescent(
 }
 
 /// 든 무기의 모은 탄 색(0056).
-fn wpn_look(w: &World) -> u8 {
+fn wpn_look(w: &World) -> Look {
     w.rb_bolts().1.look
 }
 

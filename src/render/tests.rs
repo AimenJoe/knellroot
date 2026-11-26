@@ -712,7 +712,7 @@ fn enlarged_throws_still_draw_no_wider_than_they_hit() {
     assert!(side <= BOLT_RADIUS, "quake front {side}");
     assert!(QUAKE_CREST > 2.0 * QUAKE_HALF, "it grew up, not out");
     for b in [QUAKE_TOSS.bolt, QUAKE_TOSS.charged] {
-        assert_eq!(b.look, crate::weapons::QUAKE);
+        assert_eq!(b.look, crate::weapons::Look::Quake);
     }
     // 던진 방패: 모델의 방패 부위(쉬는 자세의 경계 구) × 크기 배.
     let m = crate::model::Model::from_bytes(crate::models::bytes("wanderer").unwrap()).unwrap();

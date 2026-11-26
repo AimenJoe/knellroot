@@ -605,7 +605,7 @@ fn the_shield_flies_bounces_comes_back_and_the_parry_press_stays_while_it_is_out
     w.set_weapon(Id::Spear);
     w.set_shield(Some(shield::Id::Pilgrim));
     assert!(!w.shield_throws());
-    assert!(w.rb_bolts().0.returns() && w.rb_bolts().0.look == weapons::JAVELIN);
+    assert!(w.rb_bolts().0.returns() && w.rb_bolts().0.look == weapons::Look::Javelin);
 }
 
 /// 0276 들이받기: 막는 동안 힘이 모이고(`RUSH_FULL`초에 가득), 놓으면 모인 만큼 멀리 · 세게 들이받는다 — 잡몹은 밀려 넘어지고,

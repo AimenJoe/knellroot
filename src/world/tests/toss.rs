@@ -118,7 +118,7 @@ fn the_hand_axe_is_short_and_heavy() {
         );
         assert!(ev
             .iter()
-            .any(|e| matches!(e, Event::Cast { look, .. } if *look == weapons::AXE)));
+            .any(|e| matches!(e, Event::Cast { look, .. } if *look == weapons::Look::Axe)));
         (900 - w.enemies[i].hp, w.enemies[i].stance.poise)
     };
     let (near, poise) = hit(5.0);

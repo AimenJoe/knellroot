@@ -684,9 +684,10 @@ impl App {
                 Event::Guard { .. } => self.tutor.seen.blocks += 1,
                 Event::Ail { .. } | Event::Toll { .. } => self.tutor.seen.ails += 1,
                 // 0274 ⑥: 저주탄을 날렸다(완드의 상황 힌트).
-                Event::Cast { look, .. } if *look == crate::weapons::CURSE => {
-                    self.tutor.seen.curses += 1
-                }
+                Event::Cast {
+                    look: crate::weapons::Look::Curse,
+                    ..
+                } => self.tutor.seen.curses += 1,
                 // 등잔을 한 번 마셔 보면 그 뒤로는 알리지 않는다(기록의 비트 — 판을 넘어, 0213).
                 Event::Gulp { .. } => {
                     self.tutor.seen.gulps += 1;

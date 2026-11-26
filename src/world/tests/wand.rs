@@ -4,8 +4,7 @@
 use super::*;
 use crate::status::Kind;
 use crate::weapons::{
-    Id as W, ART_HEX, BARE_PACT_CHARGE, BARE_PACT_HEAL, CURSE, DEATH_KNELL_R, SUB_TOSS,
-    WAND_CHARGES,
+    Id as W, Look, ART_HEX, BARE_PACT_CHARGE, BARE_PACT_HEAL, DEATH_KNELL_R, SUB_TOSS, WAND_CHARGES,
 };
 
 fn wait(w: &mut World, t: &Tuning, secs: f32) -> Vec<Event> {
@@ -37,7 +36,7 @@ fn the_wand_is_short_and_its_third_jab_and_charge_etch_a_crack() {
     w.set_weapon(W::Wand);
     w.set_shield(Some(crate::shield::Id::Pilgrim));
     assert!(!w.shield_throws(), "the curse stays in the hand");
-    assert_eq!(w.rb_bolts().0.look, CURSE);
+    assert_eq!(w.rb_bolts().0.look, Look::Curse);
     assert_eq!(k.combo.len(), 3);
     assert!(k.combo.iter().all(|h| h.damage == 10));
     assert!(k.combo.iter().all(|h| h.reach < s.combo[0].reach));
@@ -62,7 +61,7 @@ fn the_wand_is_short_and_its_third_jab_and_charge_etch_a_crack() {
     );
     assert_eq!(W::Sword.art().hex, 1.0, "only the wand");
     let (bolt, charged) = W::Wand.bolts();
-    assert_eq!((bolt.look, charged.look), (CURSE, CURSE));
+    assert_eq!((bolt.look, charged.look), (Look::Curse, Look::Curse));
     assert!(bolt.straight() && !bolt.thrown() && !bolt.smites() && !bolt.is_shot());
     assert!(
         !bolt.pierce && charged.pierce,

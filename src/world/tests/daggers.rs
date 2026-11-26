@@ -1,7 +1,7 @@
 //! 쌍단검(0274 ③ — 도적): 빠른 4연타 · 가벼운 자세 피해 · 주특성 급소(등 뒤 · 휘청 · 기절 · 묶인 적에게 피해 배) · 강공격은 적을 꿰뚫고
 //! 지나 등 뒤에 선다 · RB 투척 단검 셋(좁은 부채꼴) · 날카로움의 덤은 이제 쌍단검의 것.
 use super::*;
-use crate::weapons::{Id as W, ART_SNEAK, KNIFE, SNEAK_BACK_DEG};
+use crate::weapons::{Id as W, Look, ART_SNEAK, SNEAK_BACK_DEG};
 
 /// 표: 4연타, 타마다 검보다 빠르고(시간 배 < 1) 자세 피해는 검의 반 이하, 닿는 거리는 맨손보다 조금 길고 검보다 짧다. 두 손이 다 차
 /// 방패와 들지 않는다. 강공격은 곧은 길(창처럼 꿰뚫고 지나간다).
@@ -274,7 +274,7 @@ fn three_knives_fan_out_narrowly() {
                 flying = w
                     .bolts
                     .iter()
-                    .filter(|b| b.def.look == KNIFE)
+                    .filter(|b| b.def.look == Look::Knife)
                     .map(|b| b.dir)
                     .collect();
                 break;

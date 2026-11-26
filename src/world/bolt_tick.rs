@@ -186,7 +186,9 @@ impl World {
 
     /// 던진 창이 날고 있나(0274 ②b — 가는 길이든 돌아오는 길이든). 그동안 RB는 못 쓰고 손에는 창이 없다(`weapon_away`).
     pub fn javelin_out(&self) -> bool {
-        self.bolts.iter().any(|b| b.def.look == weapons::JAVELIN)
+        self.bolts
+            .iter()
+            .any(|b| b.def.look == weapons::Look::Javelin)
     }
 
     /// 평타를 누르면 던진 창이 곧바로 손에 돌아온다(0274 ②b — 창이 없는 동안에도 평타를 막지 않는다).
@@ -218,7 +220,7 @@ impl World {
         self.smites.retain(|s| s.left > -SMITE_SHOW);
         for s in due {
             self.burst(s.pos, s.radius, s.damage, s.poise, s.dose, t, ev);
-            if s.look == weapons::SEED {
+            if s.look == weapons::Look::Seed {
                 // 가시 씨앗(0274 ⑤): 떨어진 자리 둘레에 가시 뿌리가 솟는다 — 그림은 솟은 뿌리(`skill_spikes`, 뿌리 솟기와 같은 것).
                 self.sprout_ring(s.pos, s.radius);
                 ev.push(Event::Sprout {
@@ -590,7 +592,7 @@ impl World {
                 }
             }
             // 쇠뇌 볼트가 수류탄을 맞히면 그 자리에서 터진다(0051, PoE2 착상).
-            if b.def.look == 3 {
+            if b.def.look == weapons::Look::Bolt {
                 for bomb in &mut self.bombs {
                     let k = (bomb.pos - b.pos).dot(b.dir).clamp(0.0, len);
                     if (b.pos + b.dir * k).distance(bomb.pos) <= BOMB_SHOT_REACH {
@@ -691,7 +693,7 @@ impl World {
                 // 종류의 RB가 싣는 속성(0274 ②b)과 끝까지 당긴 화살의 오금.
                 afflict(en, b.def.dose, ev);
                 // 계약의 표(0274 ⑥ — 완드의 빈 손): 저주탄에 맞은 적에 표가 남는다(쓰러지면 값이 돌아오는 것은 빈 손일 때만 — `tick_embers`).
-                if b.def.look == weapons::CURSE {
+                if b.def.look == weapons::Look::Curse {
                     en.marks.pact = weapons::PACT_MARK_SECS;
                 }
                 if b.def.lame > 0.0 && en.hp > 0 {
