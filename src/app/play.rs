@@ -14,7 +14,7 @@ impl App {
         // 세로로 든 폰(0082): 회전 안내가 덮인 동안 싸움이 흐르지 않게 멈춤으로(nail 0269 꼴).
         // 앱이 내려갔다 오면(0257, nail 0298) 멈춤 창이 열려 있다 — 소리 없이(돌아온 순간 확인음이 나지 않게).
         if a.pause || crate::screen::portrait_blocked() || std::mem::take(&mut self.went_away) {
-            self.show(flow::pause(self.scene(), self.pause_tab));
+            self.show(flow::pause(self.scene(), self.this_run.pause_tab));
             return;
         }
         // Select(Tab) = 큰 창의 장비 탭 바로(0070 6 A → 0164, 닫으면 싸움으로).
@@ -87,9 +87,9 @@ impl App {
             .filter(|(n, g)| still && *g < crate::render::gesture_len(n));
         // 플레이 시간(0081): 싸움 화면의 로직 틱만 센다(멈춤·메뉴·타이틀·개발 판은 빼고). 기록에는 다음 저장 때 같이 들어간다.
         if !self.dev_run_now() {
-            self.play_acc += TICK_DT;
-            if self.play_acc >= 1.0 {
-                self.play_acc -= 1.0;
+            self.book.play_acc += TICK_DT;
+            if self.book.play_acc >= 1.0 {
+                self.book.play_acc -= 1.0;
                 self.progress.play = self.progress.play.saturating_add(1);
             }
         }
@@ -147,8 +147,8 @@ impl App {
         self.sync_progress(out);
         // 내려가는 길·오르는 길(0118 → 0174): 뿌리 굴 전환을 연다.
         let cross = match out {
-            crate::stage::StageOut::Descend => Some((self.stage + 1, false)),
-            crate::stage::StageOut::Ascend => self.stage.checked_sub(1).map(|s| (s, true)),
+            crate::stage::StageOut::Descend => Some((self.this_run.stage + 1, false)),
+            crate::stage::StageOut::Ascend => self.this_run.stage.checked_sub(1).map(|s| (s, true)),
             _ => None,
         };
         if let Some((to, up)) = cross.filter(|&(to, _)| to < crate::stage::REGIONS) {
@@ -634,7 +634,7 @@ impl App {
 
     /// 튜토리얼의 걸음이 도나: 위 + 걸음이 남았다.
     fn tutor_on(&self) -> bool {
-        self.tutor_live() && self.tutor.step().is_some()
+        self.tutor_live() && self.this_run.tutor.step().is_some()
     }
 
     /// 튜토리얼이 읽는 지금의 사실 — 잔불·다음 레벨 값·총 레벨·기술 판.
@@ -661,27 +661,27 @@ impl App {
         // 길 안내(0170)는 틱마다 다시 정한다 — 튜토리얼이 꺼졌으면 걷는다.
         self.run.guide = None;
         if !self.tutor_live() {
-            self.tip = None;
+            self.this_run.tip = None;
             return;
         }
         // 다 지난 판도 맞힌 타·모으기는 센다(상황 힌트 0209 T2).
         for e in events {
             match e {
-                Event::Hit { .. } | Event::Crit { .. } => self.tutor.seen.hits += 1,
-                Event::Charged => self.tutor.seen.charged += 1,
+                Event::Hit { .. } | Event::Crit { .. } => self.this_run.tutor.seen.hits += 1,
+                Event::Charged => self.this_run.tutor.seen.charged += 1,
                 // 0223의 새 것들(상황 힌트가 본다): 바꿔 듦 · 방패로 받음 · 타입의 일이 걸림.
-                Event::WeaponSwap { .. } => self.tutor.seen.swaps += 1,
-                Event::SwapStrike { .. } => self.tutor.seen.swap_strikes += 1,
-                Event::Guard { .. } => self.tutor.seen.blocks += 1,
-                Event::Ail { .. } | Event::Toll { .. } => self.tutor.seen.ails += 1,
+                Event::WeaponSwap { .. } => self.this_run.tutor.seen.swaps += 1,
+                Event::SwapStrike { .. } => self.this_run.tutor.seen.swap_strikes += 1,
+                Event::Guard { .. } => self.this_run.tutor.seen.blocks += 1,
+                Event::Ail { .. } | Event::Toll { .. } => self.this_run.tutor.seen.ails += 1,
                 // 0274 ⑥: 저주탄을 날렸다(완드의 상황 힌트).
                 Event::Cast {
                     look: crate::weapons::Look::Curse,
                     ..
-                } => self.tutor.seen.curses += 1,
+                } => self.this_run.tutor.seen.curses += 1,
                 // 등잔을 한 번 마셔 보면 그 뒤로는 알리지 않는다(기록의 비트 — 판을 넘어, 0213).
                 Event::Gulp { .. } => {
-                    self.tutor.seen.gulps += 1;
+                    self.this_run.tutor.seen.gulps += 1;
                     let bit = crate::tutorial::Tip::Flask.bit();
                     if self.progress.tips & bit == 0 {
                         self.progress.tips |= bit;
@@ -705,20 +705,22 @@ impl App {
             .iter()
             .any(|e| e.active() && (e.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE);
         // 곁에서 시작한 적의 공격 예고(0209 T3 — 공격 번호로 한 번씩, 소리와 같은 셈).
-        self.tell_seen.resize(self.world.enemies.len(), u32::MAX);
+        self.this_run
+            .tell_seen
+            .resize(self.world.enemies.len(), u32::MAX);
         let mut tells = 0;
         for (i, en) in self.world.enemies.iter().enumerate() {
-            if en.telegraph().is_some() && self.tell_seen[i] != en.atk_count {
-                self.tell_seen[i] = en.atk_count;
+            if en.telegraph().is_some() && self.this_run.tell_seen[i] != en.atk_count {
+                self.this_run.tell_seen[i] = en.atk_count;
                 if (en.pos - pl.pos).length() < crate::tutorial::FIGHT_RANGE {
                     tells += 1;
                 }
             }
         }
-        let seen = &mut self.tutor.seen;
+        let seen = &mut self.this_run.tutor.seen;
         seen.tells += tells;
         seen.moved += vec2(step.x, step.z).length();
-        if dodging && !self.tutor.dodging {
+        if dodging && !self.this_run.tutor.dodging {
             seen.dodges += 1;
         }
         for e in events {
@@ -728,22 +730,23 @@ impl App {
                 _ => {}
             }
         }
-        self.tutor.dodging = dodging;
+        self.this_run.tutor.dodging = dodging;
         let facts = self.tutor_facts();
-        if self.tutor.tick(&facts, fight, TICK_DT) {
-            self.progress.tutorial = self.tutor.at;
+        if self.this_run.tutor.tick(&facts, fight, TICK_DT) {
+            self.progress.tutorial = self.this_run.tutor.at;
             self.persist();
             // 걸음이 넘어갔다(0171) — 빛만 바뀌던 것에 소리 하나. 상이 오는 틱은 상의 소리가 대신한다.
-            if !self.tutor.owes_reward(&facts) {
+            if !self.this_run.tutor.owes_reward(&facts) {
                 self.snd(crate::sfx::Id::Recall);
             }
         }
         // 길 안내(0170 — KB wayfinding: 갈 곳이 화면에 말한다): 걸음이 쉼터에서 할 일이면 가장 가까운 쉼터에 갈 곳의
         // 빛기둥·화살을 얹는다. 싸우는 동안은 비운다(화살이 싸움을 가리지 않게).
         let to_hearth = matches!(
-            self.tutor.step(),
+            self.this_run.tutor.step(),
             Some(crate::tutorial::Step::Learn | crate::tutorial::Step::Level)
         ) && self
+            .this_run
             .tutor
             .step()
             .is_some_and(|s| s.shown(&facts) && !s.gathering(&facts));
@@ -758,9 +761,9 @@ impl App {
         }
         // 상(0169): 몸의 걸음 넷을 마쳤다 — 기술 점수 하나. 기록의 몫에 적어 한 번만(이어한 판도 지금의 상태로 본다).
         // 잔불·레벨은 건드리지 않는다(0109·0123의 "한 판 ≈ 한 레벨"은 그대로 — 첫 스킬만 그 뒤로 밀리지 않게).
-        if self.tutor.owes_reward(&facts) {
+        if self.this_run.tutor.owes_reward(&facts) {
             self.progress.gift = crate::tutorial::REWARD_POINTS;
-            self.toast = Some((crate::i18n::s().tut_reward.to_string(), TOAST_TIME));
+            self.notice.toast = Some((crate::i18n::s().tut_reward.to_string(), TOAST_TIME));
             self.snd(crate::sfx::Id::Buy);
             self.persist();
         }
@@ -791,7 +794,7 @@ impl App {
         // 등잔은 체력이 반 위로 돌아오면 다시 알릴 수 있다(마셔 보기 전까지 — 기록의 비트는 마실 때 선다, 0213).
         let flask = Tip::Flask.bit();
         if !now.hp_low {
-            self.tips_now &= !flask;
+            self.this_run.tips_now &= !flask;
         }
         // 판이 가려진 동안(시작 이야기·구역 카드·보스 띠 — `hud::draw`가 판을 그리지 않는다)에는 힌트의 시계를 세우고 새로
         // 띄우지도 않는다: 안 보이는 사이에 한 번뿐인 힌트가 지나가 버렸다(구역 카드 밑에서 "바꿔 든다"가 사라졌다).
@@ -801,26 +804,31 @@ impl App {
         {
             return;
         }
-        if let Some((t, left)) = self.tip {
+        if let Some((t, left)) = self.this_run.tip {
             // 떠 있는 동안(남은 시간 > 0) 할 일을 하면 걷히고, 걷힌 뒤에는 `TIP_REST`만큼 쉰다(남은 시간이 0 아래로 —
             // 여럿이 때를 맞아도 줄지어 덮지 않는다). 급한 것(등잔)은 쉼을 기다리지 않는다.
-            let left = if left > 0.0 && t.done(&now, &self.tutor.seen) {
+            let left = if left > 0.0 && t.done(&now, &self.this_run.tutor.seen) {
                 0.0
             } else {
                 left - TICK_DT
             };
             let urgent = left <= 0.0
-                && (self.progress.tips | self.tips_now) & flask == 0
-                && Tip::Flask.due(self.tutor.at, &now, &self.tutor.seen);
-            self.tip = (left > -crate::tutorial::TIP_REST && !urgent).then_some((t, left));
+                && (self.progress.tips | self.this_run.tips_now) & flask == 0
+                && Tip::Flask.due(self.this_run.tutor.at, &now, &self.this_run.tutor.seen);
+            self.this_run.tip = (left > -crate::tutorial::TIP_REST && !urgent).then_some((t, left));
             if !urgent {
                 return;
             }
         }
-        let shown = self.progress.tips | self.tips_now;
-        if let Some(t) = next_tip(shown, self.tutor.at, &now, &self.tutor.seen) {
-            self.tip = Some((t, TIP_TIME));
-            self.tips_now |= t.bit();
+        let shown = self.progress.tips | self.this_run.tips_now;
+        if let Some(t) = next_tip(
+            shown,
+            self.this_run.tutor.at,
+            &now,
+            &self.this_run.tutor.seen,
+        ) {
+            self.this_run.tip = Some((t, TIP_TIME));
+            self.this_run.tips_now |= t.bit();
             if t != Tip::Flask {
                 self.progress.tips |= t.bit();
                 self.persist();
@@ -838,7 +846,7 @@ impl App {
             return None;
         }
         let f = self.tutor_facts();
-        match self.tutor.step()? {
+        match self.this_run.tutor.step()? {
             Step::Learn if f.can_learn => Some(Tab::Skills),
             Step::Level if Step::Level.shown(&f) && !Step::Level.gathering(&f) => Some(Tab::Status),
             _ => None,
@@ -857,7 +865,7 @@ impl App {
                 crate::ui::key(&name)
             }
         };
-        if let (Some((t, left)), true) = (self.tip, self.tutor_live()) {
+        if let (Some((t, left)), true) = (self.this_run.tip, self.tutor_live()) {
             // 걷힌 뒤의 쉼(남은 시간 0 아래)에는 그리지 않는다 — 걸음의 힌트가 그 자리에 돌아온다.
             if left > 0.0 {
                 // 쇠뇌는 모으기가 RB(사격)에 있다(0213) — 모으기 힌트만: 바꿔 들기의 평타는 손의 버튼 그대로다.
@@ -885,7 +893,8 @@ impl App {
             .iter()
             .position(|&id| board.learned(id))
             .unwrap_or(0);
-        self.tutor
+        self.this_run
+            .tutor
             .hint(crate::i18n::s(), &self.tutor_facts(), slot, cap)
     }
 
@@ -901,7 +910,9 @@ impl App {
     /// (싸우는 동안은 화살이 필요 없다). 갈 곳(`StageRun::goal`)이 따로 있으면 그것이 먼저다.
     fn tutor_foe(&self) -> Option<Vec3> {
         use crate::tutorial::{Step, FIGHT_RANGE};
-        if !self.tutor_on() || !matches!(self.tutor.step(), Some(Step::Attack | Step::Parry)) {
+        if !self.tutor_on()
+            || !matches!(self.this_run.tutor.step(), Some(Step::Attack | Step::Parry))
+        {
             return None;
         }
         let at = self.world.player.pos;
@@ -969,7 +980,7 @@ impl App {
             .enemies
             .iter()
             .any(|e| e.active() && e.pos.distance(at) < crate::tutorial::FIGHT_RANGE);
-        if self.knell.tick(TICK_DT, lost, fight) {
+        if self.this_run.knell.tick(TICK_DT, lost, fight) {
             self.snd(crate::sfx::Id::Knell);
         }
     }
@@ -977,7 +988,7 @@ impl App {
     /// 종이 운 뒤 잠깐, 소리가 온 쪽의 화면 가장자리에 물결(화면 안이면 그 자리에 고리). 소리는 좌우로 나뉘지 않으니
     /// (모노) 방향은 그림이 말한다.
     pub(super) fn draw_knell(&self, f: &Frame) {
-        let (Some(k), Some(from)) = (self.knell.wave(), self.run.bell_from()) else {
+        let (Some(k), Some(from)) = (self.this_run.knell.wave(), self.run.bell_from()) else {
             return;
         };
         let (ndc, front) =

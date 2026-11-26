@@ -921,13 +921,13 @@ impl App {
     /// 뒤로·Select·✕·창 밖 = 닫기.
     pub(super) fn tick_equip(&mut self, a: &Actions) {
         let mut a = *a;
-        let before = self.cursor;
+        let before = self.menu.cursor;
         self.turn_doll(&mut a);
         // 칸 고르기에는 굴릴 목록이 없다 — 휠·끌기는 어디서든 오른쪽 상세 칸을.
         if a.wheel != 0 || a.drag != 0.0 {
             let line = self.ui.u(tabs::LH_BODY).max(1.0);
-            self.scroll = pane_step(
-                self.scroll,
+            self.tab.scroll = pane_step(
+                self.tab.scroll,
                 0.0,
                 TICK_DT,
                 a.wheel,
@@ -946,13 +946,13 @@ impl App {
         // 십자·스틱은 커서만 옮긴다 — 위아래는 장신구 칸 셋 안, 좌우는 무기 칸 ↔ 장신구 칸(칸이 놓인 자리대로,
         // 사장 2026-11-06 "좌우로는 커서가 움직이는게 더 직관적"). 빨리 바꾸기는 특수 버튼 하나(0223 — 그 전엔 공격 버튼, 다음 것으로 돈다, 0164 — 스킬 버튼
         // 둘은 탭을 넘긴다). 그 버튼이 메뉴의 확인·누르기와 겹치는 장치(키보드 J·마우스 클릭)에서는 꺼진다 — `input::swap_free`.
-        self.cursor = slot_nav(
-            self.cursor,
+        self.menu.cursor = slot_nav(
+            self.menu.cursor,
             a.menu_up as i32 - a.menu_down as i32,
             a.menu_right as i32 - a.menu_left as i32,
         );
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
         let quick = match input::swap_bind() {
             Some(input::Bind::Cast) => a.cast,
@@ -960,44 +960,44 @@ impl App {
             _ => false,
         };
         if quick && !a.confirm {
-            match self.cursor {
+            match self.menu.cursor {
                 0 => self.next_weapon(1),
                 SUB_SLOT => self.step_sub(1),
                 GARB_SLOT => self.step_garb(1),
                 i => self.step_charm(i - 1, 1),
             }
-            self.scroll = 0.0;
+            self.tab.scroll = 0.0;
             self.snd(crate::sfx::Id::UiMove);
         }
         // 터치·마우스(2026-11-06): 다른 칸을 누르면 그 칸을 고르기만 하고(설명·상태가 바뀐다), 고른 칸을 다시 누르면 후보를 연다 —
         // 패드의 "커서 → 확인"과 같은 두 걸음.
         let pick = match tap {
             Some(Hit::Row(i)) => {
-                let again = self.cursor == i;
+                let again = self.menu.cursor == i;
                 if !again {
-                    self.cursor = i;
-                    self.scroll = 0.0;
+                    self.menu.cursor = i;
+                    self.tab.scroll = 0.0;
                 }
                 again
             }
             _ => a.confirm,
         };
         if pick {
-            let slot = self.cursor;
+            let slot = self.menu.cursor;
             if !has_choice(&self.cands(slot), self.slot_now(slot)) {
                 // 바꿀 것이 없다(설명 칸이 얻는 곳을 말한다).
                 self.snd(crate::sfx::Id::Deny);
                 return;
             }
             self.go(Go::Open(Scene::EquipPick { slot: slot as u8 }));
-            self.cursor = pick_start(&self.cands(slot), self.slot_now(slot));
+            self.menu.cursor = pick_start(&self.cands(slot), self.slot_now(slot));
         }
     }
 
     /// 후보 목록 한 틱: 위아래·굴리기, 확인·탭 = 끼우고 칸으로(못 얻은 것은 "안 됨"), 뒤로 = 그냥 칸으로.
     pub(super) fn tick_equip_pick(&mut self, a: &Actions, slot: usize) {
         let mut a = *a;
-        let before = self.cursor;
+        let before = self.menu.cursor;
         // 휠·끌기가 상세 칸 위면 상세를, 아니면 후보 목록을 굴린다.
         self.pane_scroll_lines(&mut a);
         let a = &a;
@@ -1009,11 +1009,11 @@ impl App {
         // 칸 상자를 눌렀다(목록이 열린 채): 같은 칸이면 닫고, 다른 칸이면 그 칸을 고르고 그 칸의 목록을(바꿀 것이 있으면).
         if let Some(Hit::Cell(0, other)) = tap {
             self.go(Go::Back);
-            self.cursor = other;
-            self.scroll = 0.0;
+            self.menu.cursor = other;
+            self.tab.scroll = 0.0;
             if other != slot && has_choice(&self.cands(other), self.slot_now(other)) {
                 self.go(Go::Open(Scene::EquipPick { slot: other as u8 }));
-                self.cursor = pick_start(&self.cands(other), self.slot_now(other));
+                self.menu.cursor = pick_start(&self.cands(other), self.slot_now(other));
             }
             return;
         }
@@ -1025,17 +1025,17 @@ impl App {
         // 후보도 두 걸음: 다른 줄을 누르면 고르기만(바뀌는 값 ▲▼를 미리 본다), 고른 줄을 다시 누르면 끼운다.
         let mut a = *a;
         if let Some(Hit::Row(i)) = tap {
-            if i != self.cursor && i < list.len() {
-                self.cursor = i;
-                self.view.tapped(i);
-                self.scroll = 0.0;
+            if i != self.menu.cursor && i < list.len() {
+                self.menu.cursor = i;
+                self.menu.view.tapped(i);
+                self.tab.scroll = 0.0;
                 a.tap = None;
             }
         }
         let a = &a;
         let picked = self.menu_pick(a, list.len());
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
         let Some(i) = picked else {
             return;
@@ -1129,7 +1129,7 @@ impl App {
             dh,
         );
         let t = get_time() as f32;
-        self.doll_rect = Some(doll);
+        self.tab.doll_rect = Some(doll);
         let spin = self.doll_spin();
         self.renderer.draw_doll(self.weapon, doll, spin, t);
         for (i, r) in boxes.iter().enumerate() {
@@ -1149,7 +1149,7 @@ impl App {
                 );
             }
             // 후보 목록이 열려 있어도 칸을 누를 수 있다: 같은 칸 = 목록 닫기, 다른 칸 = 그 칸의 목록으로(`tick_equip_pick`).
-            self.hits.push((
+            self.menu.hits.push((
                 *r,
                 if pick.is_none() {
                     Hit::Row(i)
@@ -1167,7 +1167,7 @@ impl App {
             self.weapon,
             slot_cursor,
             pick.zip(list.as_deref()),
-            self.cursor,
+            self.menu.cursor,
         );
         let slot = view.slot;
         // 여벌(0223 V4d)의 이름·그림·갈래는 바탕의 것, 등급·옵션은 그 아이템의 것.
@@ -1276,9 +1276,9 @@ impl App {
             );
             let mut hits = self
                 .ui
-                .list_k(&rows, self.cursor, &mut self.view, area, w.k);
+                .list_k(&rows, self.menu.cursor, &mut self.menu.view, area, w.k);
             // 넘치면 목록의 오른쪽 위·아래 구석 밖에 ▲▼(누를 자리).
-            let (up, down) = self.view.more(rows.len());
+            let (up, down) = self.menu.view.more(rows.len());
             let tk = 0.7 * w.k;
             let ax = panel.x + pw + u * 2.0;
             for (n, (on, glyph, ay)) in [
@@ -1314,8 +1314,8 @@ impl App {
             }
             // 목록의 줄이 아래 화면의 어느 자리보다 먼저 눌린다.
             let mut front = super::menu::hits_of(&hits);
-            front.append(&mut self.hits);
-            self.hits = front;
+            front.append(&mut self.menu.hits);
+            self.menu.hits = front;
         }
     }
 

@@ -193,7 +193,7 @@ impl App {
     /// 상태 탭 한 틱: 위아래 = 줄(끝에서 돈다), 확인·고른 줄 다시 누르기 = 그 줄의 일, 뒤로·✕·창 밖 = 닫기.
     pub(super) fn tick_status(&mut self, a: &Actions, host: Host) {
         let mut a = *a;
-        let before = self.cursor;
+        let before = self.menu.cursor;
         self.turn_doll(&mut a);
         self.pane_scroll_lines(&mut a);
         let a = &a;
@@ -202,25 +202,25 @@ impl App {
             self.go(Go::Back);
             return;
         }
-        ui::menu_input(&mut self.cursor, ROWS, a.menu_up, a.menu_down);
+        ui::menu_input(&mut self.menu.cursor, ROWS, a.menu_up, a.menu_down);
         // 터치·마우스: 다른 줄은 고르기만(상세가 바뀐다), 고른 줄을 다시 누르면 확인 — 장비·기술 탭과 같은 두 걸음.
         let confirm_now = match tap {
             Some(Hit::Row(i)) => {
-                let again = self.cursor == i;
-                self.cursor = i;
+                let again = self.menu.cursor == i;
+                self.menu.cursor = i;
                 again
             }
             _ => a.confirm,
         };
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
         if !confirm_now {
             return;
         }
         let edits = host.edits();
         match confirm(
-            self.cursor,
+            self.menu.cursor,
             &self.progress.level,
             self.world.embers(),
             edits,
@@ -235,15 +235,19 @@ impl App {
                     self.progress.ult,
                 );
                 self.show(Go::Swap(Scene::Skills { host }));
-                self.cursor = at;
+                self.menu.cursor = at;
                 // 그 칸이 서는 판으로(0270 C2 — 든 무기의 판 먼저).
                 self.sync_plate();
             }
             Some(Do::Deny(st)) => {
                 // 까닭을 상태 줄 자리에 한 번 밝게(가게와 같다 — 0173: 멈춤에서는 소리만 나서 왜 안 오르는지 몰랐다).
                 match st {
-                    LevelState::Poor(_) => self.toast = Some((s().shop_poor.to_string(), 1.6)),
-                    LevelState::View(_) => self.toast = Some((s().toast_away.to_string(), 1.6)),
+                    LevelState::Poor(_) => {
+                        self.notice.toast = Some((s().shop_poor.to_string(), 1.6))
+                    }
+                    LevelState::View(_) => {
+                        self.notice.toast = Some((s().toast_away.to_string(), 1.6))
+                    }
                     LevelState::Full | LevelState::Ready(_) => {}
                 }
                 self.snd(crate::sfx::Id::Deny);
@@ -257,7 +261,7 @@ impl App {
         let s = s();
         let scene = Scene::Status { host };
         let w = self.draw_tab_window(f, scene);
-        let at = self.cursor.min(ROWS - 1);
+        let at = self.menu.cursor.min(ROWS - 1);
         let edits = host.edits();
         self.draw_status_doll(&w);
         self.draw_status_rows(&w, at, edits);
@@ -305,7 +309,7 @@ impl App {
             dh,
         );
         let t = get_time() as f32;
-        self.doll_rect = Some(doll);
+        self.tab.doll_rect = Some(doll);
         let spin = self.doll_spin();
         self.renderer.draw_doll(self.weapon, doll, spin, t);
         let pl = &self.world.player;
@@ -394,7 +398,7 @@ impl App {
                 draw_rectangle(r.x, r.y, r.w, r.h, ui::PANEL_LIGHT);
                 self.ui.edge(r, self.ui.u(1.0), ui::KEY_TEXT);
             }
-            self.hits.push((r, Hit::Row(i)));
+            self.menu.hits.push((r, Hit::Row(i)));
             // 튜토리얼의 올리기 걸음(0209): 지금 올릴 수 있는 줄의 오른쪽 위 귀퉁이에 반짝임.
             if let Row::Level(l) = what {
                 if guide && matches!(level_state(&lv, l, embers, edits), LevelState::Ready(_)) {
@@ -684,7 +688,7 @@ impl App {
             return;
         };
         if self.world.embers() < cost {
-            self.toast = Some((s().shop_poor.to_string(), 1.6));
+            self.notice.toast = Some((s().shop_poor.to_string(), 1.6));
             self.snd(crate::sfx::Id::Deny);
             return;
         }
@@ -696,7 +700,7 @@ impl App {
         self.world.apply_stats(self.progress.stats(), true);
         self.snd(crate::sfx::Id::Buy);
         let rank = self.progress.level.rank(l).to_string();
-        self.toast = Some((fill(s().toast_level, &[line_name(l), &rank]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_level, &[line_name(l), &rank]), TOAST_TIME));
         self.persist();
     }
 

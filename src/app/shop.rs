@@ -91,7 +91,7 @@ impl App {
         self.world.earn(n);
         self.progress.embers = self.world.embers();
         self.snd(crate::sfx::Id::Recall);
-        self.toast = Some((
+        self.notice.toast = Some((
             fill(s().toast_salvaged, &[&name, &n.to_string()]),
             TOAST_TIME,
         ));
@@ -162,7 +162,7 @@ impl App {
         let w = self.draw_tab_window(f, scene);
         self.draw_left_list(&w, &m.rows, 0.0);
         let list = self.shop_list();
-        let row = list[self.cursor.min(list.len() - 1)];
+        let row = list[self.menu.cursor.min(list.len() - 1)];
         let lines = match row {
             ShopRow::Ware(i) => self.ware_pane(&w, i),
             ShopRow::Forge(wp) | ShopRow::Recall(wp) => {
@@ -336,7 +336,7 @@ impl App {
                 match wares.get(i).copied() {
                     // 모자라면 묻지 않고 알림만(nail 가게와 같다 — 흐린 줄).
                     Some((_, price)) if self.world.embers() < price => {
-                        self.toast = Some((s.shop_poor.to_string(), 1.6));
+                        self.notice.toast = Some((s.shop_poor.to_string(), 1.6));
                         self.snd(crate::sfx::Id::Deny);
                     }
                     Some(_) => self.ask(flow::Ask::Buy(i)),
@@ -349,11 +349,11 @@ impl App {
                 match crate::forge::next_cost(forged, w) {
                     None => self.snd(crate::sfx::Id::Deny),
                     Some((st, _)) if crate::forge::free(finds, forged) < st => {
-                        self.toast = Some((s.forge_no_stone.to_string(), 1.6));
+                        self.notice.toast = Some((s.forge_no_stone.to_string(), 1.6));
                         self.snd(crate::sfx::Id::Deny);
                     }
                     Some((_, em)) if self.world.embers() < em => {
-                        self.toast = Some((s.shop_poor.to_string(), 1.6));
+                        self.notice.toast = Some((s.shop_poor.to_string(), 1.6));
                         self.snd(crate::sfx::Id::Deny);
                     }
                     Some(_) => self.ask(flow::Ask::Forge(weapon_index(w))),
@@ -380,7 +380,7 @@ impl App {
         self.progress.forged.set(w, r);
         self.world.apply_stats(self.progress.stats(), false);
         self.snd(crate::sfx::Id::Buy);
-        self.toast = Some((fill(s().toast_forged, &[&forged_label(w, r)]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_forged, &[&forged_label(w, r)]), TOAST_TIME));
         self.persist();
     }
 
@@ -390,12 +390,15 @@ impl App {
         self.progress.forged.set(w, 0);
         self.world.apply_stats(self.progress.stats(), false);
         self.snd(crate::sfx::Id::Recall);
-        self.toast = Some((
+        self.notice.toast = Some((
             fill(s().toast_recalled, &[weapon_name(w), &n.to_string()]),
             TOAST_TIME,
         ));
         // 줄이 하나 줄었다 — 커서를 안에.
-        self.cursor = self.cursor.min(self.shop_list().len().saturating_sub(1));
+        self.menu.cursor = self
+            .menu
+            .cursor
+            .min(self.shop_list().len().saturating_sub(1));
         self.persist();
     }
 

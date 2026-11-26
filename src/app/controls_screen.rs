@@ -14,7 +14,8 @@ impl App {
                 _ => 0,
             };
             let n = controls::rows().len();
-            self.view
+            self.menu
+                .view
                 .scroll((a.drag, a.wheel + arrow), &mut self.ctl.row, n);
             if let Some(Hit::Cell(row, col)) = tap {
                 out = self.ctl.pick(row, col, b);
@@ -70,7 +71,7 @@ impl App {
         let n = rows.len();
         let gap = px * 1.36;
         let fits = (((bottom - y) / gap).floor() as usize).clamp(1, n);
-        let first = self.view.window(self.ctl.row, n, fits, gap);
+        let first = self.menu.view.window(self.ctl.row, n, fits, gap);
         let y_top = y;
         for (i, row) in rows.iter().enumerate().skip(first).take(fits) {
             let sel = i == self.ctl.row;
@@ -154,7 +155,7 @@ impl App {
                                 self.ui.text_center(&t, x, y, 1.0, c);
                             }
                         }
-                        self.hits.push((r, Hit::Cell(i, col)));
+                        self.menu.hits.push((r, Hit::Cell(i, col)));
                     }
                 }
                 controls::Row::Preset(_) | controls::Row::Back => {
@@ -170,13 +171,13 @@ impl App {
                     }
                     self.ui
                         .text_center(label, cx, y, 1.0, if sel { AMBER } else { INK });
-                    self.hits.push((r, Hit::Cell(i, 0)));
+                    self.menu.hits.push((r, Hit::Cell(i, 0)));
                 }
             }
             y += gap;
         }
         let arrows = self.ui.scroll_arrows(
-            &self.view,
+            &self.menu.view,
             n,
             cx,
             y_top - px * 0.95,
@@ -185,7 +186,7 @@ impl App {
         // ▲▼는 칸보다 먼저(겹치면 굴리기가 이긴다).
         for (r, d) in arrows.iter().zip([-1, 1]) {
             if let Some(r) = r {
-                self.hits.insert(0, (*r, Hit::Scroll(d)));
+                self.menu.hits.insert(0, (*r, Hit::Scroll(d)));
             }
         }
         // 아래 칸: 알림 > 큰 기술의 기다림 > 고른 줄의 설명.

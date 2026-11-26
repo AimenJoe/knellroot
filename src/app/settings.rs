@@ -153,7 +153,7 @@ impl App {
         let w = self.draw_tab_window(f, scene);
         self.draw_left_list(&w, &m.rows, 0.0);
         let rows = Self::settings_rows(host);
-        let at = self.cursor.min(rows.len().saturating_sub(1));
+        let at = self.menu.cursor.min(rows.len().saturating_sub(1));
         if let (Some(&r), Some(row)) = (rows.get(at), m.rows.get(at)) {
             self.draw_pane_head(
                 &w,

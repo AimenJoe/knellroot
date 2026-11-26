@@ -11,8 +11,8 @@ impl App {
     pub(super) fn journey_pick(&mut self, a: &Actions, before: usize) {
         let goals = journey::visible(&self.progress);
         let picked = self.menu_pick(a, goals.len());
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
         if let Some(i) = picked {
             let g = goals[i.min(goals.len() - 1)];
@@ -33,7 +33,7 @@ impl App {
             self.progress.embers = self.world.embers();
         }
         self.snd(crate::sfx::Id::Chest);
-        self.toast = Some((fill(s().toast_journey_took, &[tr(g.title)]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_journey_took, &[tr(g.title)]), TOAST_TIME));
         self.persist();
     }
 
@@ -60,8 +60,8 @@ impl App {
             .and_then(|id| journey::GOALS.iter().find(|g| g.id == *id))
         {
             // 다른 알림(핵·숨은 물건)이 떠 있으면 그것을 지우지 않는다 — 여정 탭 머리의 점이 남는다.
-            if self.toast.is_none() {
-                self.toast = Some((fill(s().toast_journey, &[tr(g.title)]), TOAST_TIME));
+            if self.notice.toast.is_none() {
+                self.notice.toast = Some((fill(s().toast_journey, &[tr(g.title)]), TOAST_TIME));
             }
         }
     }
@@ -89,7 +89,7 @@ impl App {
             })
             .collect();
         self.draw_left_list(&w, &rows, top);
-        let cursor = self.cursor.min(goals.len().saturating_sub(1));
+        let cursor = self.menu.cursor.min(goals.len().saturating_sub(1));
         let g = goals[cursor];
         let (have, need) = journey::count(g, &p);
         let (state, ink) = if journey::claimed(g, &p) {

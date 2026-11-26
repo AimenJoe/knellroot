@@ -200,47 +200,29 @@ struct Heard {
     was_waking: bool,
 }
 
-pub struct App {
-    /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
-    stack: stack::Stack,
+/// 메뉴 입력(0278 R24 — `App::menu`): 지금 칸의 커서와 굴리는 창(스택이 칸마다 맡아 둔다), 지난 프레임에 그린 누를 자리,
+/// 붙잡아 둔 누름.
+struct MenuInput {
     cursor: usize,
-    /// 기술 탭에서 격자를 떠나기 전의 칸(0261 — 되돌리기 단추에서 위·판 줄에서 아래로 가면 거기로, 0270 C2).
-    respec_from: usize,
-    /// 기술 탭에 보이는 판(0270 C2 — 탭을 열 때 든 무기의 판, `App::open_plate`).
-    skill_plate: crate::plates::Plate,
-    /// 기술 탭 줄의 열림 연출(`skills::RowFades` — 그리기 전에 `ready_skill_rows`가 본다).
-    skill_rows: skills::RowFades,
+    /// 지금 화면의 굴리는 목록 창(메뉴·조작 설정 공통, 장면이 바뀌면 처음부터).
+    view: ui::ListView,
     /// 지난 프레임에 그린 메뉴 줄·▲▼ 자리(탭 판정).
     hits: Vec<(Rect, Hit)>,
     /// 붙잡아 둔 메뉴 누름(0207): 눌린 꼴을 `PRESS_HOLD` 동안 보인 뒤 그 확인·탭을 장면에 넘긴다.
     press: Option<Press>,
     /// 누름을 붙잡은 동안 들어온 입력(0207) — 버리지 않고 넘긴 뒤 차례로(빠르게 연달아 누른 것이 사라지지 않게).
     press_queue: std::collections::VecDeque<Actions>,
-    /// 지금 화면의 굴리는 목록 창(메뉴·조작 설정 공통, 장면이 바뀌면 처음부터).
-    view: ui::ListView,
-    input: Input,
-    t: Tuning,
-    /// 랩(0070, 개발판): 슬롯 B·알림.
-    #[cfg(feature = "dev")]
-    lab: Lab,
-    renderer: Renderer,
-    ui: Ui,
-    cam: Camera,
-    world: World,
-    run: StageRun,
-    /// 판의 지역 잇기(0118): 지금 지역(`stage::STAGES` 차례), 이 판에 이긴 문지기 수, 마지막으로 쉰 곳(지역을 바꿔도 남는다),
-    /// 지역 사이 전환(0118 → 0174 뿌리 굴).
-    stage: usize,
-    down: usize,
-    rest_at: Option<crate::save::RunAt>,
-    /// 이 판에 쓰러뜨린 필드 보스(0270 D — 지역마다 한 비트): 쉬어도·지역을 떠났다 와도·이어 해도 그 판에는 다시 서지 않는다
-    /// (`RunAt::fields`로 기록에). 새 판이면 0.
-    fields_down: u32,
-    /// 싸움 화면의 연출 칸(0251 R5 — `interlude`): 뿌리 굴·핵의 반응·쓰러짐·깨어나는 첫 장면·불 붙는 화로 가운데 하나.
-    /// 그동안 조작이 없고 세계는 멈추거나 빈 입력으로 흐른다. 깨어나는 장면은 타이틀 바탕에서 0초에 멈춰 있다(엎드린 방랑자).
-    interlude: Option<interlude::Interlude>,
-    /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
-    pause_tab: flow::Tab,
+}
+
+/// 큰 창 · 탭의 화면 상태(0278 R24 — `App::tab`): 판 줄 · 탭 줄 · 작은 탭 줄의 가로 창, 기술 탭의 판과 줄 열림, 인형 · 도감 그림을
+/// 손으로 돌린 각, 화면의 둘째 축 · 설명 칸의 굴림.
+struct TabUi {
+    /// 기술 탭에서 격자를 떠나기 전의 칸(0261 — 되돌리기 단추에서 위·판 줄에서 아래로 가면 거기로, 0270 C2).
+    respec_from: usize,
+    /// 기술 탭에 보이는 판(0270 C2 — 탭을 열 때 든 무기의 판, `App::open_plate`).
+    skill_plate: crate::plates::Plate,
+    /// 기술 탭 줄의 열림 연출(`skills::RowFades` — 그리기 전에 `ready_skill_rows`가 본다).
+    skill_rows: skills::RowFades,
     /// 큰 창의 탭 줄이 넘칠 때의 가로 창(0233 — 탭을 넘겨도 같은 창이라 장면 칸이 아니라 여기 하나).
     tab_strip: crate::ui::Strip,
     /// 창 안의 작은 탭 줄(개발 창·모션 보기·도감의 묶음, 0257) — 한 번에 하나만 보인다.
@@ -249,9 +231,28 @@ pub struct App {
     plate_strip: crate::ui::Strip,
     /// 상태·장비 탭의 인형(0235): 손으로 돌린 각(라디안 — `None`이면 저절로 천천히 좌우로 흔든다)과 그린 자리(끌기가 그 위에서 시작했나).
     doll_yaw: Option<f32>,
+    doll_rect: Option<Rect>,
     /// 도감 그림을 손으로 보기(끌어 돌리기·크게 — 2026-11-19).
     codex_view: codex::CodexView,
-    doll_rect: Option<Rect>,
+    /// 지금 화면의 둘째 축(슬롯 창의 단추). 장면이 바뀌면 처음으로.
+    col: usize,
+    /// 지금 화면의 글 칸(설명)을 몇 줄 내렸나(0068 — 넘치는 설명은 오른쪽 스틱·휠·끌기로 굴린다). 장면이 바뀌면 처음으로.
+    scroll: f32,
+}
+
+/// 이 판에 붙은 것(0278 R24 — `App::this_run`): 새 판을 세울 때(`App::build_run`) 모두 처음으로 — 지역 잇기 · 멈춤 탭 ·
+/// 튜토리얼과 상황 힌트 · 종소리의 길 안내.
+struct RunState {
+    /// 판의 지역 잇기(0118): 지금 지역(`stage::STAGES` 차례), 이 판에 이긴 문지기 수, 마지막으로 쉰 곳(지역을 바꿔도 남는다),
+    /// 지역 사이 전환(0118 → 0174 뿌리 굴).
+    stage: usize,
+    down: usize,
+    rest_at: Option<crate::save::RunAt>,
+    /// 이 판에 쓰러뜨린 필드 보스(0270 D — 지역마다 한 비트): 쉬어도·지역을 떠났다 와도·이어 해도 그 판에는 다시 서지 않는다
+    /// (`RunAt::fields`로 기록에). 새 판이면 0.
+    fields_down: u32,
+    /// 이 판에서 멈춤 창이 마지막에 보던 탭(0164) — 다음에 멈추면 거기서 열린다(`flow::pause`). 판에 붙은 한 칸: 새 판이면 상태로.
+    pause_tab: flow::Tab,
     /// 튜토리얼(0167): 지난 걸음 수(기록 `Progress::tutorial`과 같은 값) + 이 판에서 본 것. 판에 붙는다.
     tutor: crate::tutorial::Tutor,
     /// 떠 있는 상황 힌트와 남은 시간(0209 T2).
@@ -262,6 +263,74 @@ pub struct App {
     tell_seen: Vec<u32>,
     /// 종소리의 길 안내(0171): 문을 찾는 동안 가끔 우는 종의 시계 + 물결. 판에 붙는다(기록에 남지 않는다).
     knell: crate::knell::Knell,
+}
+
+impl RunState {
+    /// 새 판: 첫 지역 `stage`에서, 튜토리얼은 기록의 지난 걸음 수부터.
+    fn fresh(stage: usize, tutorial: u8) -> RunState {
+        RunState {
+            stage,
+            down: 0,
+            rest_at: None,
+            fields_down: 0,
+            pause_tab: flow::Tab::Status,
+            tutor: crate::tutorial::Tutor::new(tutorial),
+            tip: None,
+            tips_now: 0,
+            tell_seen: Vec::new(),
+            knell: crate::knell::Knell::default(),
+        }
+    }
+}
+
+/// 기록을 쓰는 쪽의 장부(0278 R24 — `App::book`): 마지막으로 쓴 것(바뀌었을 때만 쓴다), 슬롯, 옛 prefs 칸, 실패, 플레이 시간의 나머지.
+struct SaveBook {
+    saved: crate::save::Progress,
+    /// 지금 슬롯(0066)과 슬롯 셋의 요약(타이틀 "이어하기"·슬롯 창, 쓸 때마다 고친다).
+    slot: usize,
+    slots: [Option<crate::save::Summary>; crate::save::SLOTS],
+    /// 옛 prefs 칸 21(든 무기) — 읽은 값 그대로 다시 적는다(0066에서 기록으로 옮김).
+    legacy_weapon: u8,
+    /// 저장에 실패한 채인가(실패가 시작될 때 한 번만 알린다 — KB `roguelite-save-slots-and-continue`).
+    save_failed: bool,
+    /// 플레이 시간의 1초 아래 나머지(0081).
+    play_acc: f32,
+}
+
+/// 잠깐 뜨는 알림(0278 R24 — `App::notice`).
+struct Notices {
+    /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
+    toast: Option<(String, f32)>,
+    /// 지금 알림이 끝난 뒤에 뜰 알림(0223 V4 — 여벌을 얻은 틱에 핵·엘리트의 알림도 뜬다: 한 칸뿐이라 덮어쓰면 하나가 안 보인다).
+    toast_wait: Vec<String>,
+}
+
+pub struct App {
+    /// 장면 스택(0066): 맨 위가 지금 장면, 아래 칸은 커서·창을 맡아 둔다. 지금 칸의 커서·창은 `cursor`·`view`.
+    stack: stack::Stack,
+    /// 지금 칸의 커서 · 굴리는 창과 누를 자리 · 붙잡은 누름(0278 R24 — 메뉴 입력의 묶음).
+    menu: MenuInput,
+    /// 큰 창 · 탭의 화면 상태(0278 R24 — 탭을 넘겨도 이어 가는 것: 스택 칸에 두지 않았다).
+    tab: TabUi,
+    /// 이 판에 붙은 것(0278 R24 — 새 판을 세울 때 함께 처음으로: `RunState::fresh`).
+    this_run: RunState,
+    /// 기록을 쓰는 쪽의 장부(0278 R24 — 마지막으로 쓴 것 · 슬롯 · 실패 · 플레이 시간의 나머지).
+    book: SaveBook,
+    /// 잠깐 뜨는 알림과 그 뒤에 뜰 것(0278 R24).
+    notice: Notices,
+    input: Input,
+    t: Tuning,
+    /// 랩(0070, 개발판): 슬롯 B·알림.
+    #[cfg(feature = "dev")]
+    lab: Lab,
+    renderer: Renderer,
+    ui: Ui,
+    cam: Camera,
+    world: World,
+    run: StageRun,
+    /// 싸움 화면의 연출 칸(0251 R5 — `interlude`): 뿌리 굴·핵의 반응·쓰러짐·깨어나는 첫 장면·불 붙는 화로 가운데 하나.
+    /// 그동안 조작이 없고 세계는 멈추거나 빈 입력으로 흐른다. 깨어나는 장면은 타이틀 바탕에서 0초에 멈춰 있다(엎드린 방랑자).
+    interlude: Option<interlude::Interlude>,
     /// 손으로 하는 일의 몸짓(0196 줍기·상자 열기 → 0197 장치 당기기)과 흐른 초 — 렌더만 안다(월드는 그 일을 바로 끝낸다).
     /// 서 있는 동안만, 움직이거나 다른 동작이 시작되면 그친다.
     gesture: Option<(&'static str, f32)>,
@@ -305,26 +374,8 @@ pub struct App {
     goal_off: f32,
     /// 여정(0183): 알린 목표(처음 본 기록은 조용히 채운다 — `None` = 아직 안 봤다).
     journey_told: Option<Vec<&'static str>>,
-    /// 기록(0064 M2): 지금 것과 마지막으로 쓴 것(바뀌었을 때만 쓴다).
+    /// 기록(0064 M2): 지금 것(마지막으로 쓴 것과 슬롯은 `book`).
     progress: crate::save::Progress,
-    saved: crate::save::Progress,
-    /// 지금 슬롯(0066)과 슬롯 셋의 요약(타이틀 "이어하기"·슬롯 창, 쓸 때마다 고친다).
-    slot: usize,
-    slots: [Option<crate::save::Summary>; crate::save::SLOTS],
-    /// 지금 화면의 둘째 축(슬롯 창의 단추). 장면이 바뀌면 처음으로.
-    col: usize,
-    /// 지금 화면의 글 칸(설명)을 몇 줄 내렸나(0068 — 넘치는 설명은 오른쪽 스틱·휠·끌기로 굴린다). 장면이 바뀌면 처음으로.
-    scroll: f32,
-    /// 옛 prefs 칸 21(든 무기) — 읽은 값 그대로 다시 적는다(0066에서 기록으로 옮김).
-    legacy_weapon: u8,
-    /// 저장에 실패한 채인가(실패가 시작될 때 한 번만 알린다 — KB `roguelite-save-slots-and-continue`).
-    save_failed: bool,
-    /// 플레이 시간의 1초 아래 나머지(0081).
-    play_acc: f32,
-    /// 잠깐 뜨는 알림(0064 M3 — 상자에서 얻은 것 등)과 남은 초.
-    toast: Option<(String, f32)>,
-    /// 지금 알림이 끝난 뒤에 뜰 알림(0223 V4 — 여벌을 얻은 틱에 핵·엘리트의 알림도 뜬다: 한 칸뿐이라 덮어쓰면 하나가 안 보인다).
-    toast_wait: Vec<String>,
 }
 
 /// 알림이 떠 있는 시간(초).
@@ -447,14 +498,31 @@ impl App {
         let cam = Camera::new(world.player.pos, &t);
         App {
             stack: stack::Stack::new(Scene::Title),
-            cursor: 0,
-            respec_from: 0,
-            skill_plate: crate::plates::Plate::Body,
-            skill_rows: skills::RowFades::default(),
-            hits: Vec::new(),
-            press: None,
-            press_queue: std::collections::VecDeque::new(),
-            view: ui::ListView::default(),
+            menu: MenuInput {
+                cursor: 0,
+                view: ui::ListView::default(),
+                hits: Vec::new(),
+                press: None,
+                press_queue: std::collections::VecDeque::new(),
+            },
+            tab: TabUi {
+                respec_from: 0,
+                skill_plate: crate::plates::Plate::Body,
+                skill_rows: skills::RowFades::default(),
+                tab_strip: crate::ui::Strip::default(),
+                small_strip: crate::ui::Strip::default(),
+                plate_strip: crate::ui::Strip::default(),
+                doll_yaw: None,
+                doll_rect: None,
+                codex_view: Default::default(),
+                col: 0,
+                scroll: 0.0,
+            },
+            this_run: RunState::fresh(first, progress.tutorial),
+            notice: Notices {
+                toast: None,
+                toast_wait: Vec::new(),
+            },
             input: Input::new(),
             #[cfg(feature = "dev")]
             lab: Lab::new(),
@@ -463,24 +531,8 @@ impl App {
             cam,
             world,
             run,
-            stage: first,
-            down: 0,
-            rest_at: None,
-            fields_down: 0,
             interlude: (!progress.woke)
                 .then(|| interlude::Interlude::Wake(crate::wake::Wake::default())),
-            pause_tab: flow::Tab::Status,
-            tab_strip: crate::ui::Strip::default(),
-            small_strip: crate::ui::Strip::default(),
-            plate_strip: crate::ui::Strip::default(),
-            doll_yaw: None,
-            codex_view: Default::default(),
-            doll_rect: None,
-            tutor: crate::tutorial::Tutor::new(progress.tutorial),
-            tip: None,
-            tips_now: 0,
-            tell_seen: Vec::new(),
-            knell: crate::knell::Knell::default(),
             gesture: None,
             bubble: None,
             stone_card: None,
@@ -507,16 +559,14 @@ impl App {
             goal_off: 0.0,
             journey_told: None,
             progress: progress.clone(),
-            saved: progress,
-            slot,
-            slots: crate::save::summaries(),
-            col: 0,
-            scroll: 0.0,
-            legacy_weapon,
-            save_failed: false,
-            play_acc: 0.0,
-            toast: None,
-            toast_wait: Vec::new(),
+            book: SaveBook {
+                saved: progress,
+                slot,
+                slots: crate::save::summaries(),
+                legacy_weapon,
+                save_failed: false,
+                play_acc: 0.0,
+            },
         }
     }
 
@@ -533,16 +583,7 @@ impl App {
         self.run = run;
         self.world = world;
         self.fx.clear();
-        self.stage = first;
-        self.down = 0;
-        self.rest_at = None;
-        self.fields_down = 0;
-        self.pause_tab = flow::Tab::Status;
-        self.tutor = crate::tutorial::Tutor::new(self.progress.tutorial);
-        self.tip = None;
-        self.tips_now = 0;
-        self.tell_seen.clear();
-        self.knell = crate::knell::Knell::default();
+        self.this_run = RunState::fresh(first, self.progress.tutorial);
         // 깨어나는 첫 장면(0171): 아직 본 적 없는 기록의 판은 그 장면으로 열린다(개발 창의 판은 아니다).
         self.interlude = (!self.progress.woke && !self.dev_run_now())
             .then(|| interlude::Interlude::Wake(crate::wake::Wake::default()));
@@ -577,7 +618,7 @@ impl App {
         self.run = run;
         self.world = world;
         self.fx.clear();
-        self.stage = s;
+        self.this_run.stage = s;
         self.world.apply_stats(self.progress.stats(), false);
         self.seed_run();
     }
@@ -587,21 +628,21 @@ impl App {
     fn seed_run(&mut self) {
         self.arm_world();
         // 깨어난 자리의 화로(0171): 불을 붙인 적 없는 기록이면 첫 지역의 그 화로가 꺼져 있다.
-        if self.stage == 0 && !self.progress.lit && !self.dev_run_now() {
+        if self.this_run.stage == 0 && !self.progress.lit && !self.dev_run_now() {
             self.run.chill_hearth();
         }
         self.apply_board();
-        let base = self.stage as u32 * crate::stage::CHESTS_PER_STAGE;
+        let base = self.this_run.stage as u32 * crate::stage::CHESTS_PER_STAGE;
         let opened: Vec<u32> = self
             .progress
             .chests
             .iter()
-            .filter(|&&c| c / crate::stage::CHESTS_PER_STAGE == self.stage as u32)
+            .filter(|&&c| c / crate::stage::CHESTS_PER_STAGE == self.this_run.stage as u32)
             .map(|c| c - base)
             .collect();
         self.run.set_opened(&opened);
         // 깨어난 자리 곁의 검(0220): 아직 검이 없는 기록의 첫 지역에만 — 서막 숲(0262)에서 깨어나면 거기에도(줍지 않고 지나면 성소에).
-        let woke_here = self.stage == 0 || self.stage == crate::stage::PROLOGUE;
+        let woke_here = self.this_run.stage == 0 || self.this_run.stage == crate::stage::PROLOGUE;
         if woke_here && !self.progress.owns_weapon(weapons::Id::Sword) && !self.dev_run_now() {
             self.run.lay_start_sword();
         }
@@ -611,7 +652,7 @@ impl App {
         let felled = |f: &String| f == self.run.def.find_prefix;
         self.run
             .set_field_beaten(self.progress.fields.iter().any(felled));
-        if self.fields_down >> self.stage & 1 == 1 {
+        if self.this_run.fields_down >> self.this_run.stage & 1 == 1 {
             self.run.set_field_down(&mut self.world);
         }
         self.lay_ground();
@@ -633,13 +674,13 @@ impl App {
             );
         }
         // 처음 이기는 판이면 핵이 스스로 다가온다(lore CANON, 0105) — 첫 지역 문지기만(둘째 문지기는 C3).
-        self.run.first_core = match self.stage {
+        self.run.first_core = match self.this_run.stage {
             0 => self.progress.clears == 0,
             1 => self.progress.bell_cores == 0,
             2 => self.progress.moss_cores == 0,
             _ => self.progress.overseer_cores == 0,
         };
-        if self.down > self.stage {
+        if self.this_run.down > self.this_run.stage {
             self.run.down_open = true;
             self.run.open_down(&mut self.world);
         }
@@ -753,7 +794,7 @@ impl App {
             // PC만 기억한다(0135) — 웹은 브라우저가 Esc로 끌 수 있고 다음에 켤 때 사용자 입력 없이 못 연다.
             fullscreen: crate::DESKTOP && crate::screen::active(),
             // 든 무기는 슬롯 기록으로 옮겼다(0066) — 옛 칸은 처음 읽은 값 그대로 둔다(옛 슬롯 1의 기본값).
-            weapon: self.legacy_weapon,
+            weapon: self.book.legacy_weapon,
         });
     }
 
@@ -784,12 +825,12 @@ impl App {
     /// 장면을 바꾼다(0066): 지금 칸의 커서·창을 스택에 맡기고, 새 맨 위의 것(연 창이면 처음 포커스, 닫았으면 연 자리)을 받는다.
     fn go(&mut self, go: Go) {
         let go = self.codex_entry(go);
-        if let Some((cursor, view)) = self.stack.go(go, self.cursor, self.view) {
-            self.cursor = cursor;
-            self.view = view;
-            self.col = 0;
-            self.scroll = 0.0;
-            self.hits.clear();
+        if let Some((cursor, view)) = self.stack.go(go, self.menu.cursor, self.menu.view) {
+            self.menu.cursor = cursor;
+            self.menu.view = view;
+            self.tab.col = 0;
+            self.tab.scroll = 0.0;
+            self.menu.hits.clear();
             self.ctl = controls::Controls::default();
         }
     }
@@ -797,7 +838,7 @@ impl App {
     /// 한 프레임.
     /// 창 안의 작은 탭 줄(0257)이 넘쳐 굴리는 동안, 그 위의 끌기·휠은 탭 줄을 굴린다 — 몸의 목록에는 넘기지 않는다.
     pub(super) fn small_strip_input(&mut self, a: &Actions) -> Actions {
-        strip_input(&mut self.small_strip, a)
+        strip_input(&mut self.tab.small_strip, a)
     }
 
     pub fn frame(&mut self) {
@@ -814,9 +855,9 @@ impl App {
         #[cfg(feature = "dev")]
         let focus = match top {
             Scene::Skills { .. } => Some((
-                self.skill_plate,
-                crate::skills::ENTRIES.get(self.cursor).copied(),
-                self.cursor == skills::STRIP,
+                self.tab.skill_plate,
+                crate::skills::ENTRIES.get(self.menu.cursor).copied(),
+                self.menu.cursor == skills::STRIP,
             )),
             _ => None,
         };
@@ -825,7 +866,7 @@ impl App {
         #[cfg(feature = "dev")]
         let row = match top {
             Scene::Dev { tab } => dev::dev_items(tab as usize)
-                .get(self.cursor)
+                .get(self.menu.cursor)
                 .map(|e| RowFocus::Dev(*e)),
             Scene::Motions { weapon, .. } => self
                 .motion_focus(weapon)
@@ -955,7 +996,7 @@ impl App {
         // 카메라의 지난 틱 = 지금(0173): 이 틱에 카메라가 안 움직이면(멈춤 창 아래) 그림이 틱 사이를 오가지 않는다.
         self.cam.settle();
         let (a, injected) = self.hold_press(a);
-        let (scene0, cursor0, back0) = (self.scene(), self.cursor, a.back || a.pause);
+        let (scene0, cursor0, back0) = (self.scene(), self.menu.cursor, a.back || a.pause);
         let played0 = self.sfx.as_ref().map_or(0, |s| s.played());
         self.tick_scene(a);
         // 메뉴 소리(0064 M5, KB `game-audio-without-a-composer` "메뉴 소리는 한 곳에서"): 그 사이에 다른 소리(사기·안 됨 등)가
@@ -975,7 +1016,7 @@ impl App {
                 } else {
                     crate::sfx::Id::UiConfirm
                 });
-            } else if self.cursor != cursor0 {
+            } else if self.menu.cursor != cursor0 {
                 self.snd(crate::sfx::Id::UiMove);
             }
         }
@@ -987,15 +1028,15 @@ impl App {
     /// 넘긴 뒤 차례로(그 사이 커서가 먼저 움직이지 않게).
     /// ◀▶·▲▼·끌기·휠은 붙잡지 않는다(값·창을 바로 옮기는 일). 돌려주는 참 = 이번 틱이 붙잡았던 누름을 넘긴 틱.
     fn hold_press(&mut self, a: Actions) -> (Actions, bool) {
-        if let Some(p) = &mut self.press {
+        if let Some(p) = &mut self.menu.press {
             p.left -= TICK_DT;
             if is_edge(&a) {
-                self.press_queue.push_back(a);
+                self.menu.press_queue.push_back(a);
             }
             if p.left > 0.0 {
                 return (Actions::default(), false);
             }
-            let p = self.press.take().unwrap();
+            let p = self.menu.press.take().unwrap();
             return (
                 Actions {
                     confirm: p.confirm,
@@ -1006,10 +1047,10 @@ impl App {
             );
         }
         // 붙잡은 동안 쌓인 입력부터(이번 틱의 것은 뒤로).
-        let a = match self.press_queue.pop_front() {
+        let a = match self.menu.press_queue.pop_front() {
             Some(q) => {
                 if is_edge(&a) {
-                    self.press_queue.push_back(a);
+                    self.menu.press_queue.push_back(a);
                 }
                 q
             }
@@ -1022,13 +1063,13 @@ impl App {
         let popup = scene.is_popup();
         let tapped = a
             .tap
-            .and_then(|p| self.hits.iter().find(|(r, _)| r.contains(p)))
+            .and_then(|p| self.menu.hits.iter().find(|(r, _)| r.contains(p)))
             .filter(|(r, h)| press_shows(popup, *h, *r))
             .map(|(r, _)| *r);
         if !(a.confirm || tapped.is_some()) {
             return (a, false);
         }
-        self.press = Some(Press {
+        self.menu.press = Some(Press {
             left: PRESS_HOLD,
             confirm: a.confirm,
             tap: a.tap,
@@ -1047,12 +1088,12 @@ impl App {
 
     fn tick_scene(&mut self, mut a: Actions) {
         // 알림은 어느 장면에서나 줄어든다(가게의 "잔불이 모자란다"가 떠날 때까지 남았다).
-        if let Some((_, t)) = &mut self.toast {
+        if let Some((_, t)) = &mut self.notice.toast {
             *t -= TICK_DT;
         }
-        self.toast = self.toast.take().filter(|(_, t)| *t > 0.0);
-        if self.toast.is_none() && !self.toast_wait.is_empty() {
-            self.toast = Some((self.toast_wait.remove(0), TOAST_TIME));
+        self.notice.toast = self.notice.toast.take().filter(|(_, t)| *t > 0.0);
+        if self.notice.toast.is_none() && !self.notice.toast_wait.is_empty() {
+            self.notice.toast = Some((self.notice.toast_wait.remove(0), TOAST_TIME));
         }
         if a.dev_overlay {
             self.dev_overlay = !self.dev_overlay;
@@ -1310,23 +1351,25 @@ impl App {
         let overlay = self.input.overlay().filter(|_| in_shaft.is_none());
         // 눌린 꼴(0207): 키·패드 확인은 고른 줄·단추가 그리고(`Ui::press`), 탭은 누른 자리에 덧그린다.
         let pressing = self
+            .menu
             .press
             .map(|p| (p.left / PRESS_HOLD).clamp(0.0, 1.0).sqrt());
-        self.ui.press = match self.press {
+        self.ui.press = match self.menu.press {
             Some(p) if p.rect.is_none() => pressing.unwrap_or(0.0),
             _ => 0.0,
         };
         self.ui.pressed_drawn.set(false);
         let cursor_row = self
+            .menu
             .hits
             .iter()
-            .find(|(_, h)| *h == Hit::Row(self.cursor))
+            .find(|(_, h)| *h == Hit::Row(self.menu.cursor))
             .map(|(r, _)| *r);
-        self.hits.clear();
+        self.menu.hits.clear();
         if in_shaft.is_none() {
             self.draw_layered(&f, self.scene());
         }
-        if let (Some(p), Some(k)) = (self.press, pressing) {
+        if let (Some(p), Some(k)) = (self.menu.press, pressing) {
             // 줄 표가 아닌 화면(칸 격자 등)에서 키로 눌렀으면 고른 줄의 자리에, 탭이면 누른 자리에.
             let at = p
                 .rect
@@ -1452,7 +1495,7 @@ impl App {
                 } else {
                     // 튜토리얼의 힌트 판(0167·0171) — 싸움 화면에서만, 창 밑에서는 그리지 않는다.
                     let hint = self.tutor_hint().filter(|_| scene == Scene::Play);
-                    let hint = hint.as_ref().map(|h| (h, self.tutor.fresh));
+                    let hint = hint.as_ref().map(|h| (h, self.this_run.tutor.fresh));
                     let o = hud::Opts {
                         under_menu: false,
                         edge,
@@ -1483,11 +1526,11 @@ impl App {
             Scene::Ask(k) => self.draw_ask(f, k),
             Scene::Controls => self.draw_controls(f),
             Scene::Status { host } => self.draw_status(f, host),
-            Scene::Equip { host } => self.draw_equip(f, host, self.cursor, None),
-            Scene::Skills { host } => self.draw_skills(f, self.cursor, host),
+            Scene::Equip { host } => self.draw_equip(f, host, self.menu.cursor, None),
+            Scene::Skills { host } => self.draw_skills(f, self.menu.cursor, host),
             Scene::SkillAct => self.draw_skill_act(f),
             Scene::Codex { host, tab } => self.draw_codex(f, host, tab as usize),
-            Scene::Bag { host } => self.draw_bag(f, host, self.cursor),
+            Scene::Bag { host } => self.draw_bag(f, host, self.menu.cursor),
             Scene::BagAct => self.draw_bag_act(f),
             Scene::Shop => self.draw_shop(f),
             Scene::Settings { host } => self.draw_settings(f, host),
@@ -1542,7 +1585,7 @@ impl App {
 
     /// 알림(0064 M3): 화면 위 가운데, 끝 0.6초에 옅어진다.
     fn draw_toast(&self, f: &Frame) {
-        if let Some((text, t)) = &self.toast {
+        if let Some((text, t)) = &self.notice.toast {
             let a = (t / 0.6).min(1.0);
             let cx = f.ox + f.w * 0.5;
             self.ui.text_center(

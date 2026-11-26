@@ -63,7 +63,7 @@ impl App {
         let w = self.window_geo(f);
         let heads = self
             .ui
-            .window(w.panel, w.k, tabs, active, purse, &mut self.tab_strip);
+            .window(w.panel, w.k, tabs, active, purse, &mut self.tab.tab_strip);
         // 튜토리얼이 가리키는 탭(0209): 탭 머리의 오른쪽 위에 반짝이는 별.
         // 굴린 탭 줄(0232)에서 가려진 탭이면 그 쪽 화살에.
         let shown = |i: usize| -> Option<Rect> {
@@ -83,9 +83,10 @@ impl App {
                 .sparkle(vec2(r.x + r.w - w.s * 3.0, r.y + w.s * 3.0), w.s * 4.0);
         }
         let x = self.ui.close(w.panel);
-        self.hits.push((x, Hit::Close));
+        self.menu.hits.push((x, Hit::Close));
         if heads.len() > 1 {
-            self.hits
+            self.menu
+                .hits
                 .extend(heads.into_iter().enumerate().map(|(i, r)| (r, Hit::Tab(i))));
         }
         w

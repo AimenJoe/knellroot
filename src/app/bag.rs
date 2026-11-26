@@ -387,7 +387,7 @@ impl App {
         self.progress.embers = self.world.embers();
         self.progress.settle_items();
         self.snd(crate::sfx::Id::Recall);
-        self.toast = Some((
+        self.notice.toast = Some((
             fill(
                 s().toast_tidy,
                 &[&ids.len().to_string(), &embers.to_string()],
@@ -429,19 +429,19 @@ impl App {
         self.note_ground();
         self.progress.settle_items();
         self.snd(crate::sfx::Id::UiMove);
-        self.toast = Some((fill(s().toast_put_down, &[&name]), TOAST_TIME));
+        self.notice.toast = Some((fill(s().toast_put_down, &[&name]), TOAST_TIME));
         self.persist();
     }
 
     /// 가방 한 틱: 뒤로·✕·창 밖 = 닫기, 십자·스틱 = 칸, 확인(또는 고른 칸 다시 누르기) = 그 아이템의 작은 목록 · 여벌 정리.
     pub(super) fn tick_bag(&mut self, a: &Actions, host: Host) {
         let mut a = *a;
-        let before = self.cursor;
+        let before = self.menu.cursor;
         // 격자는 굴리지 않는다 — 휠·끌기는 어디서든 오른쪽 상세 칸을.
         if a.wheel != 0 || a.drag != 0.0 {
             let line = self.ui.u(tabs::LH_BODY).max(1.0);
-            self.scroll = super::equip::pane_step(
-                self.scroll,
+            self.tab.scroll = super::equip::pane_step(
+                self.tab.scroll,
                 0.0,
                 TICK_DT,
                 a.wheel,
@@ -461,8 +461,8 @@ impl App {
         let ids = self.bag_entries();
         let n = cells(ids.len());
         let tidy = host.edits();
-        self.cursor = nav(
-            self.cursor.min(if tidy { n } else { n - 1 }),
+        self.menu.cursor = nav(
+            self.menu.cursor.min(if tidy { n } else { n - 1 }),
             a.menu_up as i32 - a.menu_down as i32,
             a.menu_right as i32 - a.menu_left as i32,
             n,
@@ -471,26 +471,26 @@ impl App {
         // 터치·마우스: 다른 칸을 누르면 고르기만, 고른 칸을 다시 누르면 확인(장비 탭과 같은 두 걸음).
         let pick = match tap {
             Some(Hit::Row(i)) => {
-                let again = self.cursor == i;
-                self.cursor = i;
+                let again = self.menu.cursor == i;
+                self.menu.cursor = i;
                 again
             }
             _ => a.confirm,
         };
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
         if !pick {
             return;
         }
-        if self.cursor >= n {
+        if self.menu.cursor >= n {
             if self.tidy_count().0 == 0 {
-                self.toast = Some((s().toast_tidy_none.to_string(), 1.6));
+                self.notice.toast = Some((s().toast_tidy_none.to_string(), 1.6));
                 self.snd(crate::sfx::Id::Deny);
             } else {
                 self.ask(flow::Ask::Tidy);
             }
-        } else if ids.get(self.cursor).is_some() {
+        } else if ids.get(self.menu.cursor).is_some() {
             self.go(Go::Open(Scene::BagAct));
         } else {
             // 빈 칸(오른쪽이 가방의 규칙을 말한다).
@@ -550,13 +550,13 @@ impl App {
                 } else {
                     s.toast_unkept
                 };
-                self.toast = Some((fill(line, &[&name]), 1.6));
+                self.notice.toast = Some((fill(line, &[&name]), 1.6));
                 self.persist();
             }
             Do::Drop => self.put_down(id),
             Do::Salvage => self.ask(flow::Ask::Salvage(id)),
             Do::Away => {
-                self.toast = Some((s.toast_bag_away.to_string(), 1.4));
+                self.notice.toast = Some((s.toast_bag_away.to_string(), 1.4));
                 self.snd(crate::sfx::Id::Deny);
             }
             Do::Don | Do::Doff => {}
@@ -564,7 +564,7 @@ impl App {
         // 끼면 차례가 그대로여도 낀 표지가 옮겨 간다 — 커서는 그 아이템을 따라간다(내려놓았으면 그 자리).
         if let Some(to) = self.bag_entries().iter().position(|x| *x == id) {
             if matches!(self.scene(), Scene::Bag { .. }) {
-                self.cursor = to;
+                self.menu.cursor = to;
             }
         }
     }
@@ -625,7 +625,7 @@ impl App {
                         draw_rectangle(x, y, d + 2.0, d + 2.0, Color::new(0.10, 0.07, 0.08, 1.0));
                         draw_rectangle(x + 1.0, y + 1.0, d, d, AMBER);
                     }
-                    self.hits.push((r, Hit::Row(i)));
+                    self.menu.hits.push((r, Hit::Row(i)));
                     continue;
                 }
                 BagCell::Item {
@@ -694,7 +694,7 @@ impl App {
                     self.ui.edge(r, u, ink);
                 }
             }
-            self.hits.push((r, Hit::Row(i)));
+            self.menu.hits.push((r, Hit::Row(i)));
         }
         // 아래 한 줄: 수(가득이면 호박색) · 화로면 여벌 정리.
         let count = fill(
@@ -720,7 +720,7 @@ impl App {
                 tk,
                 ink,
             );
-            self.hits.push((r, Hit::Row(n)));
+            self.menu.hits.push((r, Hit::Row(n)));
         }
 
         // 오른쪽: 고른 것.
@@ -837,12 +837,12 @@ impl App {
         let Scene::Bag { host } = under.scene else {
             return;
         };
-        let (cursor, view) = (self.cursor, self.view);
-        (self.cursor, self.view) = (under.cursor, under.view);
+        let (cursor, view) = (self.menu.cursor, self.menu.view);
+        (self.menu.cursor, self.menu.view) = (under.cursor, under.view);
         self.draw_layered(f, under.scene);
-        (self.cursor, self.view) = (cursor, view);
+        (self.menu.cursor, self.menu.view) = (cursor, view);
         // 작은 창은 누를 자리를 제 줄과 창 밖만 남긴다(묻는 창과 같다).
-        self.hits.clear();
+        self.menu.hits.clear();
         #[cfg(feature = "dev")]
         crate::ui::check::forget();
         let s = s();
@@ -924,7 +924,9 @@ impl App {
         self.ui.panel(panel, None);
         self.ui.edge(panel, u, AMBER);
         let area = Rect::new(x + u * 3.0, y + u * 4.0, pw - u * 6.0, ph - u * 8.0);
-        let hits = self.ui.list(&rows, self.cursor, &mut self.view, area);
+        let hits = self
+            .ui
+            .list(&rows, self.menu.cursor, &mut self.menu.view, area);
         self.push_hits(&hits);
         self.push_outside(panel);
     }

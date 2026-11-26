@@ -44,9 +44,14 @@ impl App {
     /// 위아래·굴리기·줄 누르기 = 고르기(고름은 보기만 — 할 일 없음).
     pub(super) fn tick_codex(&mut self, a: &Actions, host: Host, tab: usize) {
         let mut a = self.small_strip_input(a);
-        let before = self.cursor;
+        let before = self.menu.cursor;
         let u = self.ui.u(1.0);
-        tabs::turn_by_hand(&mut a, self.codex_view.rect, &mut self.codex_view.yaw, u);
+        tabs::turn_by_hand(
+            &mut a,
+            self.tab.codex_view.rect,
+            &mut self.tab.codex_view.yaw,
+            u,
+        );
         self.pane_scroll_lines(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
@@ -75,9 +80,9 @@ impl App {
         }
         let n = self.codex_len(tab);
         let picked = self.menu_pick(a, n);
-        if self.cursor != before {
-            self.scroll = 0.0;
-            self.codex_view = CodexView::default();
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
+            self.tab.codex_view = CodexView::default();
         }
         // 0265: 적힌·얻은 칸의 보상은 확인 = 받기(여정과 같다 — 멈춤에서도). 받을 것이 없는 줄의 확인은 아무 일도 없다(보기만).
         if let Some(i) = picked {
@@ -136,7 +141,7 @@ impl App {
         self.world.earn(b.embers);
         self.progress.embers = self.world.embers();
         self.snd(crate::sfx::Id::Chest);
-        self.toast = Some((
+        self.notice.toast = Some((
             fill(s().toast_codex_took, &[tr(b.name), &b.embers.to_string()]),
             TOAST_TIME,
         ));
@@ -180,7 +185,7 @@ impl App {
         // 0242(사장 설문 23-9 "짧은 이름의 버튼도 누르기 쉽게 최소 넓이"): 칸은 `GROUP_MIN_W` 이상, 글은 칸 가운데.
         let cws: Vec<f32> = tws.iter().map(|tw| tw.max(GROUP_MIN_W * u)).collect();
         let (at, view) = ui::strip_tabs(
-            &mut self.small_strip,
+            &mut self.tab.small_strip,
             &cws,
             x0 + arrow,
             x1 - arrow,
@@ -190,7 +195,7 @@ impl App {
             0.0,
             tab,
         );
-        let (more_l, more_r) = self.small_strip.more();
+        let (more_l, more_r) = self.tab.small_strip.more();
         let ink = |more: bool| if view.is_some() && more { INK } else { DIM };
         self.ui.text("◀", x0, ty, tk, ink(more_l));
         self.ui
@@ -228,7 +233,7 @@ impl App {
                     AMBER,
                 );
             }
-            self.hits.push((
+            self.menu.hits.push((
                 Rect::new(x - u * 5.0, w.origin.y, cw + u * 10.0, GROUP_H * u),
                 Hit::Cell(1, i),
             ));
@@ -256,7 +261,7 @@ impl App {
                 }
             })
             .collect();
-        let cursor = self.cursor.min(rows.len().saturating_sub(1));
+        let cursor = self.menu.cursor.min(rows.len().saturating_sub(1));
         self.draw_left_list(&w, &rows, GROUP_H);
         // 오른쪽: 고른 것.
         let t = get_time() as f32;
@@ -276,9 +281,9 @@ impl App {
             let ink = if seen { AMBER } else { INK };
             self.ui.text(&fit, p.x, p.y, tabs::K_NAME * k, ink);
             let pic = w.rect(tabs::RIGHT_X, PIC_TOP, tabs::RIGHT_W, PIC_H);
-            let spin = self.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin());
+            let spin = self.tab.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin());
             self.renderer.draw_creature(e.kind, pic, spin, t, !seen);
-            self.codex_view.rect = Some(pic);
+            self.tab.codex_view.rect = Some(pic);
             lines.extend(self.pane_wrap(&w, &fill(s.codex_place, &[tr(e.place)]), PLACE));
             lines.push(Ln::Gap);
             if seen {
@@ -326,7 +331,7 @@ impl App {
                 ITEM_PIC,
                 ITEM_PIC,
             );
-            self.codex_view.rect = None;
+            self.tab.codex_view.rect = None;
             // 무기는 종류부터(0272 — "한손검 · 순례자의 검" + 그 종류의 주특성): 못 얻은 무기도 종류는 보인다(실루엣과 같은 몫).
             if let crate::item_view::Item::Weapon(id) = d.item {
                 let name = if d.owned { tr(d.name) } else { s.codex_unknown };
@@ -342,8 +347,8 @@ impl App {
             }
             if d.owned {
                 if crate::item_view::has_view(d.item) {
-                    self.draw_pane_item_turned(d.item, icon, self.codex_view.yaw);
-                    self.codex_view.rect = Some(icon);
+                    self.draw_pane_item_turned(d.item, icon, self.tab.codex_view.yaw);
+                    self.tab.codex_view.rect = Some(icon);
                 }
                 lines.extend(self.pane_wrap(&w, tr(d.desc), DIM));
                 if let Some(flavor) = d.flavor {
@@ -362,9 +367,9 @@ impl App {
                         side,
                     );
                     let t = get_time() as f32;
-                    let spin = self.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin());
+                    let spin = self.tab.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin());
                     self.renderer.draw_item_shadow(d.item, dest, spin);
-                    self.codex_view.rect = Some(icon);
+                    self.tab.codex_view.rect = Some(icon);
                 } else {
                     self.ui.text_center(
                         "?",

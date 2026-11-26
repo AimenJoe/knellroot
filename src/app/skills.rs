@@ -1318,10 +1318,10 @@ impl App {
 
     /// 보이는 판을 바꾼다: 격자 창·줄의 열림 연출은 판마다 처음부터(줄 띠가 다르다).
     pub(super) fn set_plate(&mut self, p: Plate) {
-        if self.skill_plate != p {
-            self.skill_plate = p;
-            self.view = ui::ListView::default();
-            self.skill_rows.reset();
+        if self.tab.skill_plate != p {
+            self.tab.skill_plate = p;
+            self.menu.view = ui::ListView::default();
+            self.tab.skill_rows.reset();
         }
     }
 
@@ -1330,20 +1330,20 @@ impl App {
         let p = self.held_plates().0.unwrap_or(Plate::Body);
         self.set_plate(p);
         // 판 줄은 처음부터 — 그 판이 보이게(손으로 굴려 둔 창을 이어 가지 않는다, 0275).
-        self.plate_strip = ui::Strip::default();
-        self.cursor = first_focus_on(p, &self.board(), self.progress.skill_points(), edit);
+        self.tab.plate_strip = ui::Strip::default();
+        self.menu.cursor = first_focus_on(p, &self.board(), self.progress.skill_points(), edit);
     }
 
     /// 커서의 칸이 보이는 판에 없으면(성장 탭의 기술 줄에서 넘어온 칸 등) 그 칸이 서는 판으로 — 든 무기 · 부무기의 판 먼저.
     pub(super) fn sync_plate(&mut self) {
-        self.sync_plate_at(self.cursor);
+        self.sync_plate_at(self.menu.cursor);
     }
 
     fn sync_plate_at(&mut self, cursor: usize) {
         let Some(&e) = ENTRIES.get(cursor) else {
             return;
         };
-        if !self.skill_plate.has(e) {
+        if !self.tab.skill_plate.has(e) {
             let (main, sub) = self.held_plates();
             let prefer: Vec<Plate> = [main, sub].into_iter().flatten().collect();
             self.set_plate(plates::home(e, &prefer));
@@ -1355,15 +1355,15 @@ impl App {
     pub(super) fn tick_skills(&mut self, a: &Actions, edit: bool) {
         self.sync_plate();
         // 판 줄이 넘쳐 굴리는 동안(0275) 그 위의 끌기·휠은 판 줄을.
-        let mut a = super::strip_input(&mut self.plate_strip, a);
-        let before = self.cursor;
+        let mut a = super::strip_input(&mut self.tab.plate_strip, a);
+        let before = self.menu.cursor;
         // 휠·끌기: 격자 위에서는 격자 창을(0163), 상세 칸 위에서는 그 칸을 굴린다(오른쪽 스틱은 늘 상세 칸).
         self.grid_scroll(&mut a);
         self.pane_scroll(&mut a);
         let a = &a;
         let tap = a.tap.and_then(|p| self.hit_at(p));
         if let Some(Hit::Scroll(d)) = tap {
-            self.view.nudge(0.0, d, geo::WHEEL * 2.0);
+            self.menu.view.nudge(0.0, d, geo::WHEEL * 2.0);
             return;
         }
         if a.back || a.pause || tap == Some(Hit::Close) {
@@ -1372,12 +1372,12 @@ impl App {
         }
         // 판 줄의 판을 눌렀다: 그 판으로, 커서는 판 줄에(상세가 그 판을 말한다).
         if let Some(Hit::Cell(1, p)) = tap {
-            if self.cursor < NE {
-                self.respec_from = self.cursor;
+            if self.menu.cursor < NE {
+                self.tab.respec_from = self.menu.cursor;
             }
             self.set_plate(PLATES[p.min(PLATES.len() - 1)]);
-            self.cursor = STRIP;
-            self.scroll = 0.0;
+            self.menu.cursor = STRIP;
+            self.tab.scroll = 0.0;
             return;
         }
         let (dx, dy) = (
@@ -1385,75 +1385,75 @@ impl App {
             a.menu_down as i32 - a.menu_up as i32,
         );
         // 판 줄에서 옆 = 판 바꾸기(가장자리에서 돌지 않는다).
-        if self.cursor == STRIP && dx != 0 && dy == 0 {
-            let i = self.skill_plate.index() as i32 + dx;
+        if self.menu.cursor == STRIP && dx != 0 && dy == 0 {
+            let i = self.tab.skill_plate.index() as i32 + dx;
             if (0..PLATES.len() as i32).contains(&i) {
                 self.set_plate(PLATES[i as usize]);
             }
             return;
         }
         // 판 줄에서 확인 = 격자로(아래 걸음과 같다).
-        let (dy, confirm_strip) = if self.cursor == STRIP && a.confirm {
+        let (dy, confirm_strip) = if self.menu.cursor == STRIP && a.confirm {
             (1, true)
         } else {
             (dy, false)
         };
-        self.cursor = walk(
-            self.skill_plate,
-            self.cursor.min(STRIP),
+        self.menu.cursor = walk(
+            self.tab.skill_plate,
+            self.menu.cursor.min(STRIP),
             dx,
             dy,
             edit,
-            self.respec_from,
+            self.tab.respec_from,
         );
         // 격자를 떠난 칸을 기억한다 — 단추에서 위·판 줄에서 아래로 가면 거기로(0261).
-        if self.cursor >= NE && before < NE {
-            self.respec_from = before;
+        if self.menu.cursor >= NE && before < NE {
+            self.tab.respec_from = before;
         }
         // 십자로 옮긴 커서는 창을 끈다 — 손가락으로 고른 칸은 이미 보이니 창을 옮기지 않는다(둘째 탭이 같은 자리에 닿게, 0076).
-        if self.cursor != before && self.cursor < NE {
-            let (y0, y1) = reveal_span(self.skill_plate, self.cursor);
-            self.view.reveal(y0, y1);
+        if self.menu.cursor != before && self.menu.cursor < NE {
+            let (y0, y1) = reveal_span(self.tab.skill_plate, self.menu.cursor);
+            self.menu.view.reveal(y0, y1);
         }
         if confirm_strip {
-            self.scroll = 0.0;
+            self.tab.scroll = 0.0;
             return;
         }
         // 터치·마우스: 다른 칸은 고르기만, 고른 칸을 다시 누르면 확인(장비 창과 같은 두 걸음). 단추는 한 번에.
         let confirm = match tap {
             Some(Hit::Cell(0, i)) => {
-                let again = self.cursor == i || i == RESPEC;
-                if i == RESPEC && self.cursor < NE {
-                    self.respec_from = self.cursor;
+                let again = self.menu.cursor == i || i == RESPEC;
+                if i == RESPEC && self.menu.cursor < NE {
+                    self.tab.respec_from = self.menu.cursor;
                 }
-                self.cursor = i;
+                self.menu.cursor = i;
                 again
             }
             _ => a.confirm,
         };
-        if self.cursor != before {
-            self.scroll = 0.0;
+        if self.menu.cursor != before {
+            self.tab.scroll = 0.0;
         }
-        if !confirm || self.cursor == STRIP {
+        if !confirm || self.menu.cursor == STRIP {
             return;
         }
-        if self.cursor >= NE {
+        if self.menu.cursor >= NE {
             return self.pick_respec(edit);
         }
-        let acts = self.acts_at(self.cursor, edit);
+        let acts = self.acts_at(self.menu.cursor, edit);
         if acts.iter().all(|d| matches!(d, Do::Away | Do::Unfit)) {
             // 할 수 있는 일이 없다 — 까닭을 상태 줄 자리에 한 번 밝게(0173: 소리만으로는 왜 안 되는지 몰랐다).
-            let why = match (acts.is_empty(), ENTRIES.get(self.cursor)) {
+            let why = match (acts.is_empty(), ENTRIES.get(self.menu.cursor)) {
                 (false, Some(&Entry::Skill(_))) if acts.contains(&Do::Unfit) => unfit_toast(),
                 (false, _) => s().toast_away.to_string(),
                 (true, Some(&e)) => {
                     let total = self.progress.skill_points();
-                    state_line(self.skill_plate, &self.board(), total, e, edit).0
+                    state_line(self.tab.skill_plate, &self.board(), total, e, edit).0
                 }
                 (true, None) => String::new(),
             };
             if !why.is_empty() {
-                self.toast = Some((why, ALERT));
+                self.notice.toast = Some((why, ALERT));
             }
             self.snd(crate::sfx::Id::Deny);
             return;
@@ -1464,12 +1464,13 @@ impl App {
     /// 격자 굴리기(0163): 휠·끌기가 격자의 보이는 자리(`Hit::Field` — 칸 위도 그 안이다)에서 일어났으면 격자 창을 옮긴다.
     fn grid_scroll(&mut self, a: &mut Actions) {
         let over = a.point.is_some_and(|p| {
-            self.hits
+            self.menu
+                .hits
                 .iter()
                 .any(|(r, h)| *h == Hit::Field && r.contains(p))
         });
         if over && (a.wheel != 0 || a.drag != 0.0) {
-            self.view.nudge(a.drag, a.wheel, geo::WHEEL);
+            self.menu.view.nudge(a.drag, a.wheel, geo::WHEEL);
             (a.wheel, a.drag) = (0, 0.0);
         }
     }
@@ -1485,8 +1486,8 @@ impl App {
             (0, 0.0)
         };
         let line = self.ui.u(LH_RANK).max(1.0);
-        self.scroll = super::equip::pane_step(
-            self.scroll,
+        self.tab.scroll = super::equip::pane_step(
+            self.tab.scroll,
             a.aim.y,
             TICK_DT,
             wheel,
@@ -1516,7 +1517,7 @@ impl App {
             return Vec::new();
         };
         node_acts(
-            self.skill_plate,
+            self.tab.skill_plate,
             &self.board(),
             self.progress.skill_points(),
             &self.kits(),
@@ -1537,10 +1538,10 @@ impl App {
         if !edit || self.dev_board_on() {
             self.snd(crate::sfx::Id::Deny);
         } else if board.spent() == 0 {
-            self.toast = Some((s.board_respec_none.to_string(), ALERT));
+            self.notice.toast = Some((s.board_respec_none.to_string(), ALERT));
             self.snd(crate::sfx::Id::Deny);
         } else if self.world.embers() < board.respec_cost() {
-            self.toast = Some((s.shop_poor.to_string(), ALERT));
+            self.notice.toast = Some((s.shop_poor.to_string(), ALERT));
             self.snd(crate::sfx::Id::Deny);
         } else {
             self.ask(flow::Ask::Respec);
@@ -1583,7 +1584,7 @@ impl App {
                 self.after_wear();
             }
             (Do::Unfit, Entry::Skill(_)) => {
-                self.toast = Some((unfit_toast(), ALERT));
+                self.notice.toast = Some((unfit_toast(), ALERT));
                 self.snd(crate::sfx::Id::Deny);
             }
             (Do::WearUlt, Entry::Ult(u)) => {
@@ -1621,7 +1622,7 @@ impl App {
                 self.after_wear();
             }
             (Do::Away, _) => {
-                self.toast = Some((s().toast_away.to_string(), ALERT));
+                self.notice.toast = Some((s().toast_away.to_string(), ALERT));
                 self.snd(crate::sfx::Id::Deny);
             }
             _ => {}
@@ -1642,7 +1643,7 @@ impl App {
         let Some(&e) = ENTRIES.get(i) else { return };
         let total = self.progress.skill_points();
         // 보이는 판의 셈으로(0270 C2 — 무기 판은 그 판의 줄): 단·기록은 같은 판(`Board`)에 남는다.
-        if !plates::buy_on(self.skill_plate, &mut self.progress.board, e, total) {
+        if !plates::buy_on(self.tab.skill_plate, &mut self.progress.board, e, total) {
             self.snd(crate::sfx::Id::Deny);
             return;
         }
@@ -1680,7 +1681,7 @@ impl App {
                 fill(s().toast_rank, &[name, &rank])
             }
         };
-        self.toast = Some((text, ALERT));
+        self.notice.toast = Some((text, ALERT));
         self.apply_board();
         self.persist();
     }
@@ -1699,7 +1700,7 @@ impl App {
         self.progress.embers = self.world.embers();
         self.progress.ult = great;
         self.snd(crate::sfx::Id::Buy);
-        self.toast = Some((s().toast_respec.to_string(), ALERT));
+        self.notice.toast = Some((s().toast_respec.to_string(), ALERT));
         self.apply_board();
         self.persist();
     }
@@ -1738,7 +1739,7 @@ impl App {
     /// 밑) 그 커서의 판을 맞추고 줄의 열림을 본다(`RowFades::note`). 그리기는 읽기만 한다.
     pub(super) fn ready_skill_rows(&mut self) {
         let cursor = match (self.scene(), self.stack.under()) {
-            (Scene::Skills { .. }, _) => self.cursor,
+            (Scene::Skills { .. }, _) => self.menu.cursor,
             (Scene::SkillAct | Scene::Ask(_), Some(e))
                 if matches!(e.scene, Scene::Skills { .. }) =>
             {
@@ -1747,8 +1748,8 @@ impl App {
             _ => return,
         };
         self.sync_plate_at(cursor);
-        let open = skill_rows(self.skill_plate, &self.board()).open;
-        self.skill_rows.note(open, self.clock);
+        let open = skill_rows(self.tab.skill_plate, &self.board()).open;
+        self.tab.skill_rows.note(open, self.clock);
     }
 
     pub(super) fn draw_skills(&mut self, f: &Frame, at: usize, host: flow::Host) {
@@ -1798,7 +1799,7 @@ impl App {
         let (x0, x1) = (w.at(0.0, 0.0).x, w.at(geo::GRID_W, 0.0).x);
         let h = (geo::STRIP_H - 3.0) * u;
         let (cells, view) = ui::strip_tabs(
-            &mut self.plate_strip,
+            &mut self.tab.plate_strip,
             &widths,
             x0,
             x1,
@@ -1806,7 +1807,7 @@ impl App {
             h,
             STRIP_GAP * u,
             arrow,
-            self.skill_plate.index(),
+            self.tab.skill_plate.index(),
         );
         if let Some(v) = view {
             // 포커스의 테(칸 밖으로 한 칸)가 창 끝에서 잘리지 않을 만큼만 넓혀 자른다.
@@ -1825,7 +1826,7 @@ impl App {
                 Some(v) => x >= v.x - 0.5 && x + cw <= v.x + v.w + 0.5,
                 None => true,
             };
-            let shown = p == self.skill_plate;
+            let shown = p == self.tab.skill_plate;
             if shown {
                 draw_rectangle(r.x, r.y, r.w, r.h, ui::PANEL_LIGHT);
                 draw_rectangle(r.x, r.y + r.h - u, r.w, u.max(1.0), AMBER);
@@ -1859,11 +1860,11 @@ impl App {
                 }
                 None => r,
             };
-            self.hits.push((hit, Hit::Cell(1, i)));
+            self.menu.hits.push((hit, Hit::Cell(1, i)));
         }
         if let Some(v) = view {
             ui::clip(None);
-            let (l, r) = self.plate_strip.more();
+            let (l, r) = self.tab.plate_strip.more();
             let ink = |more: bool| if more { INK } else { Color { a: 0.35, ..DIM } };
             let ty = w.origin.y + (h - self.ui.px(tk)) * 0.5;
             self.ui.text_center("◀", x0 + arrow * 0.5, ty, tk, ink(l));
@@ -1876,7 +1877,7 @@ impl App {
     fn draw_skill_grid(&mut self, w: &Window, board: &Board, total: u32, at: usize) {
         let s = s();
         let (k, u) = (w.k, w.s);
-        let plate = self.skill_plate;
+        let plate = self.tab.skill_plate;
         self.draw_plate_strip(w, at);
         // 갈래 머리: 몸의 판 = 이름(금빛) + 한 줄, 무기 판 = 대표 타입 둘(그 타입의 빛 `status::INK`)과 가운데 "그 밖".
         let head = geo::STRIP_H;
@@ -1912,10 +1913,10 @@ impl App {
         }
         // 굴리는 자리(0163): 갈래 머리 아래 ~ 몸의 끝. 내용(띠)이 넘치면 창을 옮겨 본다 — 처음 그릴 때는 커서 칸이 보이게.
         let room = w.body_h - geo::TOP;
-        let (mut off, fresh) = self.view.span(room, geo::content_h(plate), u);
+        let (mut off, fresh) = self.menu.view.span(room, geo::content_h(plate), u);
         if fresh && at < NE {
             let (y0, y1) = reveal_span(plate, at);
-            off = self.view.reveal(y0, y1);
+            off = self.menu.view.reveal(y0, y1);
         }
         let port = w.rect(0.0, geo::TOP, geo::GRID_W, room);
         let (port_top, port_bottom) = (port.y, port.y + port.h);
@@ -1931,7 +1932,7 @@ impl App {
         for (row, &need) in needs.iter().enumerate() {
             let open = open_mask & (1 << row) != 0;
             // 열린 줄: 열린 뒤 `ROW_FADE`초 동안만 걷히며 보이고 그 뒤엔 없다.
-            let fade = self.skill_rows.fade(row, open, self.clock);
+            let fade = self.tab.skill_rows.fade(row, open, self.clock);
             if fade <= 0.0 {
                 continue;
             }
@@ -2066,7 +2067,7 @@ impl App {
         }
         ui::clip(None);
         // 더 있다는 표시(▲▼ — 누르면 한 걸음): 격자의 오른쪽 끝, 위·아래. 누를 자리는 칸보다 먼저.
-        let (above, below) = self.view.span_more();
+        let (above, below) = self.menu.view.span_more();
         let mk = 0.6 * k;
         let (mw, mh) = (self.ui.width("▲", mk), self.ui.px(mk));
         let mx = w.at(geo::GRID_W, 0.0).x - mw;
@@ -2077,14 +2078,14 @@ impl App {
             if on {
                 self.ui.text(glyph, mx, y, mk, AMBER);
                 let pad = u * 5.0;
-                self.hits.push((
+                self.menu.hits.push((
                     Rect::new(mx - pad, y - pad, mw + pad * 2.0, mh + pad * 2.0),
                     Hit::Scroll(d),
                 ));
             }
         }
-        self.hits.extend(cells);
-        self.hits.push((port, Hit::Field));
+        self.menu.hits.extend(cells);
+        self.menu.hits.push((port, Hit::Field));
     }
 
     /// 판의 길(0215 B — 몸의 판): 이어진 칸 사이 선. 둘 다 가졌으면 금빛, 가진 칸에서 아직 안 가진 칸으로 갈 수 있으면 옅은 민트,
@@ -2182,7 +2183,7 @@ impl App {
         let text_x = x0 + geo::DETAIL_ICON + 6.0;
         let text_w = (dw - geo::DETAIL_ICON - 6.0) * u;
         let entry = ENTRIES.get(at).copied();
-        let plate = self.skill_plate;
+        let plate = self.tab.skill_plate;
         let (name, kind, state) = match entry {
             Some(e) => {
                 let (lk, _) = look(plate, board, total, e);
@@ -2253,8 +2254,8 @@ impl App {
         {
             max_first += 1;
         }
-        self.scroll = self.scroll.clamp(0.0, max_first as f32);
-        let first = self.scroll.round() as usize;
+        self.tab.scroll = self.tab.scroll.clamp(0.0, max_first as f32);
+        let first = self.tab.scroll.round() as usize;
         let mut y = top;
         let mut shown = first;
         for b in blocks.iter().skip(first) {
@@ -2278,7 +2279,9 @@ impl App {
                 self.ui.text("▼", ax, ay, 0.7 * k, DIM);
             }
         }
-        self.hits.push((w.rect(x0, top, dw, full - top), Hit::Pane));
+        self.menu
+            .hits
+            .push((w.rect(x0, top, dw, full - top), Hit::Pane));
     }
 
     /// 되돌리기 단추(화로): 창 아래 안내 줄의 오른쪽 끝, 늘 같은 자리(0160 시안의 "되돌리기 · 잔불 55"). 그 자리를 돌려준다.
@@ -2295,7 +2298,7 @@ impl App {
         let cost = self.progress.board.respec_cost().to_string();
         let label = fill(s.sk_respec_button, &[s.board_respec, &cost]);
         self.respec_button(r, &label, at == RESPEC, self.respec_ready(), w.k);
-        self.hits.push((r, Hit::Cell(0, RESPEC)));
+        self.menu.hits.push((r, Hit::Cell(0, RESPEC)));
         r
     }
 
@@ -2347,7 +2350,7 @@ impl App {
         let s = s();
         let u = width / geo::DETAIL_W;
         let wrap = |t: &str, w: f32, tk: f32| ui::wrap(&self.ui, t, w, tk * k);
-        let plate = self.skill_plate;
+        let plate = self.tab.skill_plate;
         // 판 줄(0270 C2): 판이 무엇인지 + 든 무기·부무기의 판이면 그렇다고(금빛 — 판 줄의 표지와 같은 빛).
         if entry.is_none() && at == STRIP {
             let what = match plate {
@@ -2620,12 +2623,12 @@ impl App {
             return;
         };
         let edit = host.edits();
-        let (cursor, view) = (self.cursor, self.view);
-        (self.cursor, self.view) = (under.cursor, under.view);
+        let (cursor, view) = (self.menu.cursor, self.menu.view);
+        (self.menu.cursor, self.menu.view) = (under.cursor, under.view);
         self.draw_layered(f, under.scene);
-        (self.cursor, self.view) = (cursor, view);
+        (self.menu.cursor, self.menu.view) = (cursor, view);
         // 작은 창은 누를 자리를 제 줄과 창 밖만 남긴다(묻는 창과 같다).
-        self.hits.clear();
+        self.menu.hits.clear();
         #[cfg(feature = "dev")]
         crate::ui::check::forget();
         let Some(&e) = ENTRIES.get(under.cursor) else {
@@ -2656,7 +2659,7 @@ impl App {
         let ph = row_h * rows.len() as f32 + u * 8.0;
         // 고른 칸의 오른쪽에(안 들어가면 왼쪽에), 화면 안으로.
         let w = self.window_geo(f);
-        let Some(sp) = spot_on(self.skill_plate, under.cursor) else {
+        let Some(sp) = spot_on(self.tab.skill_plate, under.cursor) else {
             return;
         };
         let (c, half) = (w.at(sp.c.x, sp.c.y - under.view.offset()), sp.half * w.s);
@@ -2692,7 +2695,9 @@ impl App {
         self.ui.panel(panel, None);
         self.ui.edge(panel, u, AMBER);
         let area = Rect::new(x + u * 3.0, y + u * 4.0, pw - u * 6.0, ph - u * 8.0);
-        let hits = self.ui.list(&rows, self.cursor, &mut self.view, area);
+        let hits = self
+            .ui
+            .list(&rows, self.menu.cursor, &mut self.menu.view, area);
         self.push_hits(&hits);
         self.push_outside(panel);
     }

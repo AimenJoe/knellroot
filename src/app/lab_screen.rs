@@ -145,8 +145,8 @@ impl App {
 
     /// 랩 창 한 틱: 탭 넘기기(탭 줄 끌기·휠 · 탭 머리 · LB·RB / Q·E) → 줄 목록. 특수를 쥐고 ◀▶ = 열 걸음.
     pub(super) fn tick_lab(&mut self, mut a: Actions, scene: Scene) {
-        if self.tab_strip.over(a.point) {
-            self.tab_strip.nudge(a.point, a.drag_x, a.wheel);
+        if self.tab.tab_strip.over(a.point) {
+            self.tab.tab_strip.nudge(a.point, a.drag_x, a.wheel);
             (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
         }
         let at = lab_tab(scene);
@@ -201,7 +201,7 @@ impl App {
         );
         let Some(m) = self.menu_of(scene) else { return };
         self.draw_left_list(&w, &m.rows, 0.0);
-        let at = self.cursor.min(m.rows.len().saturating_sub(1));
+        let at = self.menu.cursor.min(m.rows.len().saturating_sub(1));
         match scene {
             Scene::LabGroup { g } => self.draw_lab_value(&w, g as usize, at),
             _ => self.draw_lab_tool(&w, &m, at),

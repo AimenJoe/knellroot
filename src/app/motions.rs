@@ -157,7 +157,9 @@ impl App {
     #[cfg(feature = "dev")]
     pub(super) fn motion_focus(&self, weapon: u8) -> Option<(&'static str, bool)> {
         let w = IDS[weapon as usize % IDS.len()].def();
-        rows(w, &self.t).get(self.cursor).map(|r| (r.anim, r.dash))
+        rows(w, &self.t)
+            .get(self.menu.cursor)
+            .map(|r| (r.anim, r.dash))
     }
 
     /// 모션 보기 한 틱: 뒤로·✕·창 밖 = 나가기, 탭 넘기기·탭 누르기 = 무기, 위아래·굴리기·줄 누르기 = 동작, 좌우 = 돌리기,
@@ -177,25 +179,28 @@ impl App {
         } as u8;
         let w = IDS[to_w as usize % IDS.len()].def();
         let list = rows(w, &self.t);
-        let before = self.cursor;
-        ui::menu_input(&mut self.cursor, list.len(), a.menu_up, a.menu_down);
+        let before = self.menu.cursor;
+        ui::menu_input(&mut self.menu.cursor, list.len(), a.menu_up, a.menu_down);
         let scroll = match tap {
             Some(Hit::Scroll(d)) => d,
             _ => 0,
         };
-        self.view
-            .scroll((a.drag, a.wheel + scroll), &mut self.cursor, list.len());
+        self.menu.view.scroll(
+            (a.drag, a.wheel + scroll),
+            &mut self.menu.cursor,
+            list.len(),
+        );
         if let Some(Hit::Row(i)) = tap {
-            self.cursor = i;
+            self.menu.cursor = i;
         }
-        self.cursor = self.cursor.min(list.len().saturating_sub(1));
+        self.menu.cursor = self.menu.cursor.min(list.len().saturating_sub(1));
         let speed = if a.confirm {
             (speed + 1) % SPEEDS.len() as u8
         } else {
             speed
         };
         let spin = spin.wrapping_add(a.menu_right as i8 - a.menu_left as i8);
-        let restart = to_w != weapon || self.cursor != before;
+        let restart = to_w != weapon || self.menu.cursor != before;
         let t_ms = if restart {
             0
         } else {
@@ -224,13 +229,13 @@ impl App {
         let title = fill(t(dv::MOTION_TITLE), &[weapon_name(id)]);
         let top = self.ui.panel(panel, Some(&title));
         let x = self.ui.close(panel);
-        self.hits.push((x, Hit::Close));
+        self.menu.hits.push((x, Hit::Close));
         let (lx, rx_end) = (panel.x + u * 10.0, panel.x + panel.w - u * 10.0);
         // 무기 탭: 개발 창의 묶음 탭과 같은 꼴 — 넘치면 가로로 굴린다(0257).
         let tab_h = px * 1.6;
         let names: Vec<&str> = IDS.iter().map(|&i| weapon_name(i)).collect();
         let rects = self.ui.button_strip(
-            &mut self.small_strip,
+            &mut self.tab.small_strip,
             &names,
             weapon as usize,
             lx,
@@ -239,7 +244,7 @@ impl App {
             tab_h,
         );
         for (i, r) in rects.into_iter().enumerate() {
-            self.hits.push((r, Hit::Cell(1, i)));
+            self.menu.hits.push((r, Hit::Cell(1, i)));
         }
         let tabs_end = top + tab_h;
         let body = tabs_end + u * 8.0;
@@ -259,8 +264,8 @@ impl App {
             split - lx - u * 4.0,
             hint_y - u * 6.0 - body,
         );
-        let cursor = self.cursor.min(list.len().saturating_sub(1));
-        let hits = self.ui.list(&ui_rows, cursor, &mut self.view, area);
+        let cursor = self.menu.cursor.min(list.len().saturating_sub(1));
+        let hits = self.ui.list(&ui_rows, cursor, &mut self.menu.view, area);
         self.push_hits(&hits);
         let Some(row) = list.get(cursor).copied() else {
             return;

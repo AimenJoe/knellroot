@@ -134,7 +134,7 @@ impl App {
             self.open_plate(self.can_edit(host));
         }
         if let Some(tab) = flow::remembered(scene) {
-            self.pause_tab = tab;
+            self.this_run.pause_tab = tab;
         }
     }
 
@@ -154,8 +154,8 @@ impl App {
             }
             return true;
         }
-        if self.tab_strip.over(a.point) {
-            self.tab_strip.nudge(a.point, a.drag_x, a.wheel);
+        if self.tab.tab_strip.over(a.point) {
+            self.tab.tab_strip.nudge(a.point, a.drag_x, a.wheel);
             (a.drag, a.drag_x, a.wheel) = (0.0, 0.0, 0);
         }
         let scene = self.scene();
@@ -170,7 +170,7 @@ impl App {
             return false;
         }
         self.show(go);
-        self.codex_view = Default::default();
+        self.tab.codex_view = Default::default();
         self.snd(crate::sfx::Id::UiMove);
         true
     }
@@ -275,9 +275,9 @@ impl App {
     pub(super) fn draw_left_list(&mut self, w: &Window, rows: &[ui::Row], top: f32) {
         // 줄은 칸의 오른쪽 끝에서 조금 들여 끝난다 — 그 틈(줄 끝 ~ 세로 선)에 ▲▼가 선다.
         let area = w.rect(0.0, top, LEFT_W - LIST_GUTTER, w.body_h - top);
-        let cursor = self.cursor.min(rows.len().saturating_sub(1));
-        let mut hits = self.ui.list_k(rows, cursor, &mut self.view, area, w.k);
-        let (up, down) = self.view.more(rows.len());
+        let cursor = self.menu.cursor.min(rows.len().saturating_sub(1));
+        let mut hits = self.ui.list_k(rows, cursor, &mut self.menu.view, area, w.k);
+        let (up, down) = self.menu.view.more(rows.len());
         let tk = 0.7 * w.k;
         let ax = w.at(LEFT_W, 0.0).x - self.ui.width("▼", tk) * 0.5;
         for (k, (on, glyph, y)) in [
@@ -333,7 +333,7 @@ impl App {
         let k = K_KIND * w.k;
         let px = w.at(x, 0.0).x;
         let (y1, y2) = (w.at(0.0, 15.0).y, w.at(0.0, 25.0).y);
-        if let Some((t, _)) = &self.toast {
+        if let Some((t, _)) = &self.notice.toast {
             if self.ui.width(t, k) > room {
                 let lines = ui::wrap(&self.ui, t, room, k);
                 let rest = lines.get(1..).map(|l| l.join(" ")).unwrap_or_default();
@@ -346,7 +346,7 @@ impl App {
         }
         let kind = self.ui.fit(kind, room, k);
         self.ui.text(&kind, px, y1, k, DIM);
-        let (state, ink) = match &self.toast {
+        let (state, ink) = match &self.notice.toast {
             Some((t, _)) => (t.clone(), AMBER),
             None => state.clone(),
         };
@@ -406,8 +406,8 @@ impl App {
         while max_first + 1 < lines.len() && heights[max_first..].iter().sum::<f32>() > room + 0.5 {
             max_first += 1;
         }
-        self.scroll = self.scroll.clamp(0.0, max_first as f32);
-        let first = self.scroll.round() as usize;
+        self.tab.scroll = self.tab.scroll.clamp(0.0, max_first as f32);
+        let first = self.tab.scroll.round() as usize;
         let (x0, x1) = (w.at(RIGHT_X, 0.0).x, w.at(RIGHT_X + RIGHT_W, 0.0).x);
         // 넘칠 때만 오른쪽 끝에 굴림 막대 자리를 비운다(0191 — 전에는 ▲▼ 글자였는데 값 바로 옆이라 "올라감 ▲"으로 읽혔다).
         let arrow_w = if max_first > 0 { u * 6.0 } else { 0.0 };
@@ -450,7 +450,8 @@ impl App {
             draw_rectangle(bx, y0, bw, y1 - y0, Color { a: 0.18, ..DIM });
             draw_rectangle(bx, at.round(), bw, len.round(), Color { a: 0.85, ..DIM });
         }
-        self.hits
+        self.menu
+            .hits
             .push((w.rect(RIGHT_X, top, RIGHT_W, room), Hit::Pane));
     }
 
@@ -461,12 +462,13 @@ impl App {
     /// 끌기는 여기서 먹는다(아래 목록·상세가 같이 굴러가지 않게).
     pub(super) fn turn_doll(&mut self, a: &mut Actions) {
         let u = self.ui.u(1.0);
-        turn_by_hand(a, self.doll_rect, &mut self.doll_yaw, u);
+        turn_by_hand(a, self.tab.doll_rect, &mut self.tab.doll_yaw, u);
     }
 
     /// 인형의 지금 각: 손으로 돌렸으면 그 각, 아니면 천천히 좌우로 흔든다.
     pub(super) fn doll_spin(&self) -> f32 {
-        self.doll_yaw
+        self.tab
+            .doll_yaw
             .unwrap_or_else(|| doll_sway(get_time() as f32))
     }
 
@@ -480,8 +482,8 @@ impl App {
             (0, 0.0)
         };
         let line = self.ui.u(LH_BODY).max(1.0);
-        self.scroll = super::equip::pane_step(
-            self.scroll,
+        self.tab.scroll = super::equip::pane_step(
+            self.tab.scroll,
             a.aim.y,
             TICK_DT,
             wheel,

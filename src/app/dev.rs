@@ -439,7 +439,7 @@ impl App {
                 self.dev.run = true;
                 self.restart();
                 // 이 판에 첫 문지기를 이긴 셈 — 내려가는 뿌리 굴(0174)부터 보인다.
-                self.down = 1;
+                self.this_run.down = 1;
                 self.interlude = Some(super::interlude::Interlude::Passage(
                     crate::descent::Passage::new(
                         1,
@@ -454,7 +454,7 @@ impl App {
                 self.dev.run = true;
                 self.restart();
                 // 이 판에 두 문지기를 이긴 셈 — 마을에서 내려가는 뿌리 굴부터.
-                self.down = 2;
+                self.this_run.down = 2;
                 self.cross_to(1, false);
                 self.interlude = Some(super::interlude::Interlude::Passage(
                     crate::descent::Passage::new(
@@ -470,7 +470,7 @@ impl App {
                 self.dev.run = true;
                 self.restart();
                 // 이 판에 세 문지기를 이긴 셈 — 정원에서 내려가는 뿌리 굴부터.
-                self.down = 3;
+                self.this_run.down = 3;
                 self.cross_to(2, false);
                 self.interlude = Some(super::interlude::Interlude::Passage(
                     crate::descent::Passage::new(
@@ -495,7 +495,7 @@ impl App {
             DevStart::Residents => {
                 self.dev.run = true;
                 self.restart();
-                self.down = 1;
+                self.this_run.down = 1;
                 self.cross_to(1, false);
                 if let Some(&(_, at)) = self.run.folk.list.first() {
                     self.world.player.pos = at + vec3(0.0, 0.0, 1.6);
@@ -507,7 +507,7 @@ impl App {
             DevStart::Stones => {
                 self.dev.run = true;
                 self.restart();
-                self.down = 1;
+                self.this_run.down = 1;
                 self.cross_to(1, false);
                 if let Some(&at) = self.run.stones.last() {
                     self.world.player.pos = at + vec3(0.0, 0.0, 1.4);
@@ -527,7 +527,7 @@ impl App {
                     return;
                 };
                 if region > 0 {
-                    self.down = region;
+                    self.this_run.down = region;
                     self.cross_to(region, false);
                 }
                 let which = match loot {
@@ -667,7 +667,7 @@ impl App {
                     self.go(Go::Back);
                 }
                 self.go(Go::Open(Scene::Dev { tab: tab as u8 }));
-                self.cursor = row;
+                self.menu.cursor = row;
             }
         }
     }
@@ -741,16 +741,22 @@ impl App {
         let panel = self.panel_rect(f, 440.0, 226.0);
         let top = self.ui.panel(panel, Some(t(dv::DEV_TITLE)));
         let x = self.ui.close(panel);
-        self.hits.push((x, Hit::Close));
+        self.menu.hits.push((x, Hit::Close));
         let (lx, rx_end) = (panel.x + u * 10.0, panel.x + panel.w - u * 10.0);
         // 묶음 탭: 고른 탭은 밝은 단추 — 다 들면 꽉 채우고, 넘치면 가로로 굴린다(0257, `ui::button_strip`).
         let tab_h = px * 1.6;
         let names: Vec<&str> = DEV_CATS.iter().map(|c| c.name()).collect();
-        let rects =
-            self.ui
-                .button_strip(&mut self.small_strip, &names, tab, lx, rx_end, top, tab_h);
+        let rects = self.ui.button_strip(
+            &mut self.tab.small_strip,
+            &names,
+            tab,
+            lx,
+            rx_end,
+            top,
+            tab_h,
+        );
         for (i, r) in rects.into_iter().enumerate() {
-            self.hits.push((r, Hit::Cell(1, i)));
+            self.menu.hits.push((r, Hit::Cell(1, i)));
         }
         let tabs_end = top + tab_h;
         // 왼쪽 줄 목록 · 오른쪽 이름·설명(세로 선으로 가름).
@@ -771,8 +777,8 @@ impl App {
             split - lx - u * 4.0,
             hint_y - u * 6.0 - body,
         );
-        let cursor = self.cursor.min(items.len().saturating_sub(1));
-        let hits = self.ui.list(&rows, cursor, &mut self.view, area);
+        let cursor = self.menu.cursor.min(items.len().saturating_sub(1));
+        let hits = self.ui.list(&rows, cursor, &mut self.menu.view, area);
         self.push_hits(&hits);
         if let Some(e) = items.get(cursor) {
             let dx = split + u * 10.0;

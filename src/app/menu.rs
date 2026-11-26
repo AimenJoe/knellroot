@@ -109,12 +109,12 @@ pub(super) fn first_hit(hits: &[(Rect, Hit)], p: Vec2) -> Option<Hit> {
 impl App {
     /// 탭 자리 → 누를 것(지난 프레임 그림에서, 먼저 넣은 칸이 이긴다).
     pub(super) fn hit_at(&self, p: Vec2) -> Option<Hit> {
-        first_hit(&self.hits, p)
+        first_hit(&self.menu.hits, p)
     }
 
     /// `ui` 목록이 돌려준 자리를 누를 자리 목록에(`hits_of`).
     pub(super) fn push_hits(&mut self, h: &ui::MenuHits) {
-        self.hits.extend(hits_of(h));
+        self.menu.hits.extend(hits_of(h));
     }
 
     /// 창 밖 네 쪽을 닫기로(nail `close_button` — 창 안 빈 곳은 닫지 않는다). 줄을 넣은 뒤에 부른다.
@@ -126,25 +126,27 @@ impl App {
             Rect::new(-big, panel.y, big + panel.x, panel.h),
             Rect::new(panel.x + panel.w, panel.y, big, panel.h),
         ] {
-            self.hits.push((r, Hit::Close));
+            self.menu.hits.push((r, Hit::Close));
         }
     }
 
     /// 메뉴 한 틱(제 그림을 갖는 화면 — 타이틀·묻는 창): 커서·굴리기·탭·확인 → 고른 줄.
     pub(super) fn menu_pick(&mut self, a: &Actions, n: usize) -> Option<usize> {
-        ui::menu_input(&mut self.cursor, n, a.menu_up, a.menu_down);
+        ui::menu_input(&mut self.menu.cursor, n, a.menu_up, a.menu_down);
         let tap = a.tap.and_then(|p| self.hit_at(p));
         let scroll = match tap {
             Some(Hit::Scroll(d)) => d,
             _ => 0,
         };
-        self.view
-            .scroll((a.drag, a.wheel + scroll), &mut self.cursor, n);
+        self.menu
+            .view
+            .scroll((a.drag, a.wheel + scroll), &mut self.menu.cursor, n);
         if let Some(Hit::Row(i)) = tap {
-            self.cursor = i;
+            self.menu.cursor = i;
             return Some(i);
         }
-        a.confirm.then_some(self.cursor.min(n.saturating_sub(1)))
+        a.confirm
+            .then_some(self.menu.cursor.min(n.saturating_sub(1)))
     }
 
     /// 목록 화면 한 틱: 뒤로(닫을 수 있는 창만) · 좌우(값 줄만) · 고름. 뒤로는 여기서 한다(`flow::back`).
@@ -155,16 +157,16 @@ impl App {
             return None;
         }
         if let Some(Hit::Step(i, d)) = tap {
-            self.cursor = i;
+            self.menu.cursor = i;
             return Some(Out::Step(i, d));
         }
         let step = a.menu_right as i32 - a.menu_left as i32;
         let on_step = m
             .rows
-            .get(self.cursor)
+            .get(self.menu.cursor)
             .is_some_and(|r| r.kind == ui::RowKind::Step);
         if step != 0 && on_step {
-            return Some(Out::Step(self.cursor, step));
+            return Some(Out::Step(self.menu.cursor, step));
         }
         self.menu_pick(a, m.rows.len()).map(Out::Pick)
     }
@@ -223,11 +225,11 @@ impl App {
         );
         let mut hits = self
             .ui
-            .list_k(&m.rows, self.cursor, &mut self.view, area, m.k);
-        hits.arrows = self.ui.title_arrows(&self.view, m.rows.len(), panel);
+            .list_k(&m.rows, self.menu.cursor, &mut self.menu.view, area, m.k);
+        hits.arrows = self.ui.title_arrows(&self.menu.view, m.rows.len(), panel);
         // 지갑은 제목 줄 오른쪽 — 목록이 넘쳐 ▲▼가 뜨면 그 왼쪽으로 비킨다(겹치지 않게).
         if let Some(p) = &m.purse {
-            let (up, down) = self.view.more(m.rows.len());
+            let (up, down) = self.menu.view.more(m.rows.len());
             let arrows = if up || down { 30.0 } else { 0.0 };
             let pw = self.ui.width(p, 1.0);
             self.ui.text(
@@ -239,7 +241,7 @@ impl App {
             );
         }
         if let Some(x) = close {
-            self.hits.push((x, Hit::Close));
+            self.menu.hits.push((x, Hit::Close));
         }
         self.push_hits(&hits);
         if m.closable {
