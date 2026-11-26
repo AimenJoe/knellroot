@@ -4,6 +4,7 @@
 //! 패링·막음·맞음으로 가른다) → 2단계 전환의 밀어냄 → 종 조각 → 남는 고리 → 돌진 미리 받기 → 패링의 결과 → 되울림 →
 //! **방랑자가 맞는다**(`wanderer_takes_hit` — 체력을 깎는 한 자리, 0143). 새 피해 경로는 `hurt_player`에 친 자리를 넣는다.
 use super::*;
+use crate::det::Det;
 
 /// 적마다 한 틱이 낸 것 — 뒤 단계(조각·고리·패링·맞음)가 이어 쓴다.
 struct EnemyActs {
@@ -277,7 +278,7 @@ impl World {
             }
             let away = to.normalize_or(Vec3::Z);
             for deg in [0.0f32, 35.0, -35.0, 70.0, -70.0] {
-                let dir = Quat::from_rotation_y(deg.to_radians()) * away;
+                let dir = crate::det::turn_y(away, deg.to_radians());
                 let mut land = en.pos + dir * crate::tuning::POD_HOP;
                 if nav.g.cell_of(land).is_none() || !nav.clear(en.pos, land, en.radius) {
                     continue;
@@ -330,7 +331,7 @@ impl World {
                 h.t += dt;
                 let d = vec3(h.to.x - h.from.x, 0.0, h.to.z - h.from.z);
                 if d.length_squared() > 1e-6 {
-                    en.facing = d.x.atan2(d.z);
+                    en.facing = d.x.atan2_d(d.z);
                 }
                 en.pos = h.at(h.t / h.dur);
                 en.hop = if h.t >= h.dur {
@@ -410,7 +411,7 @@ impl World {
                     } else {
                         k as f32 / (n - 1) as f32 - 0.5
                     };
-                    let dir = Quat::from_rotation_y(f * spread) * aim;
+                    let dir = crate::det::turn_y(aim, f * spread);
                     thrown.push(Shard {
                         pos: en.pos + dir * (en.radius + 0.2) + Vec3::Y * 1.1,
                         dir,

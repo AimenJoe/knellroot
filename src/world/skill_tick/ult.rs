@@ -1,5 +1,6 @@
 //! 큰 기술의 몸(0251 R11 — `skill_tick.rs`에서 뺐다): 시작(게이지를 통째로) · 한 줄기 가르기 · 쟁반 뒤집기.
 use super::*;
+use crate::det::Det;
 use crate::skills::{AMBUSH_AIM_COS, AMBUSH_CONE_DEG, AMBUSH_GAP, AMBUSH_HOLD, AMBUSH_PUSH};
 
 impl World {
@@ -23,7 +24,7 @@ impl World {
                 .or(lock)
                 .or_else(|| nearest_in_reach(&self.enemies, pl.pos, reach, None));
             if let Some(d) = dir {
-                self.player.facing = d.x.atan2(d.z);
+                self.player.facing = d.x.atan2_d(d.z);
             }
         }
         if kind == skills::Ult::Ambush {
@@ -35,7 +36,7 @@ impl World {
         }
         if kind == skills::Ult::Rain {
             let (dir, dist) = self.rain_aim(cx);
-            self.player.facing = dir.x.atan2(dir.z);
+            self.player.facing = dir.x.atan2_d(dir.z);
             self.player.skill.rain_at = self.place_ahead(self.player.pos, dir, dist);
         }
         let pl = &mut self.player;
@@ -484,7 +485,7 @@ impl World {
         let gap = en.radius + PLAYER_RADIUS + AMBUSH_GAP;
         let toward = vec3(p.x - q.x, 0.0, p.z - q.z).normalize_or(back);
         let turn = |v: Vec3, deg: f32| {
-            let (s, c) = deg.to_radians().sin_cos();
+            let (s, c) = deg.to_radians().sin_cos_d();
             vec3(v.x * c + v.z * s, 0.0, -v.x * s + v.z * c)
         };
         let spot = [
@@ -514,7 +515,7 @@ impl World {
         let pl = &mut self.player;
         let d = vec3(q.x - pl.pos.x, 0.0, q.z - pl.pos.z);
         if d.length_squared() > 1e-4 {
-            pl.facing = d.x.atan2(d.z);
+            pl.facing = d.x.atan2_d(d.z);
         }
     }
 
@@ -564,11 +565,11 @@ impl World {
             let q = self.enemies[i].pos;
             let d = vec3(q.x - p.x, 0.0, q.z - p.z);
             if d.length_squared() > 1e-4 {
-                self.player.facing = d.x.atan2(d.z);
+                self.player.facing = d.x.atan2_d(d.z);
             }
         }
         let dir = self.player.facing_dir();
-        let cone = (AMBUSH_CONE_DEG * 0.5).to_radians().cos();
+        let cone = (AMBUSH_CONE_DEG * 0.5).to_radians().cos_d();
         let targets: Vec<usize> = match held {
             Some(i) => vec![i],
             None => (0..self.enemies.len())

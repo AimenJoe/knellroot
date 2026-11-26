@@ -3,6 +3,7 @@
 //! 줍는 손맛(KB): 쓰러진 자리에서 **튀어나오고**(위·옆으로 흩어져 땅에 튄다) → `EMBER_DELAY` 뒤 가까우면 **자석**처럼 끌려와
 //! → 닿으면 줍는다. 값은 몇 조각으로 나눠 흩는다(한 덩어리보다 "쏟아진다"). 바닥에 남은 것은 사라지지 않는다.
 //! 월드의 일부(`World::drops`)지만 순수 함수라 시험은 여기서.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::tuning::{
@@ -44,7 +45,7 @@ pub fn scatter(at: Vec3, value: u32, seed: u32) -> Vec<Ember> {
             let up = EMBER_POP_UP * (0.8 + 0.4 * h01(seed, 20 + i));
             Ember {
                 pos: at + Vec3::Y * 0.4,
-                vel: vec3(a.cos() * side, up, a.sin() * side),
+                vel: vec3(a.cos_d() * side, up, a.sin_d() * side),
                 age: 0.0,
                 value: each + (i < extra) as u32,
                 pulled: false,

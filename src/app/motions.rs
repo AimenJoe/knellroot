@@ -338,6 +338,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::det::Det;
 
     /// 모션 보기는 무기마다 그 무기의 평타·강타·특수 동작과 공통 동작·기술을 다 보이고, 모든 줄은 모델에 있는 동작이며
     /// 판정 구간은 동작 길이 안이다(게임의 시간 셈 그대로).
@@ -414,7 +415,7 @@ mod tests {
                 let up = right.cross(fwd);
                 let to = p - eye;
                 let z = to.dot(fwd);
-                let half = 0.24_f32.tan();
+                let half = 0.24_f32.tan_d();
                 assert!(
                     (to.dot(up) / z).abs() <= half,
                     "{a}: {p} above/below the doll view"

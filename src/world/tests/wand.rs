@@ -2,6 +2,7 @@
 //! 빨리 찬다) · 주특성 갚지 않은 빚(금의 덤 ×1.5 · 금 간 채 쓰러지면 둘레에 울림) · 보조특성 뜻 모를 말(원거리 공격 피해) · 빈 손의 결
 //! "계약의 표"(저주탄의 표가 남은 적이 쓰러지면 체력 · 칸이 돌아온다).
 use super::*;
+use crate::det::Det;
 use crate::status::Kind;
 use crate::weapons::{
     Id as W, Look, ART_HEX, BARE_PACT_CHARGE, BARE_PACT_HEAL, DEATH_KNELL_R, SUB_TOSS, WAND_CHARGES,
@@ -194,7 +195,11 @@ fn many_cracked_deaths_in_one_tick_toll_a_survivor_once() {
     let s = mob_with(&mut w, vec3(0.0, 0.0, -3.0), 900);
     for k in 0..6 {
         let a = k as f32 / 6.0 * std::f32::consts::TAU;
-        mob_with(&mut w, vec3(a.sin() * 1.5, 0.0, -3.0 + a.cos() * 1.5), 900);
+        mob_with(
+            &mut w,
+            vec3(a.sin_d() * 1.5, 0.0, -3.0 + a.cos_d() * 1.5),
+            900,
+        );
     }
     idle(&mut w);
     for en in &mut w.enemies[1..] {

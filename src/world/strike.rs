@@ -2,6 +2,7 @@
 //!
 //! 순서: 내려찍기·늦은 고리 → 박자의 충격 → 틱이 남긴 알림 → 지금의 타(`Strike`) → 활성 구간의 첫 틱 → **맞힘**(`strike_lands`) → 튕김·히트스톱·나무 칸.
 use super::*;
+use crate::det::Det;
 
 /// 한 스윙이 이번 틱에 맞힌 결과.
 struct Landed {
@@ -331,7 +332,7 @@ impl World {
         let p = self.player.pos;
         let body = p.y + self.player.air;
         let f = self.player.facing_dir();
-        let half = (s.arc * 0.5).to_radians().cos();
+        let half = (s.arc * 0.5).to_radians().cos_d();
         let mut stop = false;
         let mut heavy_hit = false;
         let mut first_hit: Option<(Vec3, f32, Vec3)> = None;

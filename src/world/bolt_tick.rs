@@ -2,6 +2,7 @@
 //!
 //! 순서: 틱이 남긴 알림 → 자세 막대 → 폭발 고리·불똥의 나이 → 쏜 탄·공중 RB·던진 수류탄을 세움 → 탄이 난다 → 수류탄 → 금 간 땅.
 use super::*;
+use crate::det::Det;
 use crate::tuning::{
     BOLT_BODY_SLACK, BOLT_FOLLOW, BOLT_STEP, JAVELIN_BACK, JAVELIN_CATCH, SMITE_DELAY,
     SMITE_RADIUS, SMITE_SEEK, SMITE_SHOW,
@@ -125,7 +126,7 @@ impl World {
                 .map_or((1, 0.0), |t| (t.fan.max(1), t.spread));
             for k in 0..fan {
                 let off = (k as f32 - (fan - 1) as f32 * 0.5) * spread;
-                let d = Quat::from_rotation_y(off.to_radians()) * dir;
+                let d = crate::det::turn_y(dir, off.to_radians());
                 let d = self.shot_line(pos, d, &def, left);
                 self.bolts.push(Bolt {
                     pos,
@@ -248,7 +249,7 @@ impl World {
         }];
         for k in 0..n {
             let a = phase + k as f32 / n as f32 * std::f32::consts::TAU;
-            let out = vec3(a.sin(), 0.0, a.cos());
+            let out = vec3(a.sin_d(), 0.0, a.cos_d());
             let r = radius * if k % 2 == 0 { 0.85 } else { 0.55 };
             let p = at + out * r;
             spikes.push(Spike {
@@ -266,7 +267,7 @@ impl World {
         if let Some(flat) = self.notes.air_fire.take() {
             let pl = &self.player;
             let from = pl.pos + Vec3::Y * (pl.air + BOLT_HEIGHT) + flat * (PLAYER_RADIUS + 0.2);
-            let cone = 15f32.to_radians().cos();
+            let cone = 15f32.to_radians().cos_d();
             let reach = self
                 .enemies
                 .iter()
@@ -302,7 +303,7 @@ impl World {
                 } else {
                     0.0
                 };
-                let (sn, cs) = (spread * k).sin_cos();
+                let (sn, cs) = (spread * k).sin_cos_d();
                 let side = vec3(flat.x * cs + flat.z * sn, 0.0, -flat.x * sn + flat.z * cs);
                 let aim = pl.pos + side * reach;
                 let floor = self.ground.as_ref().map_or(pl.pos.y, |gr| gr.height(aim));

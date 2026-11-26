@@ -2,6 +2,7 @@
 //! 스킬의 이펙트는 정체성이다(서명이 서로 달라야 한다 — `every_skill_leaves_its_own_signature`): 묶지 않는다. 새 스킬 = `on_skill`의
 //! 갈래 한 줄 + 여기 함수 하나. 불꽃(`fx_flare`)과 그을림(`fx_sear`)은 거의 같지만 둘뿐이라 따로 둔다(셋의 규칙).
 use super::*;
+use crate::det::Det;
 use crate::skills::Form;
 
 impl Fx {
@@ -217,7 +218,7 @@ impl Fx {
             let up = 1.5 + 2.5 * self.r();
             self.push(Part {
                 pos: g + Vec3::Y * 0.7,
-                vel: vec3(a.sin() * sp, up, a.cos() * sp),
+                vel: vec3(a.sin_d() * sp, up, a.cos_d() * sp),
                 age: 0.0,
                 life,
                 size: (0.11, 0.05),
@@ -410,7 +411,7 @@ impl Fx {
         for _ in 0..18 {
             let a = self.r() * std::f32::consts::TAU;
             let rr = radius * self.r().sqrt();
-            let p = g + vec3(a.sin() * rr, 2.2 + self.r(), a.cos() * rr);
+            let p = g + vec3(a.sin_d() * rr, 2.2 + self.r(), a.cos_d() * rr);
             let (fall, life) = (1.6 + self.r(), 0.9 + 0.4 * self.r());
             self.push(Part {
                 pos: p,
@@ -448,7 +449,7 @@ impl Fx {
         self.spray(
             hand,
             dir,
-            (arc_deg * 0.5).to_radians().sin().max(0.2),
+            (arc_deg * 0.5).to_radians().sin_d().max(0.2),
             16,
             range * 2.2,
             Shape::Dot,
@@ -515,7 +516,7 @@ impl Fx {
         self.spray(
             g + Vec3::Y * 0.8,
             dir,
-            (arc_deg * 0.5).to_radians().sin().max(0.4),
+            (arc_deg * 0.5).to_radians().sin_d().max(0.4),
             18,
             range * 2.0,
             Shape::Dot,

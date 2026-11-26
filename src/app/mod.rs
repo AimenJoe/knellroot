@@ -34,6 +34,7 @@ mod tabs;
 mod text_fit;
 mod title;
 
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::camera::{Camera, Mode};
@@ -392,7 +393,7 @@ fn lay_by_hearth(run: &StageRun, world: &mut World) {
         .min_by(|a, b| a.distance(at).total_cmp(&b.distance(at)))
         .or(run.exit_at);
     if let Some(h) = hearth {
-        world.player.facing = (h.x - at.x).atan2((h.z - at.z) * 0.3);
+        world.player.facing = (h.x - at.x).atan2_d((h.z - at.z) * 0.3);
     }
 }
 

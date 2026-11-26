@@ -1,5 +1,6 @@
 use super::*;
 use crate::anim::*;
+use crate::det::Det;
 
 /// 0135: 한 그리기 호출은 정점과 색인 둘 다 한도 아래 — Meshy 모델(색인 ≈ 정점 × 2.4)을 정점만 보고 모으면 색인이 넘쳐 잘렸다.
 #[test]
@@ -340,8 +341,8 @@ fn telegraphs_drape_over_the_ground_steps() {
 /// 0046: 흔한 화면은 테두리 없이 정수 배율로 꽉 차고, 브라우저 창(주소창만큼 낮은 높이)도 테두리가 배율보다 작다.
 #[test]
 fn haze_is_full_looking_down_in_the_quarter_view_and_gone_in_the_shoulder_view() {
-    let quarter = -(35f32.to_radians().sin());
-    let shoulder = -(19f32.to_radians().sin());
+    let quarter = -(35f32.to_radians().sin_d());
+    let shoulder = -(19f32.to_radians().sin_d());
     assert_eq!(haze_by_pitch(quarter), 1.0);
     assert_eq!(haze_by_pitch(shoulder), 0.0);
     let mid = haze_by_pitch((quarter + shoulder) * 0.5);
@@ -453,7 +454,7 @@ fn wanderer_clips_start_and_end_facing_front_and_do_not_spin() {
         for k in 0..=10 {
             m.pose(Some(i), d * 0.995 * k as f32 / 10.0, &mut pose);
             let f = Quat::from_mat4(&pose[hips]) * r0 * Vec3::Z;
-            let mut y = f.x.atan2(f.z).to_degrees();
+            let mut y = f.x.atan2_d(f.z).to_degrees();
             if let Some(l) = last {
                 y = l + (y - l + 540.0).rem_euclid(360.0) - 180.0;
             }
@@ -554,7 +555,7 @@ fn the_crossbow_points_where_the_bolt_goes() {
     ] {
         m.pose(Some(m.anim(clip).unwrap()), at, &mut pose);
         let d = (pose[node].transform_point3(far) - pose[grip].w_axis.truncate()).normalize();
-        let yaw = d.x.atan2(d.z).to_degrees();
+        let yaw = d.x.atan2_d(d.z).to_degrees();
         assert!(
             yaw.abs() < 30.0 && d.y.abs() < 0.5,
             "{clip} at {at}: points {yaw:+.0}° (up {:.2})",
@@ -646,7 +647,7 @@ fn the_bow_stands_upright_and_its_arrow_points_where_the_shot_goes() {
         m.pose(Some(m.anim(clip).unwrap()), at, &mut pose);
         let at_ = |p: Vec3| pose[node].transform_point3(p);
         let d = (at_(tip) - pose[grip].w_axis.truncate()).normalize();
-        let yaw = d.x.atan2(d.z).to_degrees();
+        let yaw = d.x.atan2_d(d.z).to_degrees();
         let limb = (at_(top) - at_(bottom)).normalize();
         assert!(
             !aims || (yaw.abs() < 30.0 && d.y.abs() < 0.5),
@@ -655,7 +656,7 @@ fn the_bow_stands_upright_and_its_arrow_points_where_the_shot_goes() {
         );
         if aims {
             let f = pose[head].transform_vector3(face);
-            let look = f.x.atan2(f.z).to_degrees();
+            let look = f.x.atan2_d(f.z).to_degrees();
             assert!(
                 look.abs() < 30.0,
                 "{clip} at {at}: looks {look:+.0}° away from the shot"

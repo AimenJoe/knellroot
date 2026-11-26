@@ -121,6 +121,7 @@ mod tests {
 
 #[cfg(test)]
 mod clip_facing {
+    use crate::det::Det;
     use crate::model::Model;
     use macroquad::prelude::*;
 
@@ -224,7 +225,7 @@ mod clip_facing {
             m.pose(Some(ai), t, &mut pose);
             let z = pose[hips].z_axis.truncate();
             let p = pose[sword].transform_point3(far);
-            (z.x.atan2(z.z), p.x.atan2(p.z))
+            (z.x.atan2_d(z.z), p.x.atan2_d(p.z))
         };
         for clip in clips {
             let [s, a, r] = clip.seg;
@@ -260,7 +261,7 @@ mod clip_facing {
                     for t in [s, s + a - 0.005] {
                         m.pose(Some(ai), t, &mut aim);
                         let d = aim[lh].w_axis.truncate() - aim[rh].w_axis.truncate();
-                        let y = deg(d.x.atan2(d.z));
+                        let y = deg(d.x.atan2_d(d.z));
                         assert!(
                             y.abs() < 25.0,
                             "{}: the bow points ahead from the draw to the loose ({y:.0}°)",

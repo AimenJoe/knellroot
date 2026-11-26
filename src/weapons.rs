@@ -3084,6 +3084,7 @@ mod tests {
 #[cfg(test)]
 mod swing_tests {
     use super::*;
+    use crate::det::Det;
     use crate::model::Model;
     use crate::tuning::Tuning;
     use macroquad::prelude::*;
@@ -3144,7 +3145,7 @@ mod swing_tests {
                         (None, Some((node, far))) => pose[node].transform_point3(far),
                         (None, None) => pose[grip].w_axis.truncate(),
                     };
-                    let mut y = p.x.atan2(p.z).to_degrees();
+                    let mut y = p.x.atan2_d(p.z).to_degrees();
                     if let Some(l) = last {
                         y = l + (y - l + 540.0).rem_euclid(360.0) - 180.0;
                     }

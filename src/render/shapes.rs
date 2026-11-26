@@ -1,5 +1,6 @@
 //! 모양 도우미: 색 투명도, 카메라를 보는 판(마름모·별), 모아 긋는 선, 음영 상자·면 덩이, 빛기둥·빛무리.
 use super::*;
+use crate::det::Det;
 
 pub(super) fn with_a(c: Color, a: f32) -> Color {
     Color::new(c.r, c.g, c.b, a)
@@ -150,7 +151,7 @@ pub(super) fn shaft(a: Vec3, b: Vec3, ra: f32, rb: f32, ca: Color, cb: Color) {
     let mut indices = Vec::with_capacity(n * 12);
     for i in 0..=n {
         let t = std::f32::consts::TAU * i as f32 / n as f32;
-        let (s, k) = t.sin_cos();
+        let (s, k) = t.sin_cos_d();
         vertices.push(Vertex::new(a.x + s * ra, a.y, a.z + k * ra, 0.0, 0.0, ca));
         vertices.push(Vertex::new(b.x + s * rb, b.y, b.z + k * rb, 0.0, 0.0, cb));
     }
@@ -262,7 +263,7 @@ pub(super) fn trail(head: Vec3, tail: Vec3, w: f32, col: Color) {
     for i in 0..=N {
         let f = i as f32 / N as f32;
         let p = head + along * f;
-        let half = w * 0.5 * (1.0 - f).powf(0.7);
+        let half = w * 0.5 * (1.0 - f).powf_d(0.7);
         let c = with_a(col, col.a * (1.0 - f) * (1.0 - f));
         pts.push((p + side * half, c));
         pts.push((p - side * half, c));
@@ -283,7 +284,7 @@ pub(super) fn glow_disc(p: Vec3, r: f32, col: Color) {
     let mut idx = Vec::with_capacity(N * 3);
     pts.push((p, col));
     for i in 0..N {
-        let (s, k) = (std::f32::consts::TAU * i as f32 / N as f32).sin_cos();
+        let (s, k) = (std::f32::consts::TAU * i as f32 / N as f32).sin_cos_d();
         pts.push((p + (right * k + up * s) * r, rim));
         idx.extend_from_slice(&[0, 1 + i as u16, 1 + ((i + 1) % N) as u16]);
     }
@@ -297,7 +298,7 @@ pub(super) fn beam(c: Vec3, r: f32, h: f32, col: Color) {
     let top = Color::new(col.r, col.g, col.b, 0.0);
     for i in 0..=n {
         let a = std::f32::consts::TAU * i as f32 / n as f32;
-        let (s, k) = a.sin_cos();
+        let (s, k) = a.sin_cos_d();
         vertices.push(Vertex::new(c.x + s * r, c.y, c.z + k * r, 0.0, 0.0, col));
         vertices.push(Vertex::new(
             c.x + s * r,

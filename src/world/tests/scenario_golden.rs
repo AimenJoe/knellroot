@@ -16,6 +16,7 @@
 #![cfg(feature = "dev")]
 use super::golden::{q, quantized, Fnv};
 use super::*;
+use crate::det::Det;
 use crate::scenario;
 use crate::skills::{Id as Sk, Loadout, Pick, Slot, Ult, MAX_RANK, ULT_MAX_RANK};
 
@@ -81,7 +82,7 @@ fn script(k: usize) -> Actions {
     let a = k as f32 / 50.0;
     Actions {
         move_dir: if k % 240 < 160 {
-            vec2(a.sin(), a.cos())
+            vec2(a.sin_d(), a.cos_d())
         } else {
             Vec2::ZERO
         },
@@ -206,7 +207,7 @@ fn wear(w: &mut World, id: Sk, pick: Pick) {
 fn swing_now(w: &mut World, i: usize) {
     let en = &mut w.enemies[i];
     let to = w.player.pos - en.pos;
-    en.facing = to.x.atan2(to.z);
+    en.facing = to.x.atan2_d(to.z);
     en.atk = Atk::Smash;
     en.state = EState::Tele { t: en.tele_dur() };
 }

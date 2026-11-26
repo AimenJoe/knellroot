@@ -498,6 +498,7 @@ pub const TEST_CRITTER: &str = include_str!("../assets/models/test_critter.gltf"
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::det::Det;
 
     fn critter() -> Model {
         Model::from_bytes(TEST_CRITTER.as_bytes()).unwrap()
@@ -537,7 +538,7 @@ mod tests {
         m.pose(walk, 0.2, &mut pose);
         let leg = m.nodes.iter().position(|n| n.name == "leg_l").unwrap();
         let foot = pose[leg].transform_point3(vec3(0.0, -0.7, 0.0));
-        let want = 0.7 * 30f32.to_radians().sin();
+        let want = 0.7 * 30f32.to_radians().sin_d();
         assert!((foot.z.abs() - want).abs() < 1e-3, "{foot:?}");
         // 고리: 0.8초 뒤 같은 자세.
         let mut later = Vec::new();

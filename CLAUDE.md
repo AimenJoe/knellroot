@@ -51,6 +51,7 @@
 - 수치는 `tuning.rs` 한 곳. 랩이 바꾸는 값은 `P` + `SPECS` 한 줄씩. 랩의 export를 붙여 넣는 곳도 여기. 코드에 타별 숫자 금지.
 - `world.rs`는 카메라·소리·메뉴를 모른다. `Basis`(입력 기준)와 `Event`로만 바깥과 만난다. 틱은 단계 메서드 순서(`tick_lock → tick_player → apply_strike → apply_turn → tick_enemies → collide → cleanup`) — 새 메커닉은 맞는 단계에. 긴 단계는 `world/`의 단계 파일(`player_tick`·`enemy_tick`·`bolt_tick`·`strike`·`skill_tick`)에 이름 있는 메서드로, 월드 시험은 `world/tests/<주제>.rs`(0159 R2·R3 — 스킬 시험만 감춘 함수를 부르므로 `world/skill_tick/tests.rs`, 큰 기술·놓인 것의 틱은 `skill_tick/ult.rs`·`fields.rs`, 0251 R11). 방랑자의 상태는 뜻의 묶음으로(0159 R4 — `Player`의 `skill`·`parry`·`beat`·`ranged`·`hurt` + 0278 R24 `class`(종류마다의 손 — 분노 · 쪼개기 · 들이받기)·`bare`(빈 손의 결)·`swap`(바꾸기 · 교체 공격): 새 필드는 맞는 묶음에, 어디에도 안 맞는 것만 `Player`에 바로). 틱 사이의 쪽지는 `World::notes`(`TickNotes` — 걷는 단계가 저마다 `take`)·결의 이번 틱은 `World::veins`, 잔불은 지갑 메서드로만(`World::embers()`·`earn`·`spend`·`set_embers` — 칸은 감췄다).
 - 쉬기·쓰러져 다시 서기가 방랑자가 놓거나 던진 것을 치우는 곳은 `World::clear_placed` 한 곳(0278) — 놓이거나 날아가는 것의 목록을 새로 만들면 거기에 한 줄(시험 `clearing_what_the_wanderer_placed_leaves_nothing_and_brings_thrown_weapons_home`).
+- **초월 함수는 `crate::det::Det`로**(0279): `x.sin_d()`·`y.atan2_d(x)`·`sin_cos_d`·`exp_d`·`powf_d` … — std의 `sin`·`cos`·`atan2`…는 시스템 libm을 불러 glibc 판마다 끝자리가 달라 트레이스가 기계마다 갈렸다(`clippy.toml`이 막는다, 새 함수는 `det.rs`에 더한다). 로직(월드·적·스테이지·이펙트)은 glam의 각도 함수(`Quat::from_rotation_y`·`from_angle`·`angle_between`)도 쓰지 않는다 — `det::turn_y`(시험 `logic_keeps_off_glams_trig`). `sqrt`·`abs`·`powi`·`to_radians`는 그대로.
 - 좌표: y-up, XZ 평면 이동, 1 단위 = 1m, 플레이어 키 1.8. 쿼터뷰의 화면 위 = 월드 -z.
 - 새 메커닉 = 단위 테스트 하나 이상(규칙을 이름으로 읽히게). 소리·그림 핸들을 로직에 넣지 않는다 — 그래서 시나리오 일곱을 600틱씩 돌리는 시험이 있다.
 - **내용 enum은 와일드카드 없이(0278 R14)**: `Form`·`skills::Id`·`Ult`·`Bare`·`Rhythm`·`DevStart`를 보는 제품 코드의 match에 `_ =>`를 두지 않는다 — 일부러 아무것도 안 하는 갈래는 이름을 적는다(새 갈래는 컴파일러가 짚는다). 모양의 성질은 `Form::info()`(R16), 탄의 꼴은 `weapons::Look` + `LookDef`(R17) 한 곳. **골든 트레이스(0278 R12)**: `world/tests/golden.rs`가 스킬(고르기 ㄱ/ㄴ)·궁극기·무기마다의 RB·방패 던지기를 고정 마당에서 6초 돌려 해시 — 리팩터링은 이 값이 그대로여야 한다, 일부러 동작을 바꿨으면 `GOLDEN_WRITE=1 cargo test golden_traces`로 `golden.txt`를 다시 쓴다(새 스킬·궁극기·무기는 저절로 든다). 그 곁의 **시나리오 트레이스**(`world/tests/scenario_golden.rs` — 0278 R20 준비): 개발 시나리오마다 정한 누름 차례로 15초(적이 깨어나 치고 받아쳐지고 쓰러진다) + 첫 마당이 못 보는 때(패링 · 맞음 · 쓰러뜨림)의 겨눈 경우 — 첫 골든에서 고르기 ㄱ/ㄴ이 같던 스킬은 여기서 갈려야 한다(시험), 다시 쓰기는 `GOLDEN_WRITE=1 cargo test scenario_traces`. 둘 다 그대로여야 리팩터링이다. **사건 덮개(0278 R12)**: 새 `Event` = `Event::ordinal`의 번호 + `samples` 한 줄 + `COUNT`, 그리고 소리(`app/cue.rs` `cue`의 갈래 — 컴파일러가 짚는다, 조용한 것은 `app/play.rs` 시험의 `SILENT`)·이펙트(`fx` 묶음 하나 또는 `NO_FX`).
@@ -92,7 +93,7 @@
 | 기록·무기·장신구 고정값(`save_fixture.txt`·`weapon_fixture.txt`·`charm_fixture.txt`) | 기록의 글과 표의 수 | 키를 바꾸는 것이 아닌지 먼저 본다 |
 | `app::text_fit` | 고정 칸의 글 넘침(두 언어) | 칸을 고친다 — 시험을 느슨하게 하지 않는다 |
 
-다시 쓴 고정값은 바뀐 줄을 읽고 까닭을 커밋에 적는다. 동작을 바꾸지 않는 커밋과 동작을 바꾸는 커밋을 섞지 않는다.
+다시 쓴 고정값은 바뀐 줄을 읽고 까닭을 커밋에 적는다. **안전망을 넣거나 고정값을 다시 쓴 push는 CI 결과까지 본다**(0279 — 여기서만 통과하고 CI에서 네 번 빨갰다). 동작을 바꾸지 않는 커밋과 동작을 바꾸는 커밋을 섞지 않는다.
 
 ## 커밋 전
 ```sh

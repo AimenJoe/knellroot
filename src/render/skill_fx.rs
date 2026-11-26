@@ -1,5 +1,6 @@
 //! 스킬이 남긴 빛(`fx::Mark`, 0158 G2)과 이어지는 것들(울림·불티·몰아치기의 기운).
 use super::*;
+use crate::det::Det;
 
 impl Renderer {
     /// 스킬이 남긴 빛(0158 G2 — `fx::Mark`): 고리·빛 띠·충격파·땅의 금·모여드는 줄·가르는 면. 바닥의 것은 땅을 따라 접는다.
@@ -71,7 +72,7 @@ impl Renderer {
                     arc_deg,
                 } => {
                     let r = r0 + (r1 - r0) * out;
-                    let yaw = dir.x.atan2(dir.z);
+                    let yaw = dir.x.atan2_d(dir.z);
                     let a = 1.0 - k * k;
                     fl.sector(
                         at + Vec3::Y * 0.05,
@@ -113,7 +114,7 @@ impl Renderer {
                         m.color.b + (dust.b - m.color.b) * cool,
                         0.9 * (1.0 - cool * cool),
                     );
-                    let yaw = dir.x.atan2(dir.z);
+                    let yaw = dir.x.atan2_d(dir.z);
                     let span = arc_deg.to_radians();
                     for i in 0..n {
                         let h = |j: u32| {
@@ -122,8 +123,10 @@ impl Renderer {
                         };
                         let a = yaw - span * 0.5 + span * (i as f32 + 0.5 + h(0) * 0.6) / n as f32;
                         let reach = r * (0.75 + 0.5 * (h(1) + 0.5)) * grow;
-                        let (fwd, side) =
-                            (vec3(a.sin(), 0.0, a.cos()), vec3(a.cos(), 0.0, -a.sin()));
+                        let (fwd, side) = (
+                            vec3(a.sin_d(), 0.0, a.cos_d()),
+                            vec3(a.cos_d(), 0.0, -a.sin_d()),
+                        );
                         let segs = ((reach / 0.7).ceil() as usize).max(1);
                         let mut prev = at + fwd * 0.5;
                         for j in 1..=segs {
@@ -152,7 +155,7 @@ impl Renderer {
                     let a = (k / 0.15).min(1.0) * (1.0 - k * k);
                     for i in 0..n {
                         let ang = i as f32 / n as f32 * std::f32::consts::TAU + 0.3;
-                        let d = vec3(ang.sin(), 0.0, ang.cos());
+                        let d = vec3(ang.sin_d(), 0.0, ang.cos_d());
                         let side = vec3(d.z, 0.0, -d.x) * 0.07;
                         let head = at + Vec3::Y * 0.45 + d * (r * (1.0 - out) + 0.25);
                         let tail = at + Vec3::Y * 0.45 + d * (r * (1.0 - out * 0.55) + 0.6);
@@ -229,7 +232,7 @@ impl Renderer {
         let feet = vec3(pp.x, w.ground_y(pp), pp.z);
         if pl.skill.echo_left > 0.0 {
             let fade = (pl.skill.echo_left / 0.4).min(1.0);
-            let breathe = 0.5 + 0.5 * (w.time * 6.0).sin();
+            let breathe = 0.5 + 0.5 * (w.time * 6.0).sin_d();
             if let crate::skills::Form::Echo { radius, .. } =
                 w.skill_eff(crate::skills::Id::Echo).skill.form
             {
@@ -265,7 +268,7 @@ impl Renderer {
             // 심지 볼트(0272 — 충격): 종이 아니라 몸에 박힌 볼트의 타 들어가는 심지 — 깜빡이는 불꽃과 조여드는 노란 테.
             if b.dose.0 == crate::status::Kind::Shock {
                 let shock = Color::new(1.0, 0.96, 0.45, 1.0);
-                let flick = 0.6 + 0.4 * (w.time * (18.0 + 30.0 * near)).sin();
+                let flick = 0.6 + 0.4 * (w.time * (18.0 + 30.0 * near)).sin_d();
                 let p = g + Vec3::Y * (top * 0.55);
                 spark4(p, 0.5 + 0.35 * near, with_a(hot, flick));
                 gem(p, 0.2, with_a(amber, 0.95));
@@ -278,7 +281,7 @@ impl Renderer {
                 );
                 continue;
             }
-            let swing = (w.time * 9.0).sin() * 0.18;
+            let swing = (w.time * 9.0).sin_d() * 0.18;
             let p = g + vec3(swing, top, 0.0);
             gem(p, 0.34, with_a(gold, 0.75));
             gem(p - Vec3::Y * 0.12, 0.2, with_a(hot, 0.9));
@@ -299,7 +302,7 @@ impl Renderer {
             // 쇠 덫(0276 — 쇠뇌의 빈 손): 땅에 놓인 쇠 이빨의 둥근 틀(어두운 쇠 덩이 + 둘레의 이빨 여덟)과 숨 쉬는 강철빛 테 —
             // 밟을 자리를 알린다. 뿌리 덫(보라)과 갈린다.
             if f.is_trap() && f.iron() {
-                let breathe = 0.5 + 0.5 * (w.time * 2.5).sin();
+                let breathe = 0.5 + 0.5 * (w.time * 2.5).sin_d();
                 let steel = Color::new(0.82, 0.88, 0.98, 1.0);
                 fl.ring(
                     c + Vec3::Y * 0.05,
@@ -315,13 +318,13 @@ impl Renderer {
                 );
                 for k in 0..8 {
                     let a = k as f32 / 8.0 * std::f32::consts::TAU;
-                    let q = c + vec3(a.sin() * 0.42, 0.14, a.cos() * 0.42);
+                    let q = c + vec3(a.sin_d() * 0.42, 0.14, a.cos_d() * 0.42);
                     spark4(q, 0.12, with_a(steel, 0.9 * fade));
                 }
                 continue;
             }
             if f.is_trap() && f.dose.0 == crate::status::Kind::Shock {
-                let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
+                let breathe = 0.5 + 0.5 * (w.time * 3.0).sin_d();
                 let shock = Color::new(1.0, 0.96, 0.45, 1.0);
                 fl.ring(
                     c + Vec3::Y * 0.05,
@@ -335,7 +338,7 @@ impl Renderer {
                     0.34,
                     with_a(Color::new(0.30, 0.26, 0.24, 1.0), 0.9 * fade),
                 );
-                let flick = 0.5 + 0.5 * (w.time * 14.0).sin();
+                let flick = 0.5 + 0.5 * (w.time * 14.0).sin_d();
                 spark4(
                     c + Vec3::Y * 0.36,
                     0.22 + 0.1 * flick,
@@ -382,7 +385,7 @@ impl Renderer {
                 continue;
             }
             if f.is_trap() {
-                let breathe = 0.5 + 0.5 * (w.time * 3.0).sin();
+                let breathe = 0.5 + 0.5 * (w.time * 3.0).sin_d();
                 let root = Color::new(0.74, 0.56, 0.88, 1.0);
                 fl.ring(
                     c + Vec3::Y * 0.05,
@@ -508,7 +511,7 @@ impl Renderer {
         }
         if pl.skill.flurry_left > 0.0 {
             let fade = (pl.skill.flurry_left / 0.5).min(1.0);
-            let breathe = 0.5 + 0.5 * (w.time * 9.0).sin();
+            let breathe = 0.5 + 0.5 * (w.time * 9.0).sin_d();
             for (r, a) in [(0.7, 0.8), (0.95, 0.4)] {
                 fl.ring(
                     feet + Vec3::Y * 0.06,
@@ -523,9 +526,9 @@ impl Renderer {
                     let a = w.time * 11.0 + i as f32 * std::f32::consts::PI;
                     let p = pp
                         + vec3(
-                            a.sin() * 0.75,
-                            pl.air + 1.0 + 0.25 * (a * 0.5).sin(),
-                            a.cos() * 0.75,
+                            a.sin_d() * 0.75,
+                            pl.air + 1.0 + 0.25 * (a * 0.5).sin_d(),
+                            a.cos_d() * 0.75,
                         );
                     gem(p, 0.34, with_a(gold, 0.4 * fade));
                     spark4(p, 0.42, with_a(hot, fade));

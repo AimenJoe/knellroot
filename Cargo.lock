@@ -427,6 +427,7 @@ dependencies = [
  "fontdue",
  "gamepads",
  "gltf",
+ "libm",
  "macroquad",
  "ttf-parser",
 ]

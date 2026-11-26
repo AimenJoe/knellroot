@@ -1,5 +1,6 @@
 //! 스테이지 물건: 문·새긴 돌·상자·문 장치·남은 주민과 생활 물건·빛줄기·떨어진 아이템·숨은 물건·쉼터·갈 곳 빛기둥·핵.
 use super::*;
+use crate::det::Det;
 
 impl Renderer {
     /// 문(열리면 땅으로 가라앉거나 `open` 동작)과 핵(문지기가 남긴 것, 떠서 돈다).
@@ -81,7 +82,7 @@ impl Renderer {
             // 반은 날만 보인다. 대신 좌우로 느리게 흔들린다.
             let at = drop_float(d, w.time, j);
             let to_eye = (look().eye - at).normalize_or(Vec3::Z);
-            let sway = 0.45 * (w.time * 1.3 + 1.7 * j as f32).sin();
+            let sway = 0.45 * (w.time * 1.3 + 1.7 * j as f32).sin_d();
             let rot = Quat::from_rotation_arc(Vec3::Z, to_eye)
                 * Quat::from_rotation_y(sway)
                 * Quat::from_rotation_z(v.roll.to_radians())
@@ -145,7 +146,7 @@ impl Renderer {
         for (i, st) in run.stones.iter().enumerate() {
             fl.shadow(*st, 0.45);
             let near = run.near_stone == Some(i);
-            let yaw = (st.x * 1.7 + st.z * 0.9).sin() * 0.6;
+            let yaw = (st.x * 1.7 + st.z * 0.9).sin_d() * 0.6;
             let lean = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(0.08);
             let base = *st;
             // 모델(0139): 새긴 줄(`glow_carve`)은 스스로 빛나는 부위 — 곁에 서면 밝게, 아니면 돌보다 조금 어둡게.
@@ -195,7 +196,7 @@ impl Renderer {
         for (i, c) in run.chest.at.iter().enumerate() {
             let open = run.chest.open.get(i).copied().unwrap_or(false);
             fl.shadow(*c, 0.6);
-            let pulse = 0.75 + 0.25 * (w.time * 2.4 + i as f32).sin();
+            let pulse = 0.75 + 0.25 * (w.time * 2.4 + i as f32).sin_d();
             // 모델(0139): 열린 상자 = `open` 동작의 끝 자세 + 자물쇠 감춤, 닫힌 상자는 자물쇠(`glow_lock`)가 숨 쉰다.
             if let Some(e) = self.lib.get("chest") {
                 let anim = e.pick(&["open"]);
@@ -264,7 +265,7 @@ impl Renderer {
         // 당긴 뒤엔 손잡이가 내려가고 빛이 꺼진다.
         if let Some(l) = run.lever {
             fl.shadow(l, 0.5);
-            let pulse = 0.75 + 0.25 * (w.time * 2.4).sin();
+            let pulse = 0.75 + 0.25 * (w.time * 2.4).sin_d();
             // 모델(0139): 당긴 뒤 = `pull` 동작의 끝 자세 + 쥘 곳(`glow_grip`) 감춤.
             if let Some(e) = self.lib.get("lever") {
                 let anim = e.pick(&["pull"]);
@@ -321,7 +322,7 @@ impl Renderer {
             let face = run.folk.face.get(k).copied().unwrap_or(0.0);
             let changed = run.folk.changed.get(k).copied().unwrap_or(false);
             let q = Quat::from_rotation_y(face);
-            let breath = (w.time * 1.3 + at.x).sin() * 0.02;
+            let breath = (w.time * 1.3 + at.x).sin_d() * 0.02;
             fl.shadow(at, 0.5);
             // 모델(0132)이 있으면: 방랑자가 멀면 제 일(`work`), 돌아볼 거리 안이면 돌아본 자세(`look`). 자리마다 박자를 어긋낸다.
             if let Some(e) = self.lib.get(r.model) {
@@ -375,7 +376,7 @@ impl Renderer {
             match r.work {
                 crate::residents::Work::Fire => {
                     let glow = if changed { 1.5 } else { 0.8 };
-                    let flick = 0.85 + 0.15 * (w.time * 7.0 + at.z).sin();
+                    let flick = 0.85 + 0.15 * (w.time * 7.0 + at.z).sin_d();
                     fl.sector(
                         spot,
                         glow,
@@ -386,7 +387,7 @@ impl Renderer {
                     // 모델(0142): 돌을 두른 화덕 + 불꽃(뼈 `fire`, 밑동 피벗) — 꺼져 가는 불은 낮고 가늘게, 다시 찾으면 살아난 불.
                     if let Some(e) = self.lib.get("work_fire") {
                         let size = if changed { 1.0 } else { 0.5 };
-                        let lick = (w.time * 11.0 + at.x).sin() * 0.06;
+                        let lick = (w.time * 11.0 + at.x).sin_d() * 0.06;
                         let grow = e.model.node("fire").map(|n| {
                             (
                                 n,
@@ -524,7 +525,7 @@ impl Renderer {
     /// 핵(문지기가 남긴 것): 떠서 돈다 + 발밑 고리.
     fn core_crystal(&mut self, run: &StageRun, w: &World, lights: &[Light], fl: &Drape) {
         if let (Some(core), Phase::Core) = (run.core, run.phase) {
-            let bob = (w.time * 2.0).sin() * 0.15;
+            let bob = (w.time * 2.0).sin_d() * 0.15;
             let p = core + Vec3::Y * (0.9 + bob);
             match self.lib.get("core_crystal") {
                 Some(e) => {
@@ -537,7 +538,7 @@ impl Renderer {
             }
             fl.ring(
                 core,
-                1.0 + 0.15 * (w.time * 3.0).sin(),
+                1.0 + 0.15 * (w.time * 3.0).sin_d(),
                 0.0,
                 360.0,
                 Color::new(1.0, 0.75, 0.35, 0.6),
@@ -555,7 +556,7 @@ fn way_down(run: &StageRun, w: &World, fl: &Drape) {
         fl.sector(d, 1.5, 0.0, 360.0, Color::new(0.24, 0.18, 0.16, 0.95));
         fl.sector(d, 1.15, 0.0, 360.0, Color::new(0.08, 0.06, 0.1, 1.0));
         fl.sector(d, 0.7, 0.0, 360.0, Color::new(0.02, 0.01, 0.04, 1.0));
-        let pulse = 0.5 + 0.5 * (w.time * 1.6).sin();
+        let pulse = 0.5 + 0.5 * (w.time * 1.6).sin_d();
         beam(
             d,
             0.8,
@@ -570,7 +571,7 @@ fn light_shafts(run: &StageRun, w: &World, fl: &Drape) {
     // 기울기는 달빛 쪽 — 땅속의 옅은 달빛과 같은 빛이 틈으로 든다.
     let lean = vec3(-LIGHT_DIR.x, 0.0, -LIGHT_DIR.z).normalize_or_zero() * 2.2;
     for s in run.level.marks_of(crate::stage::SHAFT_GLYPH) {
-        let breath = 0.85 + 0.15 * (w.time * 0.7 + s.x * 0.3).sin();
+        let breath = 0.85 + 0.15 * (w.time * 0.7 + s.x * 0.3).sin_d();
         fl.sector(
             s,
             1.7,
@@ -599,7 +600,7 @@ fn light_shafts(run: &StageRun, w: &World, fl: &Drape) {
 /// 오르는 길(0118): 마을 어귀 바닥의 빛 웅덩이 — 위에서 새는 빛(갈 곳 빛기둥과 같은 호박색, 낮게).
 fn way_up(run: &StageRun, w: &World, fl: &Drape) {
     if let Some(u) = run.up_at {
-        let pulse = 0.5 + 0.5 * (w.time * 1.2).sin();
+        let pulse = 0.5 + 0.5 * (w.time * 1.2).sin_d();
         fl.sector(u, 1.3, 0.0, 360.0, with_a(GUIDE_COLOR, 0.12 + 0.06 * pulse));
         beam(u, 0.9, 4.0, with_a(GUIDE_COLOR, 0.06 + 0.04 * pulse));
         fl.ring(u, 1.3, 0.0, 360.0, with_a(GUIDE_COLOR, 0.45));
@@ -614,7 +615,7 @@ fn chest_drops(run: &StageRun, w: &World, fl: &Drape) {
         let to = *p + Vec3::Y * 0.45;
         let arc = from.lerp(to, k) + Vec3::Y * (4.0 * k * (1.0 - k)) * 1.0;
         let bob = if k >= 1.0 {
-            0.06 * (w.time * 2.4 + j as f32).sin()
+            0.06 * (w.time * 2.4 + j as f32).sin_d()
         } else {
             0.0
         };
@@ -656,7 +657,7 @@ const DROP_BEAM_FROM: f32 = 1.35;
 fn drop_float(d: &crate::stage::ItemDrop, time: f32, j: usize) -> Vec3 {
     let k = (d.age / crate::stage::DROP_SETTLE).clamp(0.0, 1.0);
     let bob = if k >= 1.0 {
-        0.06 * (time * 2.4 + 1.7 * j as f32).sin()
+        0.06 * (time * 2.4 + 1.7 * j as f32).sin_d()
     } else {
         0.0
     };
@@ -693,7 +694,7 @@ fn item_drops(run: &StageRun, w: &World, fl: &Drape, solid: &[bool]) {
             let fade = loot_fade(p, w.player.pos);
             if fade > 0.01 {
                 // 바닥의 고리 + 몸 위에서 솟는 기둥(드물수록 굵고 높다) + 기둥을 타고 오르는 빛 알갱이.
-                let pulse = 0.85 + 0.15 * (w.time * 2.0 + j as f32).sin();
+                let pulse = 0.85 + 0.15 * (w.time * 2.0 + j as f32).sin_d();
                 let top = p + Vec3::Y * DROP_BEAM_FROM;
                 fl.ring(p, 0.42 + 0.06 * rank, 0.0, 360.0, with_a(col, 0.5 * fade));
                 beam(
@@ -710,7 +711,7 @@ fn item_drops(run: &StageRun, w: &World, fl: &Drape, solid: &[bool]) {
                 );
                 for n in 0..3 {
                     let u = (w.time * 0.55 + n as f32 / 3.0 + j as f32 * 0.37).fract();
-                    let x = (j as f32 * 1.3 + n as f32 * 2.1 + w.time).sin() * 0.1;
+                    let x = (j as f32 * 1.3 + n as f32 * 2.1 + w.time).sin_d() * 0.1;
                     gem(
                         top + vec3(x, u * (1.6 + 0.5 * rank), -x),
                         0.09,
@@ -755,13 +756,13 @@ fn hidden_finds(run: &StageRun, w: &World, fl: &Drape) {
             w.time,
             i as f32,
         );
-        let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin();
+        let k = 0.5 + 0.5 * (w.time * 2.2 + i as f32 * 1.7).sin_d();
         // 종소리 조각(0106): 가늘고 긴 크림빛 조각이 천천히 돌며 떤다 — 덩어리(등잔·한 모금)와 모양부터 다르게, 종 꼴은 아니게.
         if *kind == crate::stage::Find::Shard {
             let col = Color::new(0.96, 0.92, 0.82, 1.0);
             let c = *p + Vec3::Y * (0.55 + 0.06 * k);
             fl.shadow(*p, 0.2);
-            let tremble = (w.time * 23.0 + i as f32).sin() * 0.04;
+            let tremble = (w.time * 23.0 + i as f32).sin_d() * 0.04;
             // 깨진 조각(0142): 한쪽이 길고 납작한 결정 — 위가 길고 아래가 짧아 종 꼴도 상자도 아니다.
             let c = loot_front(c);
             // 가는 꼴이라 테는 배율이 아니라 두께로(같은 배율이면 1px도 안 됐다).
@@ -858,7 +859,7 @@ fn rest_rings(run: &StageRun, w: &World, fl: &Drape) {
         let home = run.rest_at.is_some_and(|(j, _)| j == i);
         // 잔불로 살 것이 있으면(0064 M4) 쉼터마다 호박빛 테가 하나 더 숨 쉰다 — 쓸 곳이 보이게.
         if run.shop_ready {
-            let k = 0.5 + 0.5 * (w.time * 3.0 + i as f32).sin();
+            let k = 0.5 + 0.5 * (w.time * 3.0 + i as f32).sin_d();
             fl.ring(
                 *r,
                 1.5 + 0.3 * k,
@@ -868,7 +869,7 @@ fn rest_rings(run: &StageRun, w: &World, fl: &Drape) {
             );
         }
         let col = if home {
-            Color::new(1.0, 0.8, 0.4, 0.55 + 0.25 * (w.time * 2.0).sin())
+            Color::new(1.0, 0.8, 0.4, 0.55 + 0.25 * (w.time * 2.0).sin_d())
         } else {
             Color::new(0.9, 0.7, 0.45, 0.25)
         };
@@ -894,7 +895,7 @@ fn guide_beam(run: &StageRun, w: &World, fl: &Drape) {
             .goal()
             .is_some_and(|g| vec2(g.x - w.player.pos.x, g.z - w.player.pos.z).length() < 8.0);
     if let Some(g) = run.goal().filter(|_| !near_hole) {
-        let pulse = 0.5 + 0.5 * (w.time * GUIDE_PULSE).sin();
+        let pulse = 0.5 + 0.5 * (w.time * GUIDE_PULSE).sin_d();
         beam(
             g,
             GUIDE_BEAM_R,
@@ -971,14 +972,14 @@ fn loot_beam(fl: &Drape, p: Vec3, col: Color, fade: f32, time: f32, seed: f32) {
     if fade <= 0.01 {
         return;
     }
-    let pulse = 0.85 + 0.15 * (time * 2.0 + seed).sin();
+    let pulse = 0.85 + 0.15 * (time * 2.0 + seed).sin_d();
     beam(p, 0.1, 2.6, with_a(col, 0.55 * fade * pulse));
     beam(p, 0.26, 2.0, with_a(col, 0.16 * fade));
     fl.ring(p, 0.42, 0.0, 360.0, with_a(col, 0.45 * fade));
     for k in 0..3 {
         let u = (time * 0.55 + k as f32 / 3.0 + seed * 0.37).fract();
         let a = (1.0 - u) * fade;
-        let x = (seed * 1.3 + k as f32 * 2.1 + time).sin() * 0.08;
+        let x = (seed * 1.3 + k as f32 * 2.1 + time).sin_d() * 0.08;
         gem(p + vec3(x, 0.2 + u * 2.3, -x), 0.09, with_a(col, a));
     }
 }

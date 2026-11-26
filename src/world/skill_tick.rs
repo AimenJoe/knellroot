@@ -12,6 +12,7 @@
 //! 단과 고르기(0158): 숫자는 `World::skill_eff`(= `Skill::at(단, 고르기)`)가 준 값만 쓴다 — 여기는 `Twist`·`Cap`의 갈래만 본다.
 use super::player_tick::Ctx;
 use super::*;
+use crate::det::Det;
 use crate::skills::{Cap, Eff, Form, Twist, FLURRY, LINE, UPEND};
 use crate::status::{Dose, NO_DOSE};
 
@@ -87,7 +88,7 @@ impl Zone {
         let r = dv.length();
         (at.y - self.pos.y).abs() <= HIT_DY
             && r - radius <= self.range
-            && (r < 1e-3 || (dv / r).dot(self.dir) >= (self.arc_deg * 0.5).to_radians().cos())
+            && (r < 1e-3 || (dv / r).dot(self.dir) >= (self.arc_deg * 0.5).to_radians().cos_d())
     }
 }
 
@@ -420,7 +421,7 @@ impl World {
         self.hop_seen.clear();
         let pl = &mut self.player;
         pl.swings += 1;
-        pl.facing = dir.x.atan2(dir.z);
+        pl.facing = dir.x.atan2_d(dir.z);
         pl.state = PState::Skill {
             id,
             t: 0.0,
@@ -820,7 +821,7 @@ impl World {
         let p = self.player.pos;
         let body = p.y + self.player.air;
         let spot = p + dir * to;
-        let half = (arc_deg * 0.5).to_radians().cos();
+        let half = (arc_deg * 0.5).to_radians().cos_d();
         // 표의 타입 그대로(`skill_eff`는 피해 · 자세 · 치수만 바꾼다 — 타입과 쌓는 양은 레벨 · 고르기 · 망치의 배와 상관없다).
         let dose = self.dosed(d.skill.dose());
         for en in &mut self.enemies {
@@ -926,7 +927,7 @@ impl World {
         let mut ev = std::mem::take(&mut self.skill_ev);
         let p = self.player.pos;
         let body = p.y + self.player.air;
-        let half = (arc_deg * 0.5).to_radians().cos();
+        let half = (arc_deg * 0.5).to_radians().cos_d();
         let snare = self.snare_secs();
         let poise_k = self.stats.poise;
         let dose = self.dosed(d.skill.dose());

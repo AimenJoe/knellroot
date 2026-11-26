@@ -2,6 +2,7 @@
 //! `tick`은 머리(시계 · 넉백 · 산 것 · 2·3단계 전환 · 쫓는 쪽과 빠르기)와 꼬리(사슬)만 하고, 갈래마다 한 줄로 여기를 부른다.
 //! 새 상태 = `EState` 한 갈래 + `tick`의 빠짐없는 match 한 줄 + 여기 메서드 하나.
 use super::*;
+use crate::det::Det;
 
 /// 틱 밖의 형편: 방랑자 자리 · 틱 길이 · 종의 표 · 방랑자까지의 거리와 쪽 · 이번 틱의 빠르기(2단계 · 사슬 · 느려짐 · 짐).
 #[derive(Clone, Copy)]
@@ -50,7 +51,7 @@ impl Enemy {
     pub(super) fn tick_idle(&mut self, cx: &Ctx) {
         let Ctx { dt, speed, .. } = *cx;
         if let Some((_, face)) = self.home {
-            let (s, c) = face.sin_cos();
+            let (s, c) = face.sin_cos_d();
             self.turn_toward(vec3(s, 0.0, c), 2.0, dt);
         }
         // 청소자(0120): 싸움이 없으면 먹는다 — `EAT_TIME`마다 체력 한 눈금(`HP_UNIT`, lore ecology 청소자 "잔해를 먹고 회복").
@@ -265,7 +266,7 @@ impl Enemy {
         } = *cx;
         if e == 0.0 {
             let arc = if self.atk == Atk::Slam {
-                (d.arc * 0.5).to_radians().cos()
+                (d.arc * 0.5).to_radians().cos_d()
             } else {
                 -1.0
             };

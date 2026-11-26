@@ -1,5 +1,6 @@
 //! 게임 규칙 하나. 카메라도 소리도 메뉴도 모른다 — `Actions`와 `Basis`(입력 기준)만 받고 `Event`를 내놓는다.
 //! 틱은 단계 메서드 순서(nail 0169 R1): tick_lock → tick_player → apply_strike → apply_turn → tick_enemies → collide → cleanup.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::ground::Ground;
@@ -1374,7 +1375,7 @@ pub struct HurtState {
 
 impl Player {
     pub fn facing_dir(&self) -> Vec3 {
-        let (s, c) = self.facing.sin_cos();
+        let (s, c) = self.facing.sin_cos_d();
         vec3(s, 0.0, c)
     }
     /// 공중에 떠 있나.
@@ -3355,11 +3356,11 @@ pub fn parry_front_cos(chain_open: bool, n: u32) -> f32 {
     if !chain_open || n == 0 {
         return PARRY_FRONT;
     }
-    let half = PARRY_FRONT.acos() + (PARRY_CHAIN_WIDEN_DEG * n as f32).to_radians();
+    let half = PARRY_FRONT.acos_d() + (PARRY_CHAIN_WIDEN_DEG * n as f32).to_radians();
     if half >= std::f32::consts::PI {
         -1.01
     } else {
-        half.cos()
+        half.cos_d()
     }
 }
 
@@ -3451,7 +3452,7 @@ impl World {
 pub fn swing_arc(shape: weapons::Shape, arc: f32, reach: f32) -> f32 {
     match shape {
         weapons::Shape::Circle => 360.0,
-        weapons::Shape::Lane { half } => 2.0 * (half / reach.max(0.1)).atan().to_degrees(),
+        weapons::Shape::Lane { half } => 2.0 * (half / reach.max(0.1)).atan_d().to_degrees(),
         weapons::Shape::Arc => arc,
     }
 }
@@ -3627,7 +3628,7 @@ pub fn sneak_open(en: &Enemy, from: Vec3) -> bool {
     }
     let d = vec3(from.x - en.pos.x, 0.0, from.z - en.pos.z);
     d.length_squared() > 1e-6
-        && en.facing_dir().dot(d.normalize()) < weapons::SNEAK_BACK_DEG.to_radians().cos()
+        && en.facing_dir().dot(d.normalize()) < weapons::SNEAK_BACK_DEG.to_radians().cos_d()
 }
 
 /// 금 간 적이 받는 피해의 배(0223 V2 — 보스는 낮게). 금이 없으면 1.

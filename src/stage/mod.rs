@@ -8,6 +8,7 @@ pub mod sanctuary;
 pub mod village;
 pub mod workings;
 
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::ground::{Cell, Ground};
@@ -974,7 +975,7 @@ impl StageRun {
         self.elite_ids.clear();
         // 바라보는 쪽은 자리마다 정해진 값(자리로 섞는다) — 늘어선 적이 한 쪽만 보지 않게.
         let face = |p: Vec3| {
-            let h = (p.x * 12.9898 + p.z * 78.233).sin() * 43758.547;
+            let h = (p.x * 12.9898 + p.z * 78.233).sin_d() * 43758.547;
             (h - h.floor()) * std::f32::consts::TAU
         };
         for &(mark, kind) in self.def.spawns {
@@ -1291,7 +1292,7 @@ impl StageRun {
             }
             let home = crate::residents::WORK_FACE;
             let want = if d <= crate::residents::GLANCE_RANGE {
-                (pp.x - at.x).atan2(pp.z - at.z)
+                (pp.x - at.x).atan2_d(pp.z - at.z)
             } else {
                 home
             };
@@ -1332,7 +1333,7 @@ impl StageRun {
             let c = self.chest.at[i];
             // 방랑자 쪽에서 옆으로 비껴(발밑에 떨어지면 몸에 가려 빛기둥이 안 보였다, 헤드리스).
             let to = vec3(pp.x - c.x, 0.0, pp.z - c.z).normalize_or(Vec3::Z);
-            let side = Quat::from_rotation_y(DROP_SIDE.to_radians()) * to;
+            let side = crate::det::turn_y(to, DROP_SIDE.to_radians());
             self.drops.push((c + side * DROP_OUT, i, 0.0));
         } else if let (true, true) = (self.near_lever, w.interact) {
             self.gate_opened = true;
@@ -1649,11 +1650,10 @@ impl StageRun {
             .iter()
             .filter(|d| vec2(d.pos.x - at.x, d.pos.z - at.z).length() < DROP_APART * 3.0)
             .count();
-        let turn = Quat::from_rotation_y(n as f32 * 2.4);
         let pos = if n == 0 {
             at
         } else {
-            at + turn * Vec3::X * DROP_APART
+            at + crate::det::turn_y(Vec3::X, n as f32 * 2.4) * DROP_APART
         };
         self.item_drops.push(ItemDrop {
             pos,

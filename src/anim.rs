@@ -2,6 +2,7 @@
 //!
 //! 그리기를 모르는 순수한 셈이라 시험으로 지킨다. 렌더는 고른 이름을 모델에서 찾고(`Entry::pick`), 섞기·2차 동작·그리기만 한다.
 //! 프레임을 넘어 남는 것(숨 고리·걸음 시계·겨눈 채 머묾·구른 뒤 일어나기)은 `Memory` 한 곳에.
+use crate::det::Det;
 use macroquad::math::{vec3, Vec3};
 
 use crate::tuning::{Tuning, TICK_DT};
@@ -333,13 +334,13 @@ pub fn move_anim(step: Vec3, facing: Vec3, faces_away: bool) -> (&'static [&'sta
     let fwd = v.dot(facing);
     // 오른쪽 = 앞 × 위(카메라·입력과 같은 축). 가는 쪽이 바라보는 쪽에서 오른쪽으로 몇 도인가.
     let side = v.dot(facing.cross(Vec3::Y));
-    let rho = side.atan2(fwd);
+    let rho = side.atan2_d(fwd);
     // 0197: 게걸음 동작이 없다 — 앞으로 걷는 동작의 다리(엉덩이)를 가는 쪽으로 돌리고 윗몸은 과녁에 둔다(`LEG_TURN_MAX`까지).
     // 뒤쪽 반은 뒷걸음의 다리를 가는 쪽의 반대로. 모델 공간의 돌림(+ = 왼쪽) = −(오른쪽으로 간 각).
     if rho.abs() <= BACK_FROM.to_radians() {
         (&["walk"], -rho.clamp(-LEG_TURN_MAX, LEG_TURN_MAX))
     } else {
-        let back = (-side).atan2(-fwd);
+        let back = (-side).atan2_d(-fwd);
         (
             &["walk_back", "walk"],
             -back.clamp(-LEG_TURN_MAX, LEG_TURN_MAX),

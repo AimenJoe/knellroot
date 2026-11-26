@@ -5,6 +5,7 @@
 use super::frame::Window;
 use super::menu::Hit;
 use super::*;
+use crate::det::Det;
 use flow::{Host, Tab};
 
 /// 몸의 두 칸(480×270 기준 px, 몸의 왼쪽 위가 원점 — 기술 화면이 먼저 쓴 자리 그대로): 왼쪽 칸의 폭, 오른쪽 칸의 자리와 폭.
@@ -56,7 +57,7 @@ pub(super) fn turn_by_hand(
 
 /// 손대지 않은 인형의 흔들림(라디안).
 fn doll_sway(t: f32) -> f32 {
-    0.55 * (t * 0.7).sin()
+    0.55 * (t * 0.7).sin_d()
 }
 
 /// 오른쪽 칸의 몸 한 줄.
@@ -381,7 +382,7 @@ impl App {
         if spin {
             let t = get_time() as f32;
             self.renderer
-                .draw_item(item, dest, yaw.unwrap_or(0.7 * (t * 0.8).sin()));
+                .draw_item(item, dest, yaw.unwrap_or(0.7 * (t * 0.8).sin_d()));
         } else {
             self.renderer.draw_icon(item, dest);
         }

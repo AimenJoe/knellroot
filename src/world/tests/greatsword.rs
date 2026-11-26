@@ -2,6 +2,7 @@
 //! (둘레의 적 · 잃은 체력만큼 평타가 빨라진다 — 상한) · 빈 손의 결 "남김없이 휘두른다"(분노가 두 배로 차고 가득이면 평타가 끝나지
 //! 않는다) · RB 땅 내려찍기(땅을 따라 앞으로 달리는 짧은 충격파 — 길 위를 모두, 균열).
 use super::*;
+use crate::det::Det;
 use crate::weapons::{
     Id as W, Look, ART_FURY, BARE_FURY_RATE, FURY_CROWD, GREATSWORD_CLEAVE, GREATSWORD_FLINCH,
 };
@@ -55,7 +56,7 @@ fn a_sweep_cuts_the_three_nearest_and_no_more() {
     for k in 0..5 {
         let a = (k as f32 - 2.0) * 20f32.to_radians();
         let d = 1.0 + 0.25 * k as f32;
-        mob_with(&mut w, vec3(a.sin() * d, 0.0, -a.cos() * d), 500);
+        mob_with(&mut w, vec3(a.sin_d() * d, 0.0, -a.cos_d() * d), 500);
     }
     idle(&mut w);
     w.step(
@@ -333,7 +334,7 @@ fn fury_full_rings_once_per_crossing() {
     let ring: Vec<usize> = (0..4)
         .map(|k| {
             let a = k as f32 * std::f32::consts::FRAC_PI_2;
-            mob_with(&mut w, vec3(a.sin(), 0.0, a.cos()) * 1.6, 500)
+            mob_with(&mut w, vec3(a.sin_d(), 0.0, a.cos_d()) * 1.6, 500)
         })
         .collect();
     assert_eq!(fulls(&mut w, 0.5), 1, "once on the way up, not every tick");
@@ -351,7 +352,7 @@ fn fury_full_rings_once_per_crossing() {
     assert!(w.fury() < crate::weapons::FURY_REARM);
     for (k, &i) in ring[..2].iter().enumerate() {
         let a = k as f32 * std::f32::consts::FRAC_PI_2;
-        w.enemies[i].pos = vec3(a.sin(), 0.0, a.cos()) * 1.6;
+        w.enemies[i].pos = vec3(a.sin_d(), 0.0, a.cos_d()) * 1.6;
     }
     assert_eq!(fulls(&mut w, 0.2), 1, "a second crossing rings again");
     // 검은 분노가 없다.
@@ -359,7 +360,7 @@ fn fury_full_rings_once_per_crossing() {
     s.set_weapon(W::Sword);
     for k in 0..4 {
         let a = k as f32 * std::f32::consts::FRAC_PI_2;
-        mob_with(&mut s, vec3(a.sin(), 0.0, a.cos()) * 1.6, 500);
+        mob_with(&mut s, vec3(a.sin_d(), 0.0, a.cos_d()) * 1.6, 500);
     }
     assert_eq!(fulls(&mut s, 0.5), 0);
 }

@@ -16,6 +16,8 @@ macroquad = { version = "0.4.16", features = ["audio"] }
 # P4 스파이크(0013): glTF 읽기. 기본 기능(import = 파일·image 크레이트)은 끄고 JSON + 접근자만 — data URI는 base64로 직접 푼다.
 gltf = { version = "1.4.1", default-features = false, features = ["utils", "names"] }
 base64 = "0.22"
+# 플랫폼과 무관한 수학(0279 — `src/det.rs`): 시스템 libm은 glibc 판마다 끝자리가 다르다. 웹의 std가 쓰는 것과 같은 계열.
+libm = "0.2"
 
 # nail과 같은 까닭: gamepads 0.1.7은 Android에서 컴파일되지 않는다(패드는 miniquad 패치가 키로 넘긴다).
 # iOS도 뺀다(0137): gilrs에 iOS 백엔드가 없어 빈 패드였다 — 패치한 miniquad가 GameController를 읽어 Android와 같은 키로 넘긴다.

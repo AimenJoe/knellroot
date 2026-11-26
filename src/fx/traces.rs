@@ -15,6 +15,7 @@
 //! FX_WRITE=1 cargo test fx_traces
 //! ```
 use super::*;
+use crate::det::Det;
 use crate::tuning::{Tuning, TICK_DT};
 
 const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/fx/fx_traces.txt");
@@ -202,7 +203,7 @@ fn script(k: usize) -> crate::input::Actions {
     let a = k as f32 / 40.0;
     crate::input::Actions {
         move_dir: if k % 200 < 150 {
-            vec2(a.sin(), a.cos())
+            vec2(a.sin_d(), a.cos_d())
         } else {
             Vec2::ZERO
         },

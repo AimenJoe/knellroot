@@ -2,6 +2,7 @@
 //! 한 바퀴 번지고, 겹침 넷(묶인 적의 화상은 한 겹 더 — `status` · 화상 중에 묶이면 터진다 · 타는 적이 울리면 불이 옮는다 ·
 //! 금 간 적이 울리면 금이 번진다).
 use super::*;
+use crate::det::Det;
 use crate::skills::{Id as Sk, Loadout, Pick, Slot};
 use crate::status::Kind as Ty;
 use crate::tuning::{
@@ -161,7 +162,7 @@ fn ringing_runs_once_through_a_pack_and_stops() {
     let pack: Vec<usize> = (0..6)
         .map(|k| {
             let a = k as f32 * std::f32::consts::TAU / 6.0;
-            let i = foe(&mut w, vec3(8.0 + a.cos() * 1.5, 0.0, a.sin() * 1.5));
+            let i = foe(&mut w, vec3(8.0 + a.cos_d() * 1.5, 0.0, a.sin_d() * 1.5));
             w.enemies[i].ail.gauge[2] = 0.9;
             i
         })
@@ -332,7 +333,7 @@ fn a_whole_pack_tolling_at_once_hurts_each_foe_only_a_few_tolls_worth() {
         let ids: Vec<usize> = (0..n)
             .map(|k| {
                 let (a, r) = (k as f32 * 2.4, 0.6 + 0.35 * (k as f32).sqrt());
-                foe(&mut w, vec3(6.0 + r * a.cos(), 0.0, r * a.sin()))
+                foe(&mut w, vec3(6.0 + r * a.cos_d(), 0.0, r * a.sin_d()))
             })
             .collect();
         for &i in &ids {

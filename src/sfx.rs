@@ -5,6 +5,7 @@
 //! - **합성 소리**(시작할 때 만든다, 이 레포의 코드): 패링(맑은 쇳소리), 예고 넷(모양마다 다른 소리 — 소리만 듣고도 부채꼴·돌진·
 //!   파동·둘레를 가르게, 0064 R4), 문지기 깨어남(낮은 울림), 쉼터(따뜻한 화륵 + 종), 등잔 한 모금, 성소 환경음(낮은 바람 + 먼 종 — Knell).
 //! - 같은 소리는 `SAME_GAP`초 안에 겹쳐 내지 않는다(떼를 한 번에 맞혀도 귀가 아프지 않게). 흡수(`Id::Drain`)는 `DRAIN_GAP`초(0278).
+use crate::det::Det;
 use std::cell::{Cell, RefCell};
 
 use macroquad::audio::{load_sound_from_bytes, play_sound, stop_sound, PlaySoundParams, Sound};
@@ -388,10 +389,10 @@ pub fn synth(id: Id) -> Vec<i16> {
         Id::Parry => (0..len(0.5))
             .map(|i| {
                 let t = i as f32 / SR as f32;
-                let e = (-t * 9.0).exp();
-                let ring = (TAU * 1320.0 * t).sin()
-                    + 0.6 * (TAU * 2051.0 * t).sin()
-                    + 0.35 * (TAU * 3170.0 * t).sin();
+                let e = (-t * 9.0).exp_d();
+                let ring = (TAU * 1320.0 * t).sin_d()
+                    + 0.6 * (TAU * 2051.0 * t).sin_d()
+                    + 0.35 * (TAU * 3170.0 * t).sin_d();
                 let scrape = if t < 0.005 { rng(&mut seed) * 0.8 } else { 0.0 };
                 ring * e + scrape
             })
@@ -404,8 +405,8 @@ pub fn synth(id: Id) -> Vec<i16> {
                 .map(|i| {
                     let k = i as f32 / n as f32;
                     ph += (90.0 + 50.0 * k) / SR as f32;
-                    let saw = (ph.fract() * 2.0 - 1.0) * 0.6 + (TAU * ph).sin() * 0.4;
-                    saw * k.powf(1.5) * (1.0 - ((k - 0.92) / 0.08).max(0.0))
+                    let saw = (ph.fract() * 2.0 - 1.0) * 0.6 + (TAU * ph).sin_d() * 0.4;
+                    saw * k.powf_d(1.5) * (1.0 - ((k - 0.92) / 0.08).max(0.0))
                 })
                 .collect()
         }
@@ -417,7 +418,7 @@ pub fn synth(id: Id) -> Vec<i16> {
                 .map(|i| {
                     let k = i as f32 / n as f32;
                     ph += (600.0 + 800.0 * k * k) / SR as f32;
-                    ((TAU * ph).sin() * 0.7 + rng(&mut seed) * 0.15)
+                    ((TAU * ph).sin_d() * 0.7 + rng(&mut seed) * 0.15)
                         * (k * 3.0).min(1.0)
                         * (1.0 - k * 0.3)
                 })
@@ -427,8 +428,8 @@ pub fn synth(id: Id) -> Vec<i16> {
         Id::TeleRing => (0..len(0.9))
             .map(|i| {
                 let t = i as f32 / SR as f32;
-                let am = 0.6 + 0.4 * (TAU * 7.0 * t).sin();
-                let body = (TAU * 55.0 * t).sin() + 0.5 * (TAU * 110.0 * t).sin();
+                let am = 0.6 + 0.4 * (TAU * 7.0 * t).sin_d();
+                let body = (TAU * 55.0 * t).sin_d() + 0.5 * (TAU * 110.0 * t).sin_d();
                 body * am * (t / 0.15).min(1.0) * (1.0 - t / 0.9)
             })
             .collect(),
@@ -437,14 +438,14 @@ pub fn synth(id: Id) -> Vec<i16> {
             .map(|i| {
                 let t = i as f32 / SR as f32;
                 let breath = rng(&mut seed)
-                    * (t / 0.12).min(1.0).powf(2.0)
+                    * (t / 0.12).min(1.0).powf_d(2.0)
                     * (1.0 - ((t - 0.12) / 0.06).max(0.0))
                     * 0.7;
                 let d = t - 0.12;
                 let click = if d < 0.0 {
                     0.0
                 } else {
-                    (TAU * 180.0 * d).sin() * (-d * 70.0).exp()
+                    (TAU * 180.0 * d).sin_d() * (-d * 70.0).exp_d()
                 };
                 breath + click
             })
@@ -458,7 +459,7 @@ pub fn synth(id: Id) -> Vec<i16> {
                     if d < 0.0 {
                         0.0
                     } else {
-                        (TAU * 520.0 * d).sin() * (-d * 60.0).exp()
+                        (TAU * 520.0 * d).sin_d() * (-d * 60.0).exp_d()
                     }
                 };
                 tick(0.0) + 0.8 * tick(0.11)
@@ -472,7 +473,7 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let t = i as f32 / SR as f32;
                     lp += (rng(&mut seed) - lp) * 0.02;
                     let env = (t / 0.6).min(1.0) * (1.0 - (t - 1.4).max(0.0) / 0.6);
-                    ((TAU * 40.0 * t).sin() * 0.6 + lp * 3.0) * env
+                    ((TAU * 40.0 * t).sin_d() * 0.6 + lp * 3.0) * env
                 })
                 .collect()
         }
@@ -484,9 +485,9 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let t = i as f32 / SR as f32;
                     lp += (rng(&mut seed) - lp) * 0.08;
                     let whoosh =
-                        lp * 2.5 * (t / 0.25).min(1.0) * (-(t - 0.25).max(0.0) * 4.0).exp();
-                    let bell = ((TAU * 660.0 * t).sin() + 0.4 * (TAU * 1650.0 * t).sin())
-                        * (-t * 2.5).exp()
+                        lp * 2.5 * (t / 0.25).min(1.0) * (-(t - 0.25).max(0.0) * 4.0).exp_d();
+                    let bell = ((TAU * 660.0 * t).sin_d() + 0.4 * (TAU * 1650.0 * t).sin_d())
+                        * (-t * 2.5).exp_d()
                         * 0.5;
                     whoosh + bell
                 })
@@ -501,7 +502,7 @@ pub fn synth(id: Id) -> Vec<i16> {
                     if d < 0.0 {
                         0.0
                     } else {
-                        (TAU * (f - 300.0 * d) * d).sin() * (-d * 25.0).exp()
+                        (TAU * (f - 300.0 * d) * d).sin_d() * (-d * 25.0).exp_d()
                     }
                 };
                 g(0.0, 380.0) + g(0.13, 320.0)
@@ -514,7 +515,7 @@ pub fn synth(id: Id) -> Vec<i16> {
                 .map(|i| {
                     let t = i as f32 / SR as f32;
                     ph += (120.0 - 400.0 * t).max(70.0) / SR as f32;
-                    let thud = (TAU * ph).sin() * (-t * 30.0).exp();
+                    let thud = (TAU * ph).sin_d() * (-t * 30.0).exp_d();
                     let click = if t < 0.004 {
                         rng(&mut seed) * (1.0 - t / 0.004)
                     } else {
@@ -534,9 +535,9 @@ pub fn synth(id: Id) -> Vec<i16> {
             (0..len(0.32))
                 .map(|i| {
                     let t = i as f32 / SR as f32;
-                    let e = (-t * 13.0).exp();
-                    let strike = (-t * 60.0).exp();
-                    ((TAU * f0 * t).sin() + 0.35 * (TAU * f0 * 2.76 * t).sin() * strike) * e
+                    let e = (-t * 13.0).exp_d();
+                    let strike = (-t * 60.0).exp_d();
+                    ((TAU * f0 * t).sin_d() + 0.35 * (TAU * f0 * 2.76 * t).sin_d() * strike) * e
                 })
                 .collect()
         }
@@ -550,14 +551,14 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let x = rng(&mut seed);
                     lp += (x - lp) * 0.12;
                     hp += (lp - hp) * 0.02;
-                    let grind = (lp - hp) * 2.2 * (1.0 + 0.5 * (TAU * 23.0 * t).sin());
+                    let grind = (lp - hp) * 2.2 * (1.0 + 0.5 * (TAU * 23.0 * t).sin_d());
                     let rise = (t / 0.35).min(1.0);
-                    let hum = (TAU * 70.0 * t).sin() * 0.5;
+                    let hum = (TAU * 70.0 * t).sin_d() * 0.5;
                     let body = (grind + hum) * rise * (1.0 - ((t - 0.36) / 0.04).clamp(0.0, 1.0));
                     let d = t - 0.36;
                     let clunk = if d >= 0.0 {
-                        ((TAU * 110.0 * d).sin() + 0.4 * (TAU * 420.0 * d).sin())
-                            * (-d * 28.0).exp()
+                        ((TAU * 110.0 * d).sin_d() + 0.4 * (TAU * 420.0 * d).sin_d())
+                            * (-d * 28.0).exp_d()
                     } else {
                         0.0
                     };
@@ -574,9 +575,9 @@ pub fn synth(id: Id) -> Vec<i16> {
                     if d < 0.0 {
                         0.0
                     } else {
-                        ((TAU * f * d).sin() + 0.25 * (TAU * f * 2.0 * d).sin())
+                        ((TAU * f * d).sin_d() + 0.25 * (TAU * f * 2.0 * d).sin_d())
                             * (d / 0.012).min(1.0)
-                            * (-d * 7.0).exp()
+                            * (-d * 7.0).exp_d()
                     }
                 };
                 note(0.0, 659.3) + 0.9 * note(0.09, 880.0)
@@ -603,10 +604,10 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let t = i as f32 / SR as f32;
                     let ring: f32 = PARTS
                         .iter()
-                        .map(|&(k, a, d)| a * (TAU * F0 * k * t).sin() * (-t * d).exp())
+                        .map(|&(k, a, d)| a * (TAU * F0 * k * t).sin_d() * (-t * d).exp_d())
                         .sum();
-                    let strike = (TAU * F0 * 5.4 * t).sin() * (-t * 22.0).exp() * 0.6
-                        + rng(&mut seed) * (-t * 90.0).exp() * 0.25;
+                    let strike = (TAU * F0 * 5.4 * t).sin_d() * (-t * 22.0).exp_d() * 0.6
+                        + rng(&mut seed) * (-t * 90.0).exp_d() * 0.25;
                     (ring + strike) * (t / 0.003).min(1.0)
                 })
                 .collect()
@@ -616,10 +617,10 @@ pub fn synth(id: Id) -> Vec<i16> {
         Id::Sneak => (0..len(0.18))
             .map(|i| {
                 let t = i as f32 / SR as f32;
-                let e = (-t * 26.0).exp();
-                let ring = (TAU * 2640.0 * t).sin()
-                    + 0.5 * (TAU * 3987.0 * t).sin()
-                    + 0.3 * (TAU * 5310.0 * t).sin() * (-t * 50.0).exp();
+                let e = (-t * 26.0).exp_d();
+                let ring = (TAU * 2640.0 * t).sin_d()
+                    + 0.5 * (TAU * 3987.0 * t).sin_d()
+                    + 0.3 * (TAU * 5310.0 * t).sin_d() * (-t * 50.0).exp_d();
                 let scrape = if t < 0.002 { rng(&mut seed) * 0.9 } else { 0.0 };
                 ring * e + scrape
             })
@@ -636,8 +637,8 @@ pub fn synth(id: Id) -> Vec<i16> {
                     lp2 += (lp - lp2) * 0.02;
                     ph += (65.0 + 30.0 * k) / SR as f32;
                     let swell =
-                        (k / 0.64).min(1.0).powf(1.5) * (1.0 - ((k - 0.64) / 0.36).max(0.0));
-                    let growl = ((ph.fract() * 2.0 - 1.0) * 0.5 + (TAU * ph).sin() * 0.5) * 0.7;
+                        (k / 0.64).min(1.0).powf_d(1.5) * (1.0 - ((k - 0.64) / 0.36).max(0.0));
+                    let growl = ((ph.fract() * 2.0 - 1.0) * 0.5 + (TAU * ph).sin_d() * 0.5) * 0.7;
                     (lp2 * 12.0 + growl) * swell
                 })
                 .collect()
@@ -652,7 +653,7 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let k = (t / 0.16).min(1.0);
                     ph += (1100.0 - 840.0 * k) / SR as f32;
                     let whip = if t < 0.16 {
-                        ((TAU * ph).sin() * 0.6 + rng(&mut seed) * 0.25)
+                        ((TAU * ph).sin_d() * 0.6 + rng(&mut seed) * 0.25)
                             * (t / 0.02).min(1.0)
                             * (1.0 - k * 0.5)
                     } else {
@@ -660,8 +661,8 @@ pub fn synth(id: Id) -> Vec<i16> {
                     };
                     let d = t - 0.17;
                     let thunk = if d >= 0.0 {
-                        ((TAU * 120.0 * d).sin() + 0.3 * (TAU * 380.0 * d).sin())
-                            * (-d * 30.0).exp()
+                        ((TAU * 120.0 * d).sin_d() + 0.3 * (TAU * 380.0 * d).sin_d())
+                            * (-d * 30.0).exp_d()
                     } else {
                         0.0
                     };
@@ -679,12 +680,13 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let k = (t / 0.05).min(1.0);
                     let f = 700.0 + 700.0 * (1.0 - (1.0 - k) * (1.0 - k));
                     ph += f / SR as f32;
-                    let tone = (TAU * ph).sin() + 0.35 * (TAU * 2.0 * ph).sin() * (-t * 30.0).exp();
+                    let tone =
+                        (TAU * ph).sin_d() + 0.35 * (TAU * 2.0 * ph).sin_d() * (-t * 30.0).exp_d();
                     let env = (t / 0.003).min(1.0)
                         * if t < 0.05 {
                             1.0
                         } else {
-                            (-(t - 0.05) * 22.0).exp()
+                            (-(t - 0.05) * 22.0).exp_d()
                         };
                     tone * env
                 })
@@ -701,10 +703,10 @@ pub fn synth(id: Id) -> Vec<i16> {
                     lp += (rng(&mut seed) - lp) * 0.06;
                     lp2 += (lp - lp2) * 0.06;
                     ph += (55.0 + 27.0 * k) / SR as f32;
-                    let saw = (ph.fract() * 2.0 - 1.0) * 0.7 + (TAU * ph).sin() * 0.3;
-                    let shake = 0.8 + 0.2 * (TAU * 4.0 * t).sin();
+                    let saw = (ph.fract() * 2.0 - 1.0) * 0.7 + (TAU * ph).sin_d() * 0.3;
+                    let shake = 0.8 + 0.2 * (TAU * 4.0 * t).sin_d();
                     let swell =
-                        (k / 0.75).min(1.0).powf(1.8) * (1.0 - ((k - 0.75) / 0.25).max(0.0));
+                        (k / 0.75).min(1.0).powf_d(1.8) * (1.0 - ((k - 0.75) / 0.25).max(0.0));
                     (saw + lp2 * 5.0) * shake * swell
                 })
                 .collect()
@@ -718,9 +720,9 @@ pub fn synth(id: Id) -> Vec<i16> {
                     let t = i as f32 / SR as f32;
                     ph += (90.0 - 300.0 * t).max(48.0) / SR as f32;
                     let body =
-                        ((TAU * ph).sin() + 0.3 * (TAU * 3.0 * ph).sin()) * (-t * 14.0).exp();
+                        ((TAU * ph).sin_d() + 0.3 * (TAU * 3.0 * ph).sin_d()) * (-t * 14.0).exp_d();
                     lp += (rng(&mut seed) - lp) * 0.15;
-                    let crunch = lp * 2.5 * (-t * 60.0).exp();
+                    let crunch = lp * 2.5 * (-t * 60.0).exp_d();
                     (body + crunch) * (t / 0.002).min(1.0)
                 })
                 .collect()
@@ -733,11 +735,11 @@ pub fn synth(id: Id) -> Vec<i16> {
                 .map(|i| {
                     let t = i as f32 / SR as f32;
                     let k = i as f32 / n as f32;
-                    let a = 0.08 + 0.22 * (std::f32::consts::PI * k).sin();
+                    let a = 0.08 + 0.22 * (std::f32::consts::PI * k).sin_d();
                     lp += (rng(&mut seed) - lp) * a;
                     hp += (lp - hp) * 0.03;
                     let air = (lp - hp) * 3.0;
-                    let spin = 0.55 + 0.45 * (TAU * 22.0 * t).sin();
+                    let spin = 0.55 + 0.45 * (TAU * 22.0 * t).sin_d();
                     let env = (k / 0.25).min(1.0) * (1.0 - ((k - 0.4) / 0.6).max(0.0));
                     air * spin * env
                 })
@@ -750,8 +752,8 @@ pub fn synth(id: Id) -> Vec<i16> {
                 .map(|i| {
                     let t = i as f32 / SR as f32;
                     ph += (440.0 + 900.0 * t) / SR as f32;
-                    let tone = (TAU * ph).sin() + 0.2 * (TAU * 2.0 * ph).sin();
-                    tone * (t / 0.025).min(1.0) * (-(t - 0.025).max(0.0) * 14.0).exp()
+                    let tone = (TAU * ph).sin_d() + 0.2 * (TAU * 2.0 * ph).sin_d();
+                    tone * (t / 0.025).min(1.0) * (-(t - 0.025).max(0.0) * 14.0).exp_d()
                 })
                 .collect()
         }
@@ -793,14 +795,14 @@ pub fn ambience() -> Vec<i16> {
     let v: Vec<f32> = (0..n)
         .map(|i| {
             let t = i as f32 / SR as f32;
-            let swell = 0.6 + 0.4 * (TAU * t / 12.0).sin();
+            let swell = 0.6 + 0.4 * (TAU * t / 12.0).sin_d();
             let w = wind[i] * 6.0 * swell;
             let d = t - 6.0;
             let bell = if d >= 0.0 {
-                ((TAU * 196.0 * d).sin()
-                    + 0.5 * (TAU * 392.7 * d).sin()
-                    + 0.25 * (TAU * 589.0 * d).sin())
-                    * (-d * 0.8).exp()
+                ((TAU * 196.0 * d).sin_d()
+                    + 0.5 * (TAU * 392.7 * d).sin_d()
+                    + 0.25 * (TAU * 589.0 * d).sin_d())
+                    * (-d * 0.8).exp_d()
                     * 0.35
             } else {
                 0.0

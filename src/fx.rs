@@ -3,6 +3,7 @@
 //!
 //! 원칙(KB `game-feel-particles-and-light` + 0141): 타격은 겹으로(번쩍임 1~2프레임 → 불똥 → 남는 먼지), 한 이펙트는 2~3색,
 //! 타격은 짧고 밝게·몸짓(먼지)은 흙빛으로 낮게, 꾸밈은 많으면 건너뛰고 타격은 건너뛰지 않는다, 빨강은 쓰지 않는다(위험 예고 전용).
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::enemy::{Atk, Blow, EState};
@@ -148,11 +149,11 @@ pub fn field_mote(i: usize, time: f32) -> (Vec3, f32) {
     let a = h(3) * std::f32::consts::TAU;
     // 넓이에 고르게(√) — 가장자리까지.
     let r = h(4).sqrt() * 0.96;
-    let sway = (time * (2.0 + 2.0 * h(5)) + h(6) * 6.0).sin() * 0.05 * ph;
+    let sway = (time * (2.0 + 2.0 * h(5)) + h(6) * 6.0).sin_d() * 0.05 * ph;
     let pos = vec3(
-        a.sin() * r + sway,
+        a.sin_d() * r + sway,
         0.08 + (0.7 + 0.9 * h(7)) * ph,
-        a.cos() * r,
+        a.cos_d() * r,
     );
     let k = (ph / 0.12).min(1.0) * ((1.0 - ph) / 0.35).min(1.0);
     (pos, k)
@@ -174,7 +175,7 @@ pub fn rain_arrow(i: usize, time: f32) -> (Vec3, f32) {
     let j = |n: u32| h(n.wrapping_add(round.wrapping_mul(7)));
     let a = j(3) * std::f32::consts::TAU;
     let r = j(4).sqrt() * 0.94;
-    let pos = vec3(a.sin() * r, 1.0 - ph, a.cos() * r);
+    let pos = vec3(a.sin_d() * r, 1.0 - ph, a.cos_d() * r);
     (pos, (ph / 0.15).min(1.0))
 }
 /// 화살비에 한꺼번에 보이는 화살의 수.
@@ -333,7 +334,7 @@ impl Fx {
         let turn = self.r() * std::f32::consts::TAU;
         for i in 0..n {
             let a = turn + i as f32 / n as f32 * std::f32::consts::TAU + self.rs() * 0.25;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let rr = r * (0.55 + 0.45 * self.r());
             let life = 0.22 + 0.08 * self.r();
             let h = 0.3 + 0.6 * self.r();
@@ -367,7 +368,7 @@ impl Fx {
         let turn = self.r() * std::f32::consts::TAU;
         for i in 0..n {
             let a = turn + i as f32 / n as f32 * std::f32::consts::TAU + self.rs() * 0.15;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let sp = speed * (0.7 + 0.6 * self.r());
             let l = life * (0.7 + 0.5 * self.r());
             let up = 0.5 + 1.5 * self.r();
@@ -448,13 +449,13 @@ impl Fx {
         for i in 0..n {
             let flat = if around {
                 let a = self.r() * std::f32::consts::TAU;
-                vec3(a.sin(), 0.0, a.cos())
+                vec3(a.sin_d(), 0.0, a.cos_d())
             } else {
                 // 맞은 쪽보다 옆으로(칼이 지나가는 쪽 — 베인 피는 날을 따라 튄다): 곧장 뒤로 튀면 카메라(방랑자 뒤)에서
                 // 맞은 몸에 가려 안 보였다(헤드리스 화면). 좌우 번갈아 30~80°.
                 let sign = if i % 2 == 0 { 1.0 } else { -1.0 };
                 let a = (30.0 + 50.0 * self.r()).to_radians();
-                (dir * a.cos() + side * (sign * a.sin())).normalize_or(dir)
+                (dir * a.cos_d() + side * (sign * a.sin_d())).normalize_or(dir)
             };
             let glob = i % 3 == 0;
             let sp = speed * (0.5 + 0.7 * self.r()) * if glob { 0.75 } else { 1.0 };
@@ -578,7 +579,7 @@ impl Fx {
         let turn = self.r() * std::f32::consts::TAU;
         for i in 0..n {
             let a = turn + i as f32 / n as f32 * std::f32::consts::TAU + self.rs() * 0.2;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let s = size * (0.8 + 0.5 * self.r());
             let vel = d * speed * (0.7 + 0.5 * self.r()) + Vec3::Y * (0.3 + 0.5 * self.r());
             let life = 0.42 + 0.2 * self.r();
@@ -623,17 +624,17 @@ impl Fx {
     /// 튀어 오르는 돌 부스러기 `n`개: `g`(바닥)에서 `dir` 쪽 `arc_deg`°(360 = 사방) 안, 반지름 `range`의 25~95% 자리에서.
     fn chips(&mut self, g: Vec3, dir: Vec3, range: f32, arc_deg: f32, n: usize) {
         let half = (arc_deg * 0.4).to_radians();
-        let yaw = dir.x.atan2(dir.z);
+        let yaw = dir.x.atan2_d(dir.z);
         for _ in 0..n {
             let a = yaw + self.rs() * half;
             let rr = range * (0.25 + 0.7 * self.r());
-            let p = g + vec3(a.sin() * rr, 0.1, a.cos() * rr);
+            let p = g + vec3(a.sin_d() * rr, 0.1, a.cos_d() * rr);
             let up = 4.0 + 3.5 * self.r();
             let life = 0.45 + 0.2 * self.r();
             let size = 0.1 + 0.08 * self.r();
             self.push(Part {
                 pos: p,
-                vel: vec3(a.sin() * 1.5, up, a.cos() * 1.5),
+                vel: vec3(a.sin_d() * 1.5, up, a.cos_d() * 1.5),
                 age: 0.0,
                 life,
                 size: (size, size * 0.7),
@@ -1104,7 +1105,7 @@ impl Fx {
         }
         // 던진 무기의 꼬리: 날아가는 동안 틱마다 지나온 자리에 금빛 줄(굽은 길이 남는다).
         for b in &w.skill_blades {
-            let side = vec3(b.dir.z, 0.0, -b.dir.x) * (b.age * 31.0).sin();
+            let side = vec3(b.dir.z, 0.0, -b.dir.x) * (b.age * 31.0).sin_d();
             let vel = -b.dir * 2.0 + side * 2.5;
             let part = Part {
                 pos: b.pos + side * 0.35,
@@ -1130,7 +1131,7 @@ impl Fx {
                 let up = 1.6 + 1.2 * self.r();
                 let h = 0.2 + 0.8 * self.r();
                 self.push(Part {
-                    pos: feet + vec3(a.sin() * rr, h, a.cos() * rr),
+                    pos: feet + vec3(a.sin_d() * rr, h, a.cos_d() * rr),
                     vel: vec3(0.0, up, 0.0),
                     age: 0.0,
                     life: 0.45,
@@ -1155,10 +1156,10 @@ impl Fx {
                 let rr = 0.25 + 0.2 * self.r();
                 let h = 0.6 + 0.6 * self.r();
                 let full = fury >= 1.0;
-                let side = vec3(a.cos(), 0.0, -a.sin()) * (self.rs() * 0.6);
+                let side = vec3(a.cos_d(), 0.0, -a.sin_d()) * (self.rs() * 0.6);
                 let up = 2.2 + 1.4 * self.r();
                 self.push(Part {
-                    pos: feet + vec3(a.sin() * rr, h, a.cos() * rr),
+                    pos: feet + vec3(a.sin_d() * rr, h, a.cos_d() * rr),
                     vel: vec3(0.0, up, 0.0) + side,
                     age: 0.0,
                     life: 0.45,
@@ -1206,7 +1207,7 @@ impl Fx {
         for front in en.wave_fronts() {
             for _ in 0..WAVE_CHIPS {
                 let a = self.r() * std::f32::consts::TAU;
-                let d = vec3(a.sin(), 0.0, a.cos());
+                let d = vec3(a.sin_d(), 0.0, a.cos_d());
                 let at = cg + d * front;
                 let at = vec3(at.x, w.ground_y(at) + 0.08, at.z);
                 let size = 0.09 + 0.07 * self.r();
@@ -1295,11 +1296,11 @@ pub fn brazier_ember(k: usize, i: usize, time: f32) -> (Vec3, f32) {
     let ph = ((time + h(2) * period) / period).fract();
     let a = h(3) * std::f32::consts::TAU;
     let r = 0.05 + 0.16 * h(4);
-    let sway = (time * (1.5 + 2.0 * h(5)) + h(6) * 6.0).sin() * 0.10 * ph;
+    let sway = (time * (1.5 + 2.0 * h(5)) + h(6) * 6.0).sin_d() * 0.10 * ph;
     let pos = vec3(
-        a.sin() * r + sway,
+        a.sin_d() * r + sway,
         0.15 + (0.9 + 0.7 * h(7)) * ph,
-        a.cos() * r,
+        a.cos_d() * r,
     );
     // 떠오르자마자 밝고, 위로 갈수록 식는다(끝 30%에서 사라짐).
     let k = (ph / 0.1).min(1.0) * ((1.0 - ph) / 0.3).min(1.0);
@@ -2183,7 +2184,7 @@ mod tests {
             w.set_weapon(weapon);
             for i in 0..foes {
                 let a = i as f32 * std::f32::consts::FRAC_PI_2;
-                let at = w.player.pos + vec3(a.sin(), 0.0, a.cos()) * 1.5;
+                let at = w.player.pos + vec3(a.sin_d(), 0.0, a.cos_d()) * 1.5;
                 let k = w.spawn(crate::species::Kind::Husk, at);
                 w.enemies[k].state = EState::Recover { t: -1000.0 };
             }

@@ -1,5 +1,6 @@
 //! 땅 높낮이를 따라 접는 바닥 그림(0083): 원판·부채꼴·고리·띠·선.
 use super::*;
+use crate::det::Det;
 
 /// 바닥 그림을 땅 높낮이에 접는 것(2026-11-06): 점마다 그 자리의 땅 높이(경사로·턱 — `Ground::height_in`, 벽·격자 밖이면 적의 발 높이)
 /// 위로 들어 올리고, 면은 `DRAPE_STEP`마다 잘게 나눠 턱에서 꺾이게 한다. 땅이 없으면(아레나) 발 높이 평면 그대로.
@@ -63,7 +64,7 @@ impl Drape<'_> {
             let rr = r * j as f32 / m as f32;
             for i in 0..=n {
                 let a = yaw - half + arc.to_radians() * (i as f32 / n as f32);
-                let (s, k) = a.sin_cos();
+                let (s, k) = a.sin_cos_d();
                 let q = self.at(c.x + s * rr, c.z + k * rr, c.y, up);
                 v.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, col));
             }
@@ -96,7 +97,7 @@ impl Drape<'_> {
         let up = 0.03 + self.rise(c);
         for i in 0..=n {
             let a = yaw - half + arc.to_radians() * (i as f32 / n as f32);
-            let (s, k) = a.sin_cos();
+            let (s, k) = a.sin_cos_d();
             for rr in [r - w, r] {
                 let q = self.at(c.x + s * rr, c.z + k * rr, c.y, up);
                 v.push(Vertex::new(q.x, q.y, q.z, 0.0, 0.0, col));
@@ -108,7 +109,7 @@ impl Drape<'_> {
         }
         if arc < 360.0 {
             for a in [yaw - half, yaw + half] {
-                let (s, k) = a.sin_cos();
+                let (s, k) = a.sin_cos_d();
                 self.line(c, c + vec3(s * r, 0.0, k * r), col);
             }
         }

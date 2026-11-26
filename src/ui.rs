@@ -7,6 +7,7 @@
 //!
 //! 글자 아틀라스: 쓰는 크기의 모든 글자(두 언어 표의 글자 + ASCII)를 그리기 전에 굽는다(`warm`) — 프레임 중간에 아틀라스가
 //! 커지면 옛 텍스처가 지워져 WebGL 에러가 났다(`text.rs`, 2026-11-03).
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::i18n::{self, Strings};
@@ -1055,7 +1056,7 @@ impl Ui {
     /// `r` = 화면 px 반지름. 어두운 테를 먼저 그려 어느 바탕에서도 보이게.
     pub fn sparkle(&self, c: Vec2, r: f32) {
         let t = get_time() as f32;
-        let p = 0.5 + 0.5 * (t * 4.2).sin();
+        let p = 0.5 + 0.5 * (t * 4.2).sin_d();
         let r = r * (0.8 + 0.35 * p);
         let star = |r: f32, w: f32, col: Color| {
             for (dx, dy) in [(1.0f32, 0.0f32), (0.0, 1.0)] {

@@ -1,5 +1,6 @@
 //! 땅: 구운 지형(가린 덩어리는 옅게, 바람 재질)과 개발 아레나의 바닥·기둥.
 use super::*;
+use crate::det::Det;
 
 impl Renderer {
     /// 개발 시나리오의 바닥(PoC 아레나): 판 + 격자 + 낮은 턱 + 회색 기둥(가리면 옅게).
@@ -296,7 +297,7 @@ impl Renderer {
         let mut lights = sc.lights.clone();
         // 갈 곳(0060 W1)에 호박색 빛 — 곁의 모델이 같이 물든다("호박색 불빛 = 갈 길").
         if let Some(g) = run.goal() {
-            let pulse = 0.85 + 0.15 * (w.time * GUIDE_PULSE).sin();
+            let pulse = 0.85 + 0.15 * (w.time * GUIDE_PULSE).sin_d();
             lights.push(Light {
                 pos: g + Vec3::Y * 1.5,
                 color: Color::new(

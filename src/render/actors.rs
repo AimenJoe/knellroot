@@ -1,5 +1,6 @@
 //! 배우: 적·방랑자·던진 무기 — 상태 → 동작 이름과 시각, 준비 동작의 몸 신호, 휘청 기울기, 모델이 없을 때의 상자 배우.
 use super::*;
+use crate::det::Det;
 
 impl Renderer {
     pub(super) fn enemy(
@@ -18,7 +19,8 @@ impl Renderer {
         let struck = (en.hurt / 0.15).clamp(0.0, 1.0);
         if struck > 0.0 && en.sway.length() > 1e-4 {
             if w.hitstop > 0.0 {
-                let shake = (get_time() as f32 * 90.0).sin() * crate::tuning::HIT_TREMBLE * struck;
+                let shake =
+                    (get_time() as f32 * 90.0).sin_d() * crate::tuning::HIT_TREMBLE * struck;
                 p += en.sway.normalize() * shake;
             }
             if !matches!(en.state, EState::Stagger { .. }) {
@@ -34,7 +36,7 @@ impl Renderer {
                 tilt = Quat::from_axis_angle(Vec3::Y.cross(v).normalize(), v.length());
             }
             // 움찔: 처음 순간 눌렸다 펴진다.
-            squash = 1.0 - 0.2 * en.sway.length() * (-12.0 * en.sway_t).exp();
+            squash = 1.0 - 0.2 * en.sway.length() * (-12.0 * en.sway_t).exp_d();
         }
         // 죽음: 뒤로 넘어지며 가라앉는다.
         if fall > 0.0 {
@@ -98,8 +100,8 @@ impl Renderer {
         }
         if let Some(h) = windup_hold(en) {
             let tremble = WINDUP_TREMBLE * if delayed { DELAY_TREMBLE } else { 1.0 };
-            let shake = (get_time() as f32 * 70.0).sin() * tremble;
-            p += vec3(en.facing.cos(), 0.0, -en.facing.sin()) * shake;
+            let shake = (get_time() as f32 * 70.0).sin_d() * tremble;
+            p += vec3(en.facing.cos_d(), 0.0, -en.facing.sin_d()) * shake;
             // 번쩍임은 눈·핵만(몸 전체가 밝아지면 맞았을 때의 흰 번쩍임과 헷갈린다).
             glow += WINDUP_GLINT_GAIN * (1.0 - h / WINDUP_GLINT).max(0.0);
         }
@@ -230,7 +232,7 @@ impl Renderer {
         };
         let want =
             1.0 - (1.0 - t[crate::tuning::P::RenderLockFade]) * (hide / 0.35).clamp(0.0, 1.0);
-        self.lock_fade += (want - self.lock_fade) * (1.0 - (-10.0 * get_frame_time()).exp());
+        self.lock_fade += (want - self.lock_fade) * (1.0 - (-10.0 * get_frame_time()).exp_d());
         let a = (0.25 + 0.75 * close) * self.lock_fade;
         if let Some(e) = self.lib.get("wanderer") {
             // 상태 → 동작 이름·시각은 렌더 밖의 순수한 셈(0251 R9 — `anim.rs`, 시험).
@@ -275,7 +277,7 @@ impl Renderer {
             } else {
                 0.0
             };
-            self.leg_turn += (leg_want - self.leg_turn) * (1.0 - (-LEG_TURN_RATE * wdt).exp());
+            self.leg_turn += (leg_want - self.leg_turn) * (1.0 - (-LEG_TURN_RATE * wdt).exp_d());
             if self.leg_turn.abs() > 1e-3 {
                 if let (Some(h), Some(sp)) = (
                     e.model.node("mixamorig:Hips"),
@@ -326,7 +328,7 @@ impl Renderer {
                 PState::Hurt { t: e, dur } => {
                     let left = (1.0 - e / dur.max(1e-3)).clamp(0.0, 1.0);
                     let away = vec3(pl.vel.x, 0.0, pl.vel.z).normalize_or_zero();
-                    let jitter = (w.time * 70.0).sin() * 0.08 * left;
+                    let jitter = (w.time * 70.0).sin_d() * 0.08 * left;
                     let ang = RECOIL * left * left + jitter;
                     if away.length() > 0.5 {
                         Quat::from_axis_angle(Vec3::Y.cross(away).normalize(), ang)
@@ -339,7 +341,7 @@ impl Renderer {
             // 강공격이 다 모이면 몸이 잘게 떤다(떼라는 신호, 0034).
             let tremble = match pl.state {
                 PState::Charging { t: e } if e >= t[crate::tuning::P::HeavyCharge] => {
-                    vec3((w.time * 61.0).sin(), 0.0, (w.time * 47.0).cos()) * 0.018
+                    vec3((w.time * 61.0).sin_d(), 0.0, (w.time * 47.0).cos_d()) * 0.018
                 }
                 _ => Vec3::ZERO,
             };
@@ -354,7 +356,7 @@ impl Renderer {
                     id: crate::skills::Id::Whirl,
                     dir,
                     ..
-                } if self.whirl_clip => dir.x.atan2(dir.z),
+                } if self.whirl_clip => dir.x.atan2_d(dir.z),
                 _ => pl.facing,
             };
             let inst = Mat4::from_translation(pp + Vec3::Y * pl.air + tremble)
@@ -812,8 +814,8 @@ pub fn lean(sway: Vec3, t: f32, clock: f32, left: f32) -> Vec3 {
     }
     let dir = sway / k;
     // 감쇠 진동(초당 두 번): 0.125초에 가장 크게(≈ 0.7), 0.375초에 반대로 한 번, 1초면 거의 선다.
-    let swing = (-3.0 * t).exp() * (std::f32::consts::TAU * 2.0 * t).sin();
-    let (s, c) = (clock * 9.0).sin_cos();
+    let swing = (-3.0 * t).exp_d() * (std::f32::consts::TAU * 2.0 * t).sin_d();
+    let (s, c) = (clock * 9.0).sin_cos_d();
     dir * (LEAN_MAX * k * swing) + vec3(c, 0.0, s) * (DIZZY * left)
 }
 

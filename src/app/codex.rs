@@ -6,6 +6,7 @@ use super::menu::Hit;
 use super::tabs::{Ln, PaneHead};
 use super::*;
 use crate::codex::{self, ENTRIES};
+use crate::det::Det;
 use crate::i18n::Tr;
 use flow::Host;
 
@@ -281,7 +282,7 @@ impl App {
             let ink = if seen { AMBER } else { INK };
             self.ui.text(&fit, p.x, p.y, tabs::K_NAME * k, ink);
             let pic = w.rect(tabs::RIGHT_X, PIC_TOP, tabs::RIGHT_W, PIC_H);
-            let spin = self.tab.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin());
+            let spin = self.tab.codex_view.yaw.unwrap_or(0.6 * (t * 0.6).sin_d());
             self.renderer.draw_creature(e.kind, pic, spin, t, !seen);
             self.tab.codex_view.rect = Some(pic);
             lines.extend(self.pane_wrap(&w, &fill(s.codex_place, &[tr(e.place)]), PLACE));
@@ -367,7 +368,7 @@ impl App {
                         side,
                     );
                     let t = get_time() as f32;
-                    let spin = self.tab.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin());
+                    let spin = self.tab.codex_view.yaw.unwrap_or(0.7 * (t * 0.8).sin_d());
                     self.renderer.draw_item_shadow(d.item, dest, spin);
                     self.tab.codex_view.rect = Some(icon);
                 } else {

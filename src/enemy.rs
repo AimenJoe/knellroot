@@ -1,5 +1,6 @@
 //! 적 하나의 상태와 행동(0019). 종류별 수치는 `species.rs` 표, 여기는 행동 방식(근접·돌진·문지기)의 상태 기계.
 //! 월드는 `Enemy::tick`을 부르고, 플레이어를 쳤는지·깨어났는지를 받아 피해·이벤트로 바꾼다(월드 경계는 그대로).
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::species::{self, Behavior, Def, Kind};
@@ -457,8 +458,8 @@ impl Enemy {
         if self.graze_t < GRAZE_STAY {
             return;
         }
-        let k = (self.graze_n as f32 * 2.399 + home.x * 0.71 + home.z * 0.37).sin_cos();
-        let r = GRAZE_R * (0.4 + 0.6 * (self.graze_n as f32 * 1.7 + home.x).sin().abs());
+        let k = (self.graze_n as f32 * 2.399 + home.x * 0.71 + home.z * 0.37).sin_cos_d();
+        let r = GRAZE_R * (0.4 + 0.6 * (self.graze_n as f32 * 1.7 + home.x).sin_d().abs());
         let to = home + vec3(k.0, 0.0, k.1) * r - self.pos;
         let to = vec3(to.x, 0.0, to.z);
         let l = to.length();
@@ -703,7 +704,7 @@ impl Enemy {
     }
 
     pub fn facing_dir(&self) -> Vec3 {
-        let (s, c) = self.facing.sin_cos();
+        let (s, c) = self.facing.sin_cos_d();
         vec3(s, 0.0, c)
     }
 
@@ -755,7 +756,7 @@ impl Enemy {
             && self.alive()
             && self.stance.broken <= 0.0
             && !matches!(self.state, EState::Stagger { .. } | EState::Dormant)
-            && self.facing_dir().dot(from.normalize_or_zero()) >= (arc * 0.5).to_radians().cos()
+            && self.facing_dir().dot(from.normalize_or_zero()) >= (arc * 0.5).to_radians().cos_d()
     }
 
     /// 껍질로 웅크렸나(이끼 덮인 문지기, 0185).
@@ -845,7 +846,7 @@ impl Enemy {
 
     /// 바라보는 쪽에서 `yaw`(rad)만큼 비낀 쪽.
     pub fn dir_at(&self, yaw: f32) -> Vec3 {
-        let (s, c) = (self.facing + yaw).sin_cos();
+        let (s, c) = (self.facing + yaw).sin_cos_d();
         vec3(s, 0.0, c)
     }
 
@@ -1036,7 +1037,7 @@ impl Enemy {
     }
 
     fn turn_toward(&mut self, dir: Vec3, rate: f32, dt: f32) {
-        let want = dir.x.atan2(dir.z);
+        let want = dir.x.atan2_d(dir.z);
         let mut diff = want - self.facing;
         while diff > std::f32::consts::PI {
             diff -= std::f32::consts::TAU;
@@ -1289,10 +1290,10 @@ impl Enemy {
         self.eat_t += dt;
         if self.eat_t >= GRAZE_SHUFFLE_T {
             self.eat_t = 0.0;
-            let a = (self.pos.x * 12.9898 + self.pos.z * 78.233).sin() * 43_758.547;
+            let a = (self.pos.x * 12.9898 + self.pos.z * 78.233).sin_d() * 43_758.547;
             let t = a.fract().abs() * std::f32::consts::TAU;
             self.facing = face + t;
-            self.pos += vec3(t.sin(), 0.0, t.cos()) * GRAZE_SHUFFLE * 0.3;
+            self.pos += vec3(t.sin_d(), 0.0, t.cos_d()) * GRAZE_SHUFFLE * 0.3;
         }
     }
 
@@ -2480,7 +2481,7 @@ mod stag_tests {
         assert!((lines[1].0 + fan).abs() < 1e-5 && (lines[2].0 - fan).abs() < 1e-5);
         assert_eq!(en.tele_more().len(), 3);
         // 옆 줄 위 7m: 2단계에는 맞고 1단계에는 안 맞는다.
-        let on_side = vec3(fan.sin(), 0.0, fan.cos()) * 7.0;
+        let on_side = vec3(fan.sin_d(), 0.0, fan.cos_d()) * 7.0;
         let hit_by = |roused: bool| {
             let mut en = stag();
             en.roused = roused;

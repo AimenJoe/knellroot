@@ -1,4 +1,5 @@
 //! 개발 시나리오(nail 규칙): 같은 상황에 몇 초 만에 다시. 시나리오 설명에 그것이 검증하는 PoC 항목을 적는다.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::world::{Aabb, World};
@@ -194,7 +195,7 @@ pub fn build(s: Scenario) -> World {
             for i in 0..20 {
                 let a = i as f32 / 20.0 * std::f32::consts::TAU;
                 let r = 9.0 + (i % 3) as f32 * 1.5;
-                w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
             }
             w
         }
@@ -334,7 +335,7 @@ pub fn build(s: Scenario) -> World {
             for (n, r) in [(10, 8.0), (14, 11.0)] {
                 for i in 0..n {
                     let a = (i as f32 + 0.5) / n as f32 * std::f32::consts::TAU;
-                    w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                    w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
                 }
             }
             w.player.skill.gauge = 1.0;
@@ -346,7 +347,7 @@ pub fn build(s: Scenario) -> World {
             for (n, r) in [(4, 3.0), (6, 5.0), (8, 7.0)] {
                 for i in 0..n {
                     let a = (i as f32 + 0.5) / n as f32 * std::f32::consts::TAU;
-                    w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+                    w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
                 }
             }
             for (x, z) in [(6.5, 6.5), (-6.5, 6.5), (6.5, -6.5), (-6.5, -6.5)] {
@@ -367,7 +368,7 @@ fn stress(n: usize) -> World {
         let per = n.div_ceil(rings);
         let a = (k as f32 + 0.5 * ring as f32) / per as f32 * std::f32::consts::TAU;
         let r = 8.0 + ring as f32 * 3.0;
-        w.spawn_mob(vec3(a.cos() * r, 0.0, a.sin() * r));
+        w.spawn_mob(vec3(a.cos_d() * r, 0.0, a.sin_d() * r));
     }
     for (x, z) in [(10.0, 10.0), (-10.0, 10.0), (10.0, -10.0), (-10.0, -10.0)] {
         w.obstacles.push(pillar(x, z, 1.6, 4.0));
@@ -423,7 +424,7 @@ mod tests {
                 w.tree = full;
                 for i in 0..900u32 {
                     let a = Actions {
-                        move_dir: vec2(((i / 40) as f32).sin(), ((i / 40) as f32).cos()),
+                        move_dir: vec2(((i / 40) as f32).sin_d(), ((i / 40) as f32).cos_d()),
                         attack: i % 9 == 0,
                         attack_held: (i / 60) % 3 == 1,
                         dodge: i % 70 == 0,

@@ -4,6 +4,7 @@
 //! → 이동 → 바라보기 → 떨어지기 → 마무리. 새 동작(나무 칸, 0102)은 그 상태의 메서드에 한 줄씩 넣는다.
 //! 상태가 서로 쓰는 시작(회피·패링)은 `try_dodge`·`try_parry` 한 곳.
 use super::*;
+use crate::det::Det;
 use crate::progression::{cell, Cell, Link};
 
 /// 이번 틱 플레이어 단계가 같이 보는 것 — 입력 기준·조준을 한 번 계산해 상태 메서드들이 나눠 쓴다.
@@ -225,7 +226,7 @@ impl World {
                 &self.enemies,
                 self.player.pos,
                 t[P::AimRange],
-                aim.map(|d| (d, (t[P::AimCone] * 0.5).to_radians().cos())),
+                aim.map(|d| (d, (t[P::AimCone] * 0.5).to_radians().cos_d())),
             )
         } else {
             None
@@ -524,7 +525,7 @@ impl World {
             return false;
         }
         if let Some(d) = cx.auto_dir.or(cx.aim) {
-            pl.facing = d.x.atan2(d.z);
+            pl.facing = d.x.atan2_d(d.z);
         }
         pl.state = PState::Parry { t: 0.0 };
         true
@@ -569,7 +570,7 @@ impl World {
         } else {
             pl.facing_dir()
         };
-        pl.facing = dir.x.atan2(dir.z);
+        pl.facing = dir.x.atan2_d(dir.z);
         pl.swings += 1;
         pl.state = PState::Rush {
             t: 0.0,
@@ -630,7 +631,7 @@ impl World {
                 self.notes.cast_denied = true;
             } else {
                 let pl = &mut self.player;
-                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
                 pl.state = PState::Cast {
                     t: 0.0,
                     dir: cx.cast_dir,
@@ -650,7 +651,7 @@ impl World {
                 self.start_shot(cx);
             } else {
                 let pl = &mut self.player;
-                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
                 pl.state = PState::CastCharge { t: 0.0 };
             }
         } else if a.cast && matches!(wpn.rb, Rb::Shot { .. }) {
@@ -661,11 +662,11 @@ impl World {
             let pl = &mut self.player;
             if winds && pl.ranged.mana >= 1.0 && !javelin {
                 // 창 던지기(0274 ②b): 던지면 손에 창이 없어 "쏜 뒤 쥐어 모으기"를 못 한다 — 누르면 들어 겨누고 떼면 던진다(`tick_wind`).
-                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
                 pl.state = PState::CastCharge { t: 0.0 };
             } else if pl.ranged.mana >= 1.0 && !javelin {
                 pl.ranged.mana -= 1.0;
-                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
                 pl.state = PState::Cast {
                     t: 0.0,
                     dir: cx.cast_dir,
@@ -702,7 +703,7 @@ impl World {
             let to = cx.throw_to.unwrap_or(pl.pos);
             let d = vec3(to.x - pl.pos.x, 0.0, to.z - pl.pos.z);
             if d.length() > 0.1 {
-                pl.facing = d.x.atan2(d.z);
+                pl.facing = d.x.atan2_d(d.z);
             }
             pl.state = PState::Throw {
                 t: 0.0,
@@ -775,7 +776,7 @@ impl World {
         pl.swings += 1;
         // 휘두르는 쪽을 그 자리에서 정한다: 자동 조준 > 조준 스틱 > 지금 바라보는 쪽.
         if let Some(d) = cx.auto_dir.or(cx.aim) {
-            pl.facing = d.x.atan2(d.z);
+            pl.facing = d.x.atan2_d(d.z);
         }
         // 내딛는 쪽 = 진행 방향(0018): 누른 순간의 이동 입력, 없으면 아직 움직이던 쪽, 서 있으면 바라보는 쪽.
         // 휘두르는 쪽(바라보는 쪽 — 자동 조준·조준 스틱)과는 따로다.
@@ -906,7 +907,7 @@ impl World {
             pl.beat.swing_beat = free;
             pl.beat.since_swing = 0.0;
             pl.beat.period = cx.t[P::CastTime] * time;
-            pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+            pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
             pl.state = if draws {
                 PState::CastCharge { t: 0.0 }
             } else {
@@ -1004,7 +1005,7 @@ impl World {
             let full_at = t[P::HeavyCharge] * h.charge;
             // 떼면 강타 — 자동 조준·조준 스틱 쪽으로, 내딛는 쪽은 이동 입력(없으면 바라보는 쪽).
             if let Some(d) = cx.auto_dir.or(cx.aim) {
-                pl.facing = d.x.atan2(d.z);
+                pl.facing = d.x.atan2_d(d.z);
             }
             let dir = if cx.world_move.length_squared() > 1e-4 {
                 cx.world_move.normalize()
@@ -1128,7 +1129,7 @@ impl World {
             self.notes.charged |= e < full && e + dt >= full;
             if ranged_aim_given(&cx.a) {
                 // 겨누는 손(끌기·스틱·숄더뷰의 카메라, 0217·0219)을 몸이 따라 돈다 — 뗄 때 어디로 갈지 보이게.
-                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                self.player.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
             }
             self.player.state = PState::CastCharge { t: e + dt };
             return;
@@ -1152,7 +1153,7 @@ impl World {
                 pl.stamina_idle = 0.0;
             }
         }
-        pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+        pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
         // 모으기 공격의 패링(0089): 원거리 무기의 모은 사격도 떼는 순간부터 패링 창(근접 무기의 RB 마법은 무기의 공격이 아니라 뺀다, 0077·0078과 같은 경계).
         if matches!(wpn.rb, Rb::Shot { .. }) {
             pl.parry.release_guard = t[P::ParryWindow];
@@ -1188,7 +1189,7 @@ impl World {
         if a.cast_held && cx.can_charge_cast {
             self.notes.charged |= e < full && e + dt >= full;
             if ranged_aim_given(&cx.a) {
-                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                self.player.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
             }
             self.player.state = PState::CastCharge { t: e + dt };
             return;
@@ -1206,7 +1207,7 @@ impl World {
         } else {
             0
         };
-        pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+        pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
         cx.fire = Some((cx.cast_dir, power));
         pl.state = PState::Cast {
             t: e.min(t[P::CastStartup]),
@@ -1231,7 +1232,7 @@ impl World {
         if a.cast_held {
             self.notes.charged |= e < full && e + dt >= full;
             if ranged_aim_given(&cx.a) {
-                self.player.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                self.player.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
             }
             self.player.state = PState::CastCharge { t: e + dt };
             return;
@@ -1265,7 +1266,7 @@ impl World {
             // 모으기 공격의 패링(0089)과 같은 경계: 끝까지 당겨 놓는 순간부터 패링 창.
             pl.parry.release_guard = t[P::ParryWindow];
         }
-        pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+        pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
         cx.fire = Some((cx.cast_dir, power));
         pl.state = PState::Cast {
             t: e.min(t[P::CastStartup] * time),
@@ -1332,7 +1333,7 @@ impl World {
             plunge = true;
             pl.ranged.hover = 0.0;
             if let Some(d) = cx.auto_dir.or(cx.aim) {
-                pl.facing = d.x.atan2(d.z);
+                pl.facing = d.x.atan2_d(d.z);
             }
         } else if cx.a.cast && !plunge && !pl.ranged.air_shot {
             // 공중 RB(0111, 사장 2026-11-08): 근접 무기 = 마법 한 칸을 내려 쏘고, 쇠뇌 = 볼트를 부채꼴로 내려 쏜다(탄창은 안 쓴다).
@@ -1360,7 +1361,7 @@ impl World {
                 pl.ranged.air_shot = true;
                 pl.ranged.hover = AIR_SHOT_HOVER;
                 pl.vy = pl.vy.max(0.0);
-                pl.facing = cx.cast_dir.x.atan2(cx.cast_dir.z);
+                pl.facing = cx.cast_dir.x.atan2_d(cx.cast_dir.z);
                 self.notes.air_fire = Some(cx.cast_dir);
             }
         }
@@ -1696,15 +1697,15 @@ impl World {
             ) => None,
             (Basis::Lock(tg), _) => {
                 let d = tg - pl.pos;
-                Some(d.x.atan2(d.z))
+                Some(d.x.atan2_d(d.z))
             }
-            _ if cx.aim.is_some() => cx.aim.map(|d| d.x.atan2(d.z)),
+            _ if cx.aim.is_some() => cx.aim.map(|d| d.x.atan2_d(d.z)),
             // 막는 동안(0223)은 걷는 쪽으로 돌지 않는다 — 방패를 든 채 뒤로 물러설 수 있게(락온·조준 스틱은 위에서 돌린다).
             (_, PState::Block { .. }) => None,
             (Basis::Quarter { .. } | Basis::Frozen(_), _)
                 if cx.world_move.length_squared() > 1e-4 =>
             {
-                Some(cx.world_move.x.atan2(cx.world_move.z))
+                Some(cx.world_move.x.atan2_d(cx.world_move.z))
             }
             _ => None,
         };
@@ -1811,7 +1812,7 @@ impl World {
 
     pub(super) fn assist_aim(&self, d: Vec3, deg: f32, t: &Tuning) -> Vec3 {
         let reach = t[P::CastRange] * self.rb_bolts().0.range;
-        let cos = deg.to_radians().cos();
+        let cos = deg.to_radians().cos_d();
         let p = self.player.pos;
         self.enemies
             .iter()

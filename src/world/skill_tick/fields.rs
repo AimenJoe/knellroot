@@ -1,6 +1,7 @@
 //! 스킬이 놓고 간 것의 틱(0251 R11 — `skill_tick.rs`에서 뺐다): 갈라진 땅·느려짐·솟은 뿌리, 던진 무기, 불티 마당, 그리고
 //! 놓인 것·되울림이 적에게 닿는 타(`skill_touch`·`skill_blast`·`echo_ring`).
 use super::*;
+use crate::det::Det;
 
 impl World {
     pub(in crate::world) fn tick_skill_fields(&mut self, t: &Tuning, dt: f32) {
@@ -277,9 +278,9 @@ impl World {
                             f.radius * 0.6
                         };
                         self.skill_spikes.push(Spike {
-                            pos: g + vec3(a.sin() * r, 0.0, a.cos() * r),
+                            pos: g + vec3(a.sin_d() * r, 0.0, a.cos_d() * r),
                             age: 0.0,
-                            lean: vec3(a.sin() * 0.15, 0.0, a.cos() * 0.15),
+                            lean: vec3(a.sin_d() * 0.15, 0.0, a.cos_d() * 0.15),
                         });
                     }
                     ev.push(Event::RootSpike { at: g });

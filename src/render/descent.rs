@@ -5,6 +5,7 @@
 //! 굴의 면은 전환마다 한 번 짓고(깊이가 흙빛을 정한다), 빛은 프레임마다 다시 받는다 — 등잔이 방랑자와 같이 움직인다.
 use super::*;
 use crate::descent::{self as dsc, Passage, DROP, ROOT_R, SHAFT_R};
+use crate::det::Det;
 
 const TAU_F: f32 = std::f32::consts::TAU;
 
@@ -181,7 +182,7 @@ fn tube(
                     } else {
                         1.0 - groove
                     };
-                    c + (nrm * a.cos() + bin * a.sin()) * rr * g
+                    c + (nrm * a.cos_d() + bin * a.sin_d()) * rr * g
                 })
                 .collect(),
         );
@@ -242,7 +243,7 @@ fn on_wall(a: f32, y: f32, inset: f32) -> Vec3 {
         .find(|b| y <= b.1 && y >= b.2)
         .unwrap_or((0, y, y - 1.0));
     let r = wall_r(a, y, (top - y) / (top - bottom), k) - inset;
-    vec3(r * a.sin(), y, r * a.cos())
+    vec3(r * a.sin_d(), y, r * a.cos_d())
 }
 
 /// 지층 띠: 위에서부터 높이 1.3~2.3m(씨앗으로) — (띠 번호, 위, 아래).
@@ -262,14 +263,14 @@ fn bands() -> Vec<(u32, f32, f32)> {
 /// 벽의 반지름: 크게 굽이치는 기복(세 사인 — 큰 얼룩, 0140 "변주는 큰 덩어리로") − 띠마다 안으로 둥글게 부푼 지층(`u` = 띠 안의
 /// 자리 0..1, 띠의 이음에서 0이라 이웃 띠와 꼭 맞는다 — 이음은 움푹한 금이 된다).
 fn wall_r(a: f32, y: f32, u: f32, band: u32) -> f32 {
-    let low = 0.2 * (3.0 * a + 0.45 * y + 1.3).sin()
-        + 0.13 * (5.0 * a - 0.8 * y + 0.4).sin()
-        + 0.06 * (9.0 * a + 1.7 * y).sin();
-    let swell = 0.12 + 0.14 * (0.5 + 0.5 * (2.0 * a + band as f32 * 1.9).sin());
+    let low = 0.2 * (3.0 * a + 0.45 * y + 1.3).sin_d()
+        + 0.13 * (5.0 * a - 0.8 * y + 0.4).sin_d()
+        + 0.06 * (9.0 * a + 1.7 * y).sin_d();
+    let swell = 0.12 + 0.14 * (0.5 + 0.5 * (2.0 * a + band as f32 * 1.9).sin_d());
     let lip = (std::f32::consts::PI * u.clamp(0.0, 1.0))
-        .sin()
+        .sin_d()
         .max(0.0)
-        .powf(0.6)
+        .powf_d(0.6)
         * swell;
     SHAFT_R + low - lip
 }
@@ -294,7 +295,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
                     .map(|j| {
                         let a = TAU_F * j as f32 / WALL_COLS as f32;
                         let r = wall_r(a, y, u, k);
-                        vec3(r * a.sin(), y, r * a.cos())
+                        vec3(r * a.sin_d(), y, r * a.cos_d())
                     })
                     .collect()
             })
@@ -304,7 +305,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
             true,
             |i, _| {
                 let u = i as f32 / (ROWS - 1) as f32;
-                mul(base, 0.78 + 0.22 * (std::f32::consts::PI * u).sin())
+                mul(base, 0.78 + 0.22 * (std::f32::consts::PI * u).sin_d())
             },
             false,
             |p, _| vec3(-p.x, 0.0, -p.z),
@@ -359,7 +360,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
             &mut f,
             &spline(&[from, bend, to], 8),
             9,
-            |u| 0.32 * (1.0 - 0.45 * (std::f32::consts::PI * u).sin()) * (1.0 + 0.45 * u * u),
+            |u| 0.32 * (1.0 - 0.45 * (std::f32::consts::PI * u).sin_d()) * (1.0 + 0.45 * u * u),
             0.09,
             2.0,
             col,
@@ -369,7 +370,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
     for k in 0..8u32 {
         let s = -0.15 + 1.3 * (k as f32 + h(k, 91)) / 8.0;
         let a = dsc::angle(s);
-        let out = vec3(a.sin(), 0.0, a.cos()) * if k % 2 == 0 { 1.0 } else { -1.0 };
+        let out = vec3(a.sin_d(), 0.0, a.cos_d()) * if k % 2 == 0 { 1.0 } else { -1.0 };
         let p0 = dsc::path(s) + out * ROOT_R * 0.7;
         let len = 0.8 + 0.6 * h(k, 93);
         let c = [
@@ -382,7 +383,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
             &mut f,
             &spline(&c, 6),
             7,
-            |u| 0.16 * (1.0 - u).powf(0.8),
+            |u| 0.16 * (1.0 - u).powf_d(0.8),
             0.0,
             0.0,
             mul(ROOT, 0.88 + 0.12 * h(k, 94)),
@@ -440,10 +441,10 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
         );
         if k % 2 == 0 {
             let at = line[line.len() / 2];
-            let a1 = at.x.atan2(at.z) + 0.35 * if k % 4 == 0 { 1.0 } else { -1.0 };
+            let a1 = at.x.atan2_d(at.z) + 0.35 * if k % 4 == 0 { 1.0 } else { -1.0 };
             let c2 = [
                 at,
-                on_wall(a1 * 0.5 + at.x.atan2(at.z) * 0.5, at.y - 0.5, r * 0.4),
+                on_wall(a1 * 0.5 + at.x.atan2_d(at.z) * 0.5, at.y - 0.5, r * 0.4),
                 on_wall(a1, at.y - 1.3, r * 0.3),
             ];
             tube(
@@ -471,7 +472,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
             &mut f,
             &spline(&[a, mid, b], 8),
             8,
-            |u| 0.2 * (1.0 - 0.3 * (std::f32::consts::PI * u).sin()),
+            |u| 0.2 * (1.0 - 0.3 * (std::f32::consts::PI * u).sin_d()),
             0.09,
             1.0,
             mul(ROOT, 0.8),
@@ -481,7 +482,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
     for k in 0..14u32 {
         let s = -0.2 + 1.4 * h(k, 101);
         let a = dsc::angle(s);
-        let side = vec3(a.sin(), 0.0, a.cos()) * if k % 2 == 0 { 1.0 } else { -1.0 };
+        let side = vec3(a.sin_d(), 0.0, a.cos_d()) * if k % 2 == 0 { 1.0 } else { -1.0 };
         let c = dsc::path(s) + side * ROOT_R * 0.72 + Vec3::Y * ROOT_R * 0.55;
         let r = 0.2 + 0.14 * h(k, 103);
         let col = mul(MOSS, 0.85 + 0.3 * h(k, 105));
@@ -541,7 +542,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
     for k in 0..6u32 {
         let s = -0.05 + 1.1 * (k as f32 + 0.5) / 6.0;
         let a = dsc::angle(s);
-        let out = vec3(a.sin(), 0.0, a.cos()) * if k % 2 == 0 { 1.0 } else { -1.0 };
+        let out = vec3(a.sin_d(), 0.0, a.cos_d()) * if k % 2 == 0 { 1.0 } else { -1.0 };
         let foot = dsc::path(s) + out * (ROOT_R * 0.95);
         cluster(&mut f, 40 + k, foot, out);
     }
@@ -559,7 +560,7 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
         let line = spline(&c, 4);
         tube(&mut f, &line, 4, |u| 0.035 - 0.015 * u, 0.0, 0.0, CORD);
         let mid = line[line.len() / 2];
-        let a1 = mid.x.atan2(mid.z) + 0.35;
+        let a1 = mid.x.atan2_d(mid.z) + 0.35;
         let c2 = [mid, on_wall(a1, mid.y - 1.0, 0.02)];
         tube(
             &mut f,
@@ -592,7 +593,8 @@ fn build(from_m: u32, to_m: u32) -> ShaftMesh {
         let s = -0.15 + 1.3 * (k as f32 + h(k, 61)) / 7.0;
         let side = if k % 2 == 0 { 1.0 } else { -1.0 };
         let a = dsc::angle(s);
-        let c = dsc::path(s) + vec3(a.sin(), 0.0, a.cos()) * (ROOT_R * 0.92) * side - Vec3::Y * 0.1;
+        let c =
+            dsc::path(s) + vec3(a.sin_d(), 0.0, a.cos_d()) * (ROOT_R * 0.92) * side - Vec3::Y * 0.1;
         let r = 0.06 + 0.03 * h(k, 62);
         blob(&mut f, c, Vec3::splat(r), 500 + k, 0.1, |_| KNOT, true);
     }
@@ -656,12 +658,12 @@ impl Renderer {
         clear_background(Color::new(dark.r, dark.g, dark.b, 1.0));
 
         let (feet, yaw) = dsc::walker(p);
-        let fwd = vec3(yaw.sin(), 0.0, yaw.cos());
+        let fwd = vec3(yaw.sin_d(), 0.0, yaw.cos_d());
         // 빛 셋: 등잔(방랑자 곁) · 위의 달빛(위 지역에 달이 있을 때, 위에 가까울수록) · 아래에서 올라오는 닿을 곳의 빛.
         let near_top = (1.0 - s * 1.6).clamp(0.0, 1.0);
         let near_bottom = ((s - 0.45) * 1.8).clamp(0.0, 1.0);
         // 등잔은 살짝 일렁인다(불꽃 — 두 사인의 합, 실제 시간).
-        let flick = 1.0 + 0.06 * (clock * 9.3).sin() + 0.04 * (clock * 23.7 + 1.3).sin();
+        let flick = 1.0 + 0.06 * (clock * 9.3).sin_d() + 0.04 * (clock * 23.7 + 1.3).sin_d();
         let mut lights = vec![Light {
             pos: feet + Vec3::Y * 1.25 + fwd * 0.45,
             color: mul(LANTERN, flick),
@@ -798,7 +800,7 @@ impl Renderer {
             let r = SHAFT_R * (0.55 + 0.35 * h(k, 164));
             let y = feet.y + 5.0 - ph * 9.0;
             gem(
-                vec3(r * a.sin(), y, r * a.cos()),
+                vec3(r * a.sin_d(), y, r * a.cos_d()),
                 0.045,
                 with_a(Color::new(0.72, 0.6, 0.5, 1.0), 0.7 * (1.0 - ph)),
             );
@@ -812,7 +814,7 @@ impl Renderer {
                 - (h(k, 74) * span + clock * drift * (0.4 + h(k, 75))).rem_euclid(span);
             let near = 1.0 - ((y - feet.y - 1.0).abs() / 5.0).clamp(0.0, 1.0);
             gem(
-                vec3(r * a.sin(), y, r * a.cos()),
+                vec3(r * a.sin_d(), y, r * a.cos_d()),
                 0.05 + 0.04 * h(k, 76),
                 with_a(Color::new(0.9, 0.82, 0.7, 1.0), 0.15 + 0.45 * near),
             );

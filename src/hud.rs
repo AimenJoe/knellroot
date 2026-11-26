@@ -1,6 +1,7 @@
 //! 싸움 화면의 글·막대(0019). 그린 화면(`render::Frame`) 안에 같은 정수 배율로 붙인다. 월드·스테이지를 읽기만 한다.
 //!
 //! 자리: 왼쪽 위 체력(막대, 0158 N0)·스태미나 · 오른쪽 위 목표 · 가운데 위 구역 카드 · 아래 가운데 보스 띠 · 가운데 시작 이야기.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::i18n::{self, tr};
@@ -54,8 +55,8 @@ fn u(f: &Frame) -> f32 {
 /// 빛을 받는다: 호박색 = 갈 곳(0060 — 그 뜻은 이 색 하나가 끝까지 지닌다), 잿빛 `FOE_INK` = "저쪽에 적이 있다"(0170 — 튜토리얼이
 /// 벨 상대를 가리킬 때. 갈 길의 색을 쓰지 않는다).
 pub fn draw_edge_arrow(f: &Frame, at: Vec2, ang: f32, time: f32, ink: Color) {
-    let s = f.ui * (7.0 + 1.0 * (time * 4.0).sin());
-    let d = vec2(ang.cos(), ang.sin());
+    let s = f.ui * (7.0 + 1.0 * (time * 4.0).sin_d());
+    let d = vec2(ang.cos_d(), ang.sin_d());
     let n = vec2(-d.y, d.x);
     // 길쭉한 화살촉(길이 2 : 폭 1.1) — 작은 크기에서도 어느 쪽인지 읽히게.
     let tip = at + d * s * 1.2;
@@ -260,7 +261,7 @@ fn draw_fall_roots(f: &Frame, s: f32, grow: f32) {
         for i in 1..=SEG {
             let t = i as f32 / SEG as f32;
             let wig =
-                ((t * 7.0 + k as f32 * 1.7).sin() * 0.6 + (h(k, 10 + i as u32) - 0.5)) * 9.0 * s;
+                ((t * 7.0 + k as f32 * 1.7).sin_d() * 0.6 + (h(k, 10 + i as u32) - 0.5)) * 9.0 * s;
             p = vec2(bx, by) + to * len * t + side * wig * t;
             let w = width * (1.0 - 0.8 * t);
             draw_line(prev.x, prev.y, p.x, p.y, w.max(1.0), ink);
@@ -309,7 +310,7 @@ pub fn draw_knell(f: &Frame, at: Vec2, out: Option<f32>, k: f32) {
         const SEGS: usize = 24;
         let pt = |i: usize| {
             let t = mid - half + 2.0 * half * i as f32 / SEGS as f32;
-            c + vec2(t.cos(), t.sin()) * r
+            c + vec2(t.cos_d(), t.sin_d()) * r
         };
         for (w, col) in [(3.6 * s, shade(a)), (1.8 * s, ink(a))] {
             for i in 0..SEGS {
@@ -328,7 +329,7 @@ pub fn draw_knell(f: &Frame, at: Vec2, out: Option<f32>, k: f32) {
         match out {
             Some(ang) => {
                 // 소리의 샘은 화면 밖 — 가장자리 너머의 점에서 원이 자라 화면 안으로 들어온다.
-                let d = vec2(ang.cos(), ang.sin());
+                let d = vec2(ang.cos_d(), ang.sin_d());
                 let c = at + d * KNELL_BACK * s;
                 let r = (KNELL_BACK + 4.0 + t * KNELL_REACH) * s;
                 arc(c, r, ang + std::f32::consts::PI, KNELL_HALF, a);
@@ -656,7 +657,7 @@ pub fn gauge_bar(gauge: f32, active: f32, time: f32) -> (f32, Color) {
     if active > 0.0 {
         (active.clamp(0.0, 1.0), GAUGE_FULL)
     } else if gauge >= 1.0 {
-        let p = 0.75 + 0.25 * (time * 5.0).sin();
+        let p = 0.75 + 0.25 * (time * 5.0).sin_d();
         (1.0, Color::new(1.0, 0.86 * p + 0.1, 0.45 * p, 1.0))
     } else {
         (gauge.clamp(0.0, 1.0), GAUGE)
@@ -906,7 +907,7 @@ fn draw_hurt_edge(w: &World, s: f32, edge: f32) {
     let pl = &w.player;
     let hit = hurt_edge_k(pl.hurt.since, pl.hurt.blow) * HURT_EDGE_ALPHA;
     let low = if low_hp(pl.hp, pl.max_hp) {
-        0.1 + 0.08 * (0.5 + 0.5 * (w.time * 4.2).sin())
+        0.1 + 0.08 * (0.5 + 0.5 * (w.time * 4.2).sin_d())
     } else {
         0.0
     };
@@ -921,11 +922,11 @@ fn draw_hp(w: &World, x0: f32, y0: f32, s: f32) {
     // 맞으면(0143) 체력 막대가 잠깐 떨리고, 잃은 몫은 채움 끝에 밝게 남았다 줄어든다. 한 대 남으면 채움이 붉게 뛴다.
     use crate::tuning::HURT_HP_SHAKE;
     let jolt = (1.0 - pl.hurt.since / HURT_HP_SHAKE).clamp(0.0, 1.0);
-    let hx = x0 + (w.time * 80.0).sin() * 2.5 * s * jolt;
+    let hx = x0 + (w.time * 80.0).sin_d() * 2.5 * s * jolt;
     let (hy, hw, hh) = (y0 + 1.5 * s, hp_bar_w(max_hp) * s, HP_BAR_H * s);
     let per = hw / max_hp as f32;
     let beat = if low_hp(pl.hp, pl.max_hp) {
-        0.5 + 0.5 * (w.time * 4.2).sin()
+        0.5 + 0.5 * (w.time * 4.2).sin_d()
     } else {
         0.0
     };
@@ -962,10 +963,10 @@ fn draw_stamina(w: &World, x0: f32, y0: f32, s: f32) {
     let (bx, by, bw, bh) = (x0, y0 + 11.0 * s, 60.0 * s * smax / base, 2.0 * s);
     // 막혔을 때(0088): 깜빡임에 더해 막대가 좌우로 떨린다(줄어들며). 다 쓴 동안은 붉은 테가 천천히 숨 쉰다(지금 막히는 상태).
     let shake = (pl.stamina_denied / crate::tuning::STAMINA_DENIED_SHOW).clamp(0.0, 1.0);
-    let bx = bx + (w.time * 70.0).sin() * 2.0 * s * shake;
+    let bx = bx + (w.time * 70.0).sin_d() * 2.0 * s * shake;
     draw_rectangle(bx, by, bw, bh, BAR_BG);
     if pl.stamina <= 0.0 {
-        let p = 0.5 + 0.5 * (w.time * 5.0).sin();
+        let p = 0.5 + 0.5 * (w.time * 5.0).sin_d();
         let o = s;
         draw_rectangle_lines(
             bx - o,

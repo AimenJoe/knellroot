@@ -1,5 +1,6 @@
 //! 덧그림: 탄·조각·폭발, 휘두름의 초승달과 박자 부채꼴, 모으기·강타, 스킬·큰 기술의 모양, 패링, 발밑 고리, 적 머리 위·락온 표시.
 use super::*;
+use crate::det::Det;
 use crate::weapons::Look;
 
 /// 박자 타의 휘두름 색·발밑 고리가 퍼지는 시간(0076).
@@ -112,7 +113,7 @@ impl Renderer {
             let eff = w.skill_eff(id);
             let d = eff.skill;
             let e0 = e - d.startup;
-            let yaw = dir.x.atan2(dir.z);
+            let yaw = dir.x.atan2_d(dir.z);
             let gold = Color::new(1.0, 0.86, 0.5, 1.0);
             let mint = Color::new(0.66, 1.0, 0.86, 1.0);
             let fx = t[crate::tuning::P::RenderFx] >= 0.5;
@@ -280,7 +281,7 @@ impl Renderer {
                             for i in 0..n {
                                 let a =
                                     -w.time * 5.0 + i as f32 * std::f32::consts::TAU / most as f32;
-                                let p = pp + vec3(a.sin() * 0.8, 1.25, a.cos() * 0.8);
+                                let p = pp + vec3(a.sin_d() * 0.8, 1.25, a.cos_d() * 0.8);
                                 gem(p, 0.42, with_a(gold, 0.45));
                                 gem(p, 0.22, Color::new(1.0, 0.97, 0.86, 1.0));
                             }
@@ -434,7 +435,7 @@ fn bolts(w: &World, alpha: f32) {
         }
         let (core, glow) = bolt_colors(b.def.look);
         let k = if b.def.is_shot() { 0.6 } else { 1.0 } * b.def.scale;
-        let pulse = 1.0 + 0.12 * (w.time * 30.0 + b.left).sin();
+        let pulse = 1.0 + 0.12 * (w.time * 30.0 + b.left).sin_d();
         glow_disc(p, 0.62 * k, with_a(glow, glow.a * 0.8));
         trail(p, p - b.dir * (1.5 * k), 0.5 * k, with_a(glow, 0.7));
         trail(p, p - b.dir * (0.8 * k), 0.2 * k, with_a(core, 0.85));
@@ -544,7 +545,7 @@ fn thrown(w: &World, b: &crate::world::Bolt, p: Vec3) {
 fn curse_bolt(w: &World, b: &crate::world::Bolt, p: Vec3) {
     let (core, glow) = CURSE_LOOK;
     let k = b.def.scale;
-    let pulse = 1.0 + 0.1 * (w.time * 24.0 + b.left).sin();
+    let pulse = 1.0 + 0.1 * (w.time * 24.0 + b.left).sin_d();
     glow_disc(p, 0.75 * k, with_a(glow, 0.36));
     let side = vec3(-b.dir.z, 0.0, b.dir.x).normalize_or(Vec3::X) * (0.14 * k);
     let back = b.dir * (0.6 * k);
@@ -574,7 +575,7 @@ fn fury_glow(w: &World, pp: Vec3, fl: &Drape) {
     }
     let k = (f - FURY_GLOW_FROM) / (1.0 - FURY_GLOW_FROM);
     let full = f >= 1.0;
-    let breath = 0.75 + 0.25 * (w.time * if full { 7.0 } else { 4.0 }).sin();
+    let breath = 0.75 + 0.25 * (w.time * if full { 7.0 } else { 4.0 }).sin_d();
     let ember = Color::new(1.0, 0.6, 0.28, 1.0);
     let chest = pp + Vec3::Y * (w.player.air + 0.7);
     glow_disc(
@@ -624,9 +625,9 @@ const VINE_WIGGLE: f32 = 0.10;
 fn vine_at(a: Vec3, b: Vec3, f: f32, phase: f32) -> Vec3 {
     let along = b - a;
     let side = vec3(-along.z, 0.0, along.x).normalize_or(Vec3::X);
-    let bend = (f * std::f32::consts::PI).sin();
+    let bend = (f * std::f32::consts::PI).sin_d();
     a + along * f - Vec3::Y * (VINE_SAG * bend)
-        + side * ((f * std::f32::consts::TAU * 1.5 + phase).sin() * VINE_WIGGLE * bend)
+        + side * ((f * std::f32::consts::TAU * 1.5 + phase).sin_d() * VINE_WIGGLE * bend)
 }
 
 /// 덩굴 띠(카메라를 보는 굵기 `w` — 적 쪽으로 조금 가늘어진다).
@@ -674,7 +675,7 @@ fn quake_wave(w: &World, b: &crate::world::Bolt, p: Vec3) {
         core,
     );
     // 솟는 흙: 앞머리 가운데에서 위로 가늘어지는 흙빛 기둥(흔들리며 숨 쉰다).
-    let breathe = 0.85 + 0.15 * (w.time * 22.0 + b.left * 5.0).sin();
+    let breathe = 0.85 + 0.15 * (w.time * 22.0 + b.left * 5.0).sin_d();
     trail(
         g + Vec3::Y * (QUAKE_CREST * k * breathe),
         g,
@@ -684,7 +685,7 @@ fn quake_wave(w: &World, b: &crate::world::Bolt, p: Vec3) {
     trail(g, g - dir * (1.8 * k), 0.14 * k, with_a(dust, 0.45));
     let rock = Color::new(0.66, 0.62, 0.58, 1.0);
     for (j, off) in QUAKE_ROCKS.into_iter().enumerate() {
-        let bob = ((w.time * 14.0 + b.left * 9.0 + j as f32 * 2.1).sin() * 0.5 + 0.5)
+        let bob = ((w.time * 14.0 + b.left * 9.0 + j as f32 * 2.1).sin_d() * 0.5 + 0.5)
             * QUAKE_CREST
             * 0.8
             * k;
@@ -1507,7 +1508,7 @@ fn skill_zones(w: &World, fl: &Drape) {
     for z in &w.skill_zones {
         let k = (z.left / z.total.max(1e-3)).clamp(0.0, 1.0);
         let a = (k / 0.3).min(1.0);
-        let yaw = z.dir.x.atan2(z.dir.z);
+        let yaw = z.dir.x.atan2_d(z.dir.z);
         let dust = Color::new(0.86, 0.78, 0.62, 1.0);
         let at = vec3(z.pos.x, w.ground_y(z.pos), z.pos.z);
         fl.sector(
@@ -1585,7 +1586,7 @@ fn parry_chain(w: &World, pp: Vec3, fl: &Drape) {
         let arc = if c < -1.0 {
             360.0
         } else {
-            (c.acos().to_degrees() * 2.0).min(360.0)
+            (c.acos_d().to_degrees() * 2.0).min(360.0)
         };
         let fade = (w.player.parry.chain_left / crate::tuning::PARRY_CHAIN).min(1.0);
         fl.sector(
@@ -1608,7 +1609,7 @@ fn parry_chain(w: &World, pp: Vec3, fl: &Drape) {
 fn primed_heavy_rings(w: &World, pp: Vec3, fl: &Drape) {
     // 끝맺음(0108): 다음 강타가 다 모여 있는 동안 발밑에 금빛 고리 두 겹이 숨 쉰다(딱 맞춤 고리와 같은 색 — "모였다").
     if w.player.parry.primed_heavy {
-        let k = 0.5 + 0.5 * (w.time * 4.0).sin();
+        let k = 0.5 + 0.5 * (w.time * 4.0).sin_d();
         for (r, a) in [(0.75, 0.8), (1.05, 0.45)] {
             fl.ring(
                 pp + Vec3::Y * 0.06,
@@ -1624,7 +1625,7 @@ fn primed_heavy_rings(w: &World, pp: Vec3, fl: &Drape) {
 fn flank_ring(w: &World, pp: Vec3, fl: &Drape) {
     // 비껴서기(0108): 적 등 뒤를 잡은 대시 공격 창 동안 발밑에 민트 고리가 빠르게 뛴다 — 지금 치면 자세 두 배.
     if w.player.flank {
-        let k = 0.5 + 0.5 * (w.time * 14.0).sin();
+        let k = 0.5 + 0.5 * (w.time * 14.0).sin_d();
         fl.ring(
             pp + Vec3::Y * 0.06,
             0.9,
@@ -1743,7 +1744,7 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
         }
         if a.rift > 0.0 {
             let ink = ink(3);
-            let beat = 0.75 + 0.25 * (w.time * 9.0).sin();
+            let beat = 0.75 + 0.25 * (w.time * 9.0).sin_d();
             fl.ring(
                 p + Vec3::Y * 0.06,
                 en.radius + 0.48,
@@ -1781,7 +1782,7 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
                     sky,
                 );
             }
-            let top = p + Vec3::Y * (en.height + 0.55 + 0.06 * (w.time * 3.0).sin());
+            let top = p + Vec3::Y * (en.height + 0.55 + 0.06 * (w.time * 3.0).sin_d());
             gem(top, 0.34, with_a(sky, 0.5 * k));
             gem(top, 0.2, Color::new(0.40, 0.39, 0.42, k));
         }
@@ -1800,7 +1801,7 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
         }
         if a.drain > 0.0 {
             let ink = ink(7);
-            let beat = 0.6 + 0.4 * (w.time * 4.0).sin().abs();
+            let beat = 0.6 + 0.4 * (w.time * 4.0).sin_d().abs();
             fl.ring(
                 p + Vec3::Y * 0.07,
                 en.radius + 0.36,
@@ -1815,13 +1816,13 @@ fn ail_marks(w: &World, alpha: f32, fl: &Drape) {
             for k in 0..3 {
                 let ang = w.time * 6.0 + k as f32 * std::f32::consts::TAU / 3.0;
                 let r = en.radius * 0.8 + 0.2;
-                spark4(c + vec3(ang.sin() * r, 0.0, ang.cos() * r), 0.22, ink);
+                spark4(c + vec3(ang.sin_d() * r, 0.0, ang.cos_d() * r), 0.22, ink);
             }
         }
         // 머리 위 줄: (빛, 크기, 진하기, 꼴) — 걸린 것 먼저, 그다음 쌓이는 게이지.
         use crate::status::{Mark, MARK};
         let mut pips: Vec<(Color, f32, f32, Mark)> = Vec::new();
-        let beat = 1.0 + 0.18 * (w.time * 8.0).sin();
+        let beat = 1.0 + 0.18 * (w.time * 8.0).sin_d();
         for _ in 0..a.burn {
             pips.push((ink(0), 0.26 * beat, 1.0, MARK[0]));
         }
@@ -1901,7 +1902,7 @@ fn ice_coats(w: &World, alpha: f32) {
         let turn = en.facing + n as f32 * 1.7;
         for (j, &(ang, up, at, len)) in ICE_SHARDS.iter().enumerate() {
             let a = turn + ang;
-            let out = vec3(a.cos(), 0.0, -a.sin());
+            let out = vec3(a.cos_d(), 0.0, -a.sin_d());
             let dir = (out + Vec3::Y * up).normalize();
             // 몸 둘레(반지름의 0.8) · 키의 `at` 높이에서 바깥으로.
             let root = p + out * en.radius * 0.8 + Vec3::Y * en.height * at;
@@ -1965,7 +1966,7 @@ fn stagger_stars(w: &World, alpha: f32) {
             for i in 0..3 {
                 let a = w.time * 6.0 + i as f32 * std::f32::consts::TAU / 3.0;
                 let r = en.radius + 0.15;
-                let at = p + vec3(a.cos() * r, en.height + 0.3, a.sin() * r);
+                let at = p + vec3(a.cos_d() * r, en.height + 0.3, a.sin_d() * r);
                 // 0242: 별 뒤에 작은 빛무리 — 마른 십자만으로는 습작처럼 보였다.
                 glow_disc(at, 0.2, Color::new(1.0, 0.85, 0.4, 0.35 * fade));
                 spark4(at, 0.34, Color::new(1.0, 0.92, 0.45, fade));
@@ -1978,7 +1979,7 @@ fn lock_mark(w: &World, alpha: f32, fl: &Drape) {
     // 락온 표시: 대상 머리 위 작은 마름모 + 땅의 고리.
     if let Some(tg) = w.lock.and_then(|i| w.enemies.get(i)).filter(|e| e.alive()) {
         let p = tg.prev.lerp(tg.pos, alpha);
-        let bob = (w.time * 4.0).sin() * 0.1;
+        let bob = (w.time * 4.0).sin_d() * 0.1;
         let top = p + Vec3::Y * (tg.height + 0.9 + bob);
         let s = 0.25;
         for (a, b) in [
@@ -2081,7 +2082,7 @@ pub(super) fn crescent(
             for i in 0..=N {
                 let s = i as f32 / N as f32;
                 let a = tail + (head - tail) * s;
-                let dir = vec3(a.sin(), 0.0, a.cos());
+                let dir = vec3(a.sin_d(), 0.0, a.cos_d());
                 // 꼬리 쪽도 한동안 보이게(예전 s^1.5는 머리 근처만 남았다).
                 let k = ink.a * s * SLASH_ALPHA;
                 pts.push((c + dir * reach, with_a(ink, k)));
@@ -2119,7 +2120,7 @@ pub(super) fn aim_preview(w: &World, pp: Vec3, t: &Tuning, show: Option<AimShow>
     let fill = Color::new(1.0, 0.96, 0.84, 0.18);
     let edge = Color::new(1.0, 0.95, 0.8, 0.6);
     let foot = pp + Vec3::Y * 0.05;
-    let yaw = dir.x.atan2(dir.z);
+    let yaw = dir.x.atan2_d(dir.z);
     let lane = |len: f32, wid: f32| {
         fl.lane(foot, dir, len, wid, fill);
         fl.lane_edge(foot, dir, len, wid, edge);

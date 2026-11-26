@@ -1,13 +1,14 @@
 //! 카메라 리그 둘(쿼터뷰·락온) + 하나의 상태. 원하는 리그를 매 프레임 계산하고, 모드가 바뀌면
 //! "지금 카메라"에서 원하는 리그로 ease-in-out 보간한다(KB concepts/camera-mode-switch-and-lock-on.md).
 //! 입력 기준은 여기 없다 — 월드가 `Basis`를 보고 즉시 바꾼다(카메라가 늦게 도착해도 조작은 바로).
+use crate::det::Det;
 use macroquad::prelude::*;
 
 use crate::tuning::{Tuning, P, PLAYER_HEIGHT};
 
 /// 쿼터뷰에서 화면 위가 가리키는 월드 방향(XZ 단위 벡터). 입력 기준(`world::Basis::Quarter`)과 카메라가 같은 식을 쓴다.
 pub fn quarter_forward(yaw_deg: f32) -> Vec3 {
-    let (s, c) = yaw_deg.to_radians().sin_cos();
+    let (s, c) = yaw_deg.to_radians().sin_cos_d();
     vec3(-s, 0.0, -c)
 }
 
@@ -45,8 +46,8 @@ pub fn occlusion(eye: Vec3, near_c: Vec3, near_r: f32, far_c: Vec3, far_r: f32) 
         return 0.0;
     }
     let sep = dn.angle_between(df);
-    let an = (near_r / ln).min(1.0).asin();
-    let af = (far_r / lf).min(1.0).asin();
+    let an = (near_r / ln).min(1.0).asin_d();
+    let af = (far_r / lf).min(1.0).asin_d();
     (1.0 - sep / (an + af)).clamp(0.0, 1.0)
 }
 
@@ -76,19 +77,19 @@ struct Orbit {
 impl Orbit {
     fn axes(yaw: f32) -> (Vec3, Vec3) {
         // 카메라 → 중심 수평 방향 = 카메라 자리 방위의 반대.
-        let fwd = -vec3(yaw.sin(), 0.0, yaw.cos());
+        let fwd = -vec3(yaw.sin_d(), 0.0, yaw.cos_d());
         (fwd, fwd.cross(Vec3::Y))
     }
 
     fn from_rig(r: &Rig, pivot: Vec3) -> Orbit {
         let d = r.pos - pivot;
         let dist = d.length().max(1e-3);
-        let yaw = d.x.atan2(d.z);
+        let yaw = d.x.atan2_d(d.z);
         let (fwd, right) = Orbit::axes(yaw);
         let l = r.look - pivot;
         Orbit {
             yaw,
-            elev: (d.y / dist).clamp(-1.0, 1.0).asin(),
+            elev: (d.y / dist).clamp(-1.0, 1.0).asin_d(),
             dist,
             look: vec3(l.dot(fwd), l.dot(right), l.y),
             fov: r.fov,
@@ -97,12 +98,12 @@ impl Orbit {
 
     fn to_rig(self, pivot: Vec3) -> Rig {
         let (fwd, right) = Orbit::axes(self.yaw);
-        let h = self.dist * self.elev.cos();
+        let h = self.dist * self.elev.cos_d();
         let pos = pivot
             + vec3(
-                self.yaw.sin() * h,
-                self.dist * self.elev.sin(),
-                self.yaw.cos() * h,
+                self.yaw.sin_d() * h,
+                self.dist * self.elev.sin_d(),
+                self.yaw.cos_d() * h,
             );
         Rig {
             pos,
@@ -279,7 +280,7 @@ impl Camera {
             // 요를 대상 방향에서 시작시키면 "우왁" 회전이 없다. 큰 각도 차는 보간이 삼킨다.
             if let Some(tg) = target {
                 let d = tg - player;
-                self.yaw = d.x.atan2(d.z);
+                self.yaw = d.x.atan2_d(d.z);
             }
             self.back_free = self.mode == Mode::Free;
             self.pitch = 0.0;
@@ -287,7 +288,7 @@ impl Camera {
         if mode == Mode::Free && self.mode == Mode::Quarter {
             // 쿼터뷰에서 당겨 들어가면 화면 위였던 쪽을 그대로 앞으로(카메라 자리 방위 + 180° = 앞).
             let d = self.rig.pos - self.rig.look;
-            self.yaw = d.x.atan2(d.z) + std::f32::consts::PI;
+            self.yaw = d.x.atan2_d(d.z) + std::f32::consts::PI;
             self.pitch = 0.0;
         }
         if mode == Mode::Quarter && self.mode != Mode::Quarter {
@@ -441,7 +442,7 @@ impl Camera {
     /// 지금 카메라가 선 방위(도, 0..360). HUD가 보인다 — 랩 값이 먹는지 눈으로 재기.
     pub fn azimuth_deg(&self) -> f32 {
         let d = self.rig.pos - self.rig.look;
-        d.x.atan2(d.z).to_degrees().rem_euclid(360.0)
+        d.x.atan2_d(d.z).to_degrees().rem_euclid(360.0)
     }
 
     pub fn blending(&self) -> Option<f32> {
@@ -465,7 +466,7 @@ impl Camera {
     /// (WoW식). `pitch` = 주시점 둘레로 더 내려다보는 각(플레이어가 돌린다).
     fn chase(&self, t: &Tuning, pitch: f32) -> Rig {
         let player = self.follow;
-        let (s, c) = self.yaw.sin_cos();
+        let (s, c) = self.yaw.sin_cos_d();
         let fwd = vec3(s, 0.0, c);
         let right = fwd.cross(Vec3::Y);
         let pos = player - fwd * t[P::CamFDist] + Vec3::Y * t[P::CamFHeight];
@@ -497,9 +498,13 @@ impl Camera {
                 let d = t[P::CamQDist]
                     * QUARTER_ZOOM[(self.zoom_step as usize).min(QUARTER_ZOOM.len() - 1)];
                 // 요를 돌려 상자의 두 면이 보이게(축 정렬이면 정면 한 면만 보여 납작하다). 화면 위 = `quarter_forward`.
-                let (sy, cy) = self.quarter_yaw_deg(t).to_radians().sin_cos();
-                let pos =
-                    self.follow + vec3(d * pitch.cos() * sy, d * pitch.sin(), d * pitch.cos() * cy);
+                let (sy, cy) = self.quarter_yaw_deg(t).to_radians().sin_cos_d();
+                let pos = self.follow
+                    + vec3(
+                        d * pitch.cos_d() * sy,
+                        d * pitch.sin_d(),
+                        d * pitch.cos_d() * cy,
+                    );
                 Rig {
                     pos,
                     look: self.follow + Vec3::Y * 0.5,
@@ -541,19 +546,19 @@ impl Camera {
             .last_player
             .map_or(Vec3::ZERO, |l| (player - l) / dt.max(1e-4));
         self.last_player = Some(player);
-        self.vel = self.vel.lerp(raw, 1.0 - (-6.0 * dt).exp());
+        self.vel = self.vel.lerp(raw, 1.0 - (-6.0 * dt).exp_d());
         let lead = if self.mode == Mode::Quarter {
             (self.vel * t[P::CamQLead]).clamp_length_max(1.5)
         } else {
             Vec3::ZERO
         };
-        let k = 1.0 - (-t[P::CamQLag] * dt).exp();
+        let k = 1.0 - (-t[P::CamQLag] * dt).exp_d();
         self.follow = self.follow.lerp(player + lead, k);
         if let Some(tg) = target {
             let d = tg - player;
             let dist = vec2(d.x, d.z).length();
             if dist > 1e-2 {
-                let want = d.x.atan2(d.z);
+                let want = d.x.atan2_d(d.z);
                 let mut diff = want - self.yaw;
                 while diff > std::f32::consts::PI {
                     diff -= std::f32::consts::TAU;
@@ -575,7 +580,7 @@ impl Camera {
                 let at = t[P::CamLCatchAt].to_radians().max(1e-3);
                 let far = smoothstep((diff.abs() - at) / at);
                 let slow_k = slow + (1.0 - slow) * far;
-                let ky = 1.0 - (-t[P::CamLYawLag] * slow_k * dt).exp();
+                let ky = 1.0 - (-t[P::CamLYawLag] * slow_k * dt).exp_d();
                 // 상한도 가까울수록 낮춘다(바짝 붙어 원을 그리면 대상 방향이 초당 200° 넘게 바뀐다 — 다 따라가면 멀미).
                 // 바닥 0.4: 대상이 화면 밖으로 영영 빠지지는 않게.
                 let calm = t[P::CamLYawMax] * slow.max(0.4);
@@ -586,7 +591,7 @@ impl Camera {
         let mut want = self.desired(t, target);
         if self.mode == Mode::Lock && target.is_some() {
             let cur = self.look.unwrap_or(want.look);
-            let k = 1.0 - (-t[P::CamLYawLag] * dt).exp();
+            let k = 1.0 - (-t[P::CamLYawLag] * dt).exp_d();
             want.look = cur.lerp(want.look, k);
             self.look = Some(want.look);
         } else {
@@ -674,13 +679,13 @@ impl Camera {
         if want_push.length_squared() >= self.push.length_squared() {
             self.push = want_push;
         } else {
-            self.push += (want_push - self.push) * (1.0 - (-t[P::CamPullOut] * dt).exp());
+            self.push += (want_push - self.push) * (1.0 - (-t[P::CamPullOut] * dt).exp_d());
         }
         rig.pos += self.push;
         // 타격 줌(0145): 주시점 쪽으로 거리의 몫만큼 — 리그 자체를 옮겨 그림·커서 조준·가림이 같은 눈을 쓴다.
         // 세계가 멈춘 동안(히트스톱)은 다가간 채 머물고, 풀리면 돌아온다.
         if !self.freeze {
-            self.zoom *= (-crate::tuning::ZOOM_RETURN * dt).exp();
+            self.zoom *= (-crate::tuning::ZOOM_RETURN * dt).exp_d();
             if self.zoom < 1e-4 {
                 self.zoom = 0.0;
             }
@@ -706,11 +711,11 @@ impl Camera {
         let dist = fwd.length().max(1.0);
         let right = fwd.cross(Vec3::Y).normalize_or_zero();
         let up = right.cross(fwd / dist);
-        let a = self.trauma * self.trauma * dist * crate::tuning::SHAKE_DEG.to_radians().tan();
+        let a = self.trauma * self.trauma * dist * crate::tuning::SHAKE_DEG.to_radians().tan_d();
         self.shake = right * rand::gen_range(-a, a) + up * rand::gen_range(-a, a);
         // 킥: 각(도 × 방향)을 지금 거리로 — 쿼터뷰·락온 어디서나 화면에서 같은 px쯤. 로직 시계로 줄어 히트스톱 동안 찬 채로 머문다.
-        self.kick_deg *= (-crate::tuning::KICK_RETURN * dt).exp();
-        self.kick = self.kick_deg * dist * 1f32.to_radians().tan();
+        self.kick_deg *= (-crate::tuning::KICK_RETURN * dt).exp_d();
+        self.kick = self.kick_deg * dist * 1f32.to_radians().tan_d();
         // 휘청(0084): 줄어드는 사인파들의 합 — 로직 시계라 히트스톱 동안 멈춘다.
         for w in &mut self.wobbles {
             w.0 += dt;
@@ -781,7 +786,7 @@ pub fn wobble_at(elapsed: f32, amp: f32) -> f32 {
     // 줄어드는 사인의 첫 꼭대기는 1보다 작다(3.5Hz·7/초에서 ≈ 0.62) — 그만큼 키워 꼭대기가 `amp`가 되게.
     const PEAK: f32 = 1.6;
     let x = std::f32::consts::TAU * TURN_WOBBLE_HZ * elapsed;
-    PEAK * amp * (-TURN_WOBBLE_DAMP * elapsed).exp() * x.sin()
+    PEAK * amp * (-TURN_WOBBLE_DAMP * elapsed).exp_d() * x.sin_d()
 }
 
 /// 화면 점(NDC: x 오른쪽·y 위, -1..1)을 지나는 시선의 방향(0058 커서 조준) — `to_camera3d`와 같은 원근(세로 `fov`, 가로는 `aspect`배).
@@ -790,7 +795,7 @@ pub fn screen_ray(rig: &Rig, aspect: f32, ndc: Vec2) -> Vec3 {
     let f = (rig.look - rig.pos).normalize_or(Vec3::NEG_Z);
     let r = f.cross(Vec3::Y).normalize_or(Vec3::X);
     let u = r.cross(f);
-    let k = (rig.fov * 0.5).tan();
+    let k = (rig.fov * 0.5).tan_d();
     (f + r * (ndc.x * k * aspect) + u * (ndc.y * k)).normalize()
 }
 
@@ -799,7 +804,7 @@ pub fn world_to_ndc(rig: &Rig, aspect: f32, p: Vec3) -> (Vec2, bool) {
     let f = (rig.look - rig.pos).normalize_or(Vec3::NEG_Z);
     let r = f.cross(Vec3::Y).normalize_or(Vec3::X);
     let u = r.cross(f);
-    let k = (rig.fov * 0.5).tan();
+    let k = (rig.fov * 0.5).tan_d();
     let d = p - rig.pos;
     let z = d.dot(f);
     let v = vec2(d.dot(r) / (k * aspect), d.dot(u) / k);
@@ -820,7 +825,7 @@ pub fn edge_marker(ndc: Vec2, in_front: bool, inset: f32) -> Option<(Vec2, f32)>
     }
     let d = ndc.normalize_or(Vec2::NEG_Y);
     let t = (lim / d.x.abs().max(1e-6)).min(lim / d.y.abs().max(1e-6));
-    Some((d * t, d.y.atan2(d.x)))
+    Some((d * t, d.y.atan2_d(d.x)))
 }
 
 /// 시선이 높이 `y`의 수평면에 닿는 점. 위로 가거나 평행이면 없음.
@@ -1281,7 +1286,7 @@ mod framing_tests {
             let y0 = c.yaw;
             c.update(1.0 / 60.0, t, p, Some(tg), &[]);
             peak = peak.max(wrap(c.yaw - y0).abs().to_degrees() * 60.0);
-            let want = (tg.x - p.x).atan2(tg.z - p.z);
+            let want = (tg.x - p.x).atan2_d(tg.z - p.z);
             if wrap(want - c.yaw).abs().to_degrees() < 20.0 {
                 secs = (i + 1) as f32 / 60.0;
                 break;
@@ -1293,7 +1298,7 @@ mod framing_tests {
     /// 대상 둘레 `r`m를 `v` m/s로 3초 돈 뒤의 (카메라 회전 °/s, 대상 방향과의 차 °).
     fn circle(t: &Tuning, r: f32, v: f32) -> (f32, f32) {
         let tg = Vec3::ZERO;
-        let at = |a: f32| vec3(a.sin() * r, 0.0, a.cos() * r);
+        let at = |a: f32| vec3(a.sin_d() * r, 0.0, a.cos_d() * r);
         let mut c = Camera::new(at(0.0), t);
         c.set_mode(Mode::Lock, Some(tg), at(0.0));
         for _ in 0..240 {
@@ -1306,7 +1311,7 @@ mod framing_tests {
             c.update(1.0 / 60.0, t, at(a), Some(tg), &[]);
             rate = wrap(c.yaw - y0).abs().to_degrees() * 60.0;
             let p = at(a);
-            err = wrap((tg.x - p.x).atan2(tg.z - p.z) - c.yaw)
+            err = wrap((tg.x - p.x).atan2_d(tg.z - p.z) - c.yaw)
                 .abs()
                 .to_degrees();
         }
@@ -1518,7 +1523,7 @@ mod motion_probe {
                     let ang = dir_of(&prev)
                         .dot(dir_of(&c.rig))
                         .clamp(-1.0, 1.0)
-                        .acos()
+                        .acos_d()
                         .to_degrees();
                     wmax = wmax.max(ang / TICK);
                     if let Some(tg) = w.lock_target() {
@@ -1603,7 +1608,7 @@ mod frame_probe {
                 &t,
             );
             c.update(1.0 / 60.0, &t, w.player.pos, w.lock_target(), &w.obstacles);
-            let pitch = (c.rig.look - c.rig.pos).normalize().y.asin().to_degrees();
+            let pitch = (c.rig.look - c.rig.pos).normalize().y.asin_d().to_degrees();
             lo = lo.min(pitch);
             hi = hi.max(pitch);
         }
@@ -1736,7 +1741,7 @@ mod switch_probe {
             let a = (deg as f32).to_radians();
             let mut w = build(Scenario::Boss);
             let boss = w.enemies[0].pos;
-            w.player.pos = boss + vec3(a.sin(), 0.0, a.cos()) * 6.0;
+            w.player.pos = boss + vec3(a.sin_d(), 0.0, a.cos_d()) * 6.0;
             w.player.prev = w.player.pos;
             w.enemies[0].state = crate::world::EState::Recover { t: -1000.0 };
             let mut c = Camera::new(w.player.pos, &t);
@@ -1767,7 +1772,7 @@ mod switch_probe {
                 c.update(1.0 / 60.0, &t, w.player.pos, tg, &w.obstacles);
                 let d0 = (prev.look - prev.pos).normalize();
                 let d1 = (c.rig.look - c.rig.pos).normalize();
-                wmax = wmax.max(d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0);
+                wmax = wmax.max(d0.dot(d1).clamp(-1.0, 1.0).acos_d().to_degrees() * 60.0);
                 vmax = vmax.max(c.rig.pos.distance(prev.pos) * 60.0);
                 dmin = dmin.min(
                     c.rig
@@ -1830,7 +1835,7 @@ mod yaw_mode_probe {
         let a = deg.to_radians();
         let mut w = build(Scenario::Boss);
         let boss = w.enemies[0].pos;
-        w.player.pos = boss + vec3(a.sin(), 0.0, a.cos()) * 6.0;
+        w.player.pos = boss + vec3(a.sin_d(), 0.0, a.cos_d()) * 6.0;
         w.player.prev = w.player.pos;
         w.enemies[0].state = crate::world::EState::Recover { t: -1000.0 };
         let mut c = Camera::new(w.player.pos, &t);
@@ -1862,7 +1867,7 @@ mod yaw_mode_probe {
             c.update(1.0 / 60.0, &t, w.player.pos, tg, &w.obstacles);
             let d0 = (prev.look - prev.pos).normalize();
             let d1 = (c.rig.look - c.rig.pos).normalize();
-            let turn = d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0;
+            let turn = d0.dot(d1).clamp(-1.0, 1.0).acos_d().to_degrees() * 60.0;
             match tick / 75 {
                 0 => row.enter = row.enter.max(turn),
                 1 => {
@@ -1976,7 +1981,7 @@ mod turn_probe {
             }
             let azi = |c: &Camera| {
                 let d = c.rig.pos - c.rig.look;
-                d.x.atan2(d.z)
+                d.x.atan2_d(d.z)
             };
             let start = azi(&c);
             c.turn(q, &t);
@@ -2117,14 +2122,14 @@ mod turn_probe {
         let mut prev = c.rig;
         let azi = |r: &Rig| {
             let d = r.pos - r.look;
-            d.x.atan2(d.z)
+            d.x.atan2_d(d.z)
         };
         let start = azi(&c.rig);
         let mut pr = Probe {
             peak: 0.0,
             roll: 0.0,
             pan: 0.0,
-            dip: (-(c.rig.look - c.rig.pos).normalize().y).asin(),
+            dip: (-(c.rig.look - c.rig.pos).normalize().y).asin_d(),
             back: 0.0,
             reach: 0.0,
             secs: 0.0,
@@ -2150,7 +2155,7 @@ mod turn_probe {
             let d1 = (c.rig.look - c.rig.pos).normalize();
             pr.peak = pr
                 .peak
-                .max(d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees() * 60.0);
+                .max(d0.dot(d1).clamp(-1.0, 1.0).acos_d().to_degrees() * 60.0);
             let (pan, _, roll) = axis_rates(&prev, &c.rig, 1.0 / 60.0);
             pr.pan = pr.pan.max(pan);
             pr.roll = pr.roll.max(roll);
@@ -2265,10 +2270,10 @@ mod turn_probe {
             // 지상각 70°에서 허용 폭을 넘었다 — 식이 틀린 것이 아니라 견준 각이 달랐다).
             assert!(p.dip <= f32::to_radians(pitch) + 1e-3 && p.dip > f32::to_radians(pitch - 4.0));
             assert!(
-                (p.roll / p.pan - p.dip.tan()).abs() < 0.08,
+                (p.roll / p.pan - p.dip.tan_d()).abs() < 0.08,
                 "roll/pan = tan(dip): {} vs {}",
                 p.roll / p.pan,
-                p.dip.tan()
+                p.dip.tan_d()
             );
         }
         // 기본 지상각(44°)에서는 롤이 팬보다 작다.
@@ -2355,7 +2360,7 @@ mod turn_probe {
         }
         assert!(c.blending().is_none());
         let d = c.rig.pos - c.rig.look;
-        let end = d.x.atan2(d.z).to_degrees();
+        let end = d.x.atan2_d(d.z).to_degrees();
         assert!(
             (wrap((end - before - 90.0).to_radians())).abs() < 0.01,
             "{before} -> {end}"

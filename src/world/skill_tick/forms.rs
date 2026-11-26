@@ -1,6 +1,7 @@
 //! 스킬의 모양마다의 틱(0278 R20 — `tick_skill`의 빠짐없는 match의 갈래를 모양마다 이름 있는 메서드로 옮겼다): 메서드는 공용 값
 //! `SkillCx`(이 틱의 스킬 · 값 · 시각 · 자리 · 쪽 · 타 번호)와 그 모양의 수를 받는다. 새 모양 = `tick_skill`의 match 한 줄 + 여기 메서드 하나.
 use super::*;
+use crate::det::Det;
 
 impl World {
     /// 바퀴(휘돌이 · 장대 휩쓸기): 제자리에서 `hits`바퀴 — 바퀴마다 둘레를 친다.
@@ -27,7 +28,7 @@ impl World {
         // 몸이 판정과 함께 돈다(바퀴 수 = 타 수) — 끝나면 처음 보던 쪽.
         let span = (gap * hits as f32).max(1e-3);
         let turns = ((e1 - s.startup) / span).clamp(0.0, 1.0) * hits as f32;
-        self.player.facing = dir.x.atan2(dir.z) + turns * std::f32::consts::TAU;
+        self.player.facing = dir.x.atan2_d(dir.z) + turns * std::f32::consts::TAU;
         for i in 0..hits {
             if !crossed(s.startup + gap * i as f32) {
                 continue;
@@ -122,7 +123,7 @@ impl World {
         } = *k;
         let crossed = |x: f32| k.crossed(x);
         let mut swing = k.swing;
-        let half = (arc_deg * 0.5).to_radians().cos();
+        let half = (arc_deg * 0.5).to_radians().cos_d();
         for i in 0..hits {
             if !crossed(s.startup + gap * i as f32) {
                 continue;
@@ -354,7 +355,7 @@ impl World {
         let swing = k.swing;
         if crossed(s.startup) {
             self.skill_ev.push(Event::Skill { id, at, dir });
-            let half = (arc_deg * 0.5).to_radians().cos();
+            let half = (arc_deg * 0.5).to_radians().cos_d();
             let shatter = match d.cap {
                 Some(Cap::Shatter { mult }) => mult,
                 _ => 1.0,
@@ -430,7 +431,7 @@ impl World {
                 let pl = &mut self.player;
                 let way = vec3(to.x - pl.pos.x, 0.0, to.z - pl.pos.z);
                 if way.length_squared() > 1e-4 {
-                    pl.facing = way.x.atan2(way.z);
+                    pl.facing = way.x.atan2_d(way.z);
                 }
                 pl.skill.hop_from = pl.pos;
                 pl.skill.hop_to = vec3(to.x, pl.pos.y, to.z);
@@ -587,7 +588,7 @@ impl World {
         if crossed(s.startup) {
             self.skill_ev.push(Event::Skill { id, at, dir });
             let kills = self.kills;
-            let half = (arc_deg * 0.5).to_radians().cos();
+            let half = (arc_deg * 0.5).to_radians().cos_d();
             self.skill_area(
                 t,
                 &Sweep {
@@ -633,8 +634,8 @@ impl World {
                 continue;
             }
             let spot = if circle {
-                let a = dir.x.atan2(dir.z) + i as f32 / n as f32 * std::f32::consts::TAU;
-                at + vec3(a.sin(), 0.0, a.cos()) * (len * 0.5).min(ERUPT_RING_MAX)
+                let a = dir.x.atan2_d(dir.z) + i as f32 / n as f32 * std::f32::consts::TAU;
+                at + vec3(a.sin_d(), 0.0, a.cos_d()) * (len * 0.5).min(ERUPT_RING_MAX)
             } else {
                 at + dir * (step * (i + 1) as f32)
             };

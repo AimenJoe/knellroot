@@ -1,4 +1,5 @@
 use super::*;
+use crate::det::Det;
 use crate::input::Actions;
 use crate::tuning::Tuning;
 use crate::tuning::{FLASK_CHARGES, PLAYER_HP};
@@ -30,7 +31,7 @@ fn lock_on_takes_the_boss_while_it_is_still_waking() {
         w.player.pos + vec3(2.0, 0.0, 0.0),
     );
     w.enemies[mob].state = EState::Chase;
-    w.player.facing = (home - w.player.pos).x.atan2((home - w.player.pos).z);
+    w.player.facing = (home - w.player.pos).x.atan2_d((home - w.player.pos).z);
     w.step(&lock, &t);
     assert_eq!(w.lock, Some(b), "locked {:?}, boss is {b}", w.lock);
     // 다 깨면 깃발이 내려가고 락온은 그대로다.
@@ -568,7 +569,7 @@ fn residents_talk_glance_and_stay_out_of_the_fight() {
     }
     assert_eq!(run.take_residents_seen(), vec![0], "seen once");
     assert!(run.take_residents_seen().is_empty());
-    let want = (w.player.pos.x - at.x).atan2(w.player.pos.z - at.z);
+    let want = (w.player.pos.x - at.x).atan2_d(w.player.pos.z - at.z);
     let off = |f: f32| {
         ((want - f + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI)
             .abs()

@@ -8,6 +8,7 @@
 //!
 //! 함정(nail에서 겪음): macroquad 0.4.16의 `touches()`만 물리 픽셀이고 `screen_width()`는 논리 픽셀이다 → DPI로 나눈다.
 //! `TouchPhase::Started`는 같은 프레임의 Moved에 덮이므로 "처음 보는 id"를 눌림으로 본다.
+use crate::det::Det;
 use macroquad::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -501,7 +502,7 @@ fn layout_at(w: f32, h: f32, ctx: Ctx, k: f32) -> Vec<Button> {
     let atk = vec2(w - u * 0.238, h - u * 0.21);
     let at = |deg: f32, dist: f32| {
         let a = deg.to_radians();
-        atk + vec2(a.cos(), -a.sin()) * (u * dist)
+        atk + vec2(a.cos_d(), -a.sin_d()) * (u * dist)
     };
     let mut b = vec![
         Button {
@@ -1341,10 +1342,10 @@ pub fn draw(o: &Overlay, v: &View) {
                 let a0 = (-90.0 + 360.0 * i as f32 / n as f32).to_radians();
                 let a1 = (-90.0 + 360.0 * (i + 1) as f32 / n as f32).to_radians();
                 draw_line(
-                    b.center.x + rr * a0.cos(),
-                    b.center.y + rr * a0.sin(),
-                    b.center.x + rr * a1.cos(),
-                    b.center.y + rr * a1.sin(),
+                    b.center.x + rr * a0.cos_d(),
+                    b.center.y + rr * a0.sin_d(),
+                    b.center.x + rr * a1.cos_d(),
+                    b.center.y + rr * a1.sin_d(),
                     3.0,
                     Color::new(WARM.r, WARM.g, WARM.b, 0.9),
                 );
@@ -1463,10 +1464,10 @@ fn draw_arc_left_right(l: Vec2, r: Vec2, rr: f32, col: Color) {
             let a0 = (from + 180.0 * i as f32 / n as f32).to_radians();
             let a1 = (from + 180.0 * (i + 1) as f32 / n as f32).to_radians();
             draw_line(
-                c.x + rr * a0.cos(),
-                c.y - rr * a0.sin(),
-                c.x + rr * a1.cos(),
-                c.y - rr * a1.sin(),
+                c.x + rr * a0.cos_d(),
+                c.y - rr * a0.sin_d(),
+                c.x + rr * a1.cos_d(),
+                c.y - rr * a1.sin_d(),
                 2.0,
                 col,
             );

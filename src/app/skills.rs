@@ -17,6 +17,7 @@
 use super::frame::Window;
 use super::menu::Hit;
 use super::*;
+use crate::det::Det;
 use crate::plates::{self, Col, Plate, Seat, PLATES};
 use crate::progression::{Cell, BRANCHES};
 use crate::skills::{
@@ -1040,7 +1041,7 @@ fn outline(shape: Shape, c: Vec2, half: f32) -> Vec<Vec2> {
         Shape::Round => (0..36)
             .map(|i| {
                 let a = i as f32 / 36.0 * std::f32::consts::TAU;
-                c + vec2(a.cos(), a.sin()) * half
+                c + vec2(a.cos_d(), a.sin_d()) * half
             })
             .collect(),
         Shape::Diamond => vec![

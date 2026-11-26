@@ -1,6 +1,7 @@
 //! 터치 끌어 조준(0217 — 브롤스타즈 꼴): 끈 쪽은 락온보다 앞서고, 톡은 가까운 적, 쥐고 끄는 동안 모은다.
 //! 버튼은 하나의 규칙 — 쏘기·수류탄·끼운 스킬(쪽이 있는 꼴) 어느 것이 올라가도 같다.
 use super::*;
+use crate::det::Det;
 use crate::skills;
 
 /// 끈 쪽(`aim` + `aim_drag`)은 락온 대상보다 앞선다 — 그냥 스틱 조준은 락온이면 쓰지 않는다(0014 그대로).
@@ -318,7 +319,7 @@ fn crossbow_shot(w: &mut World, a: Actions) -> Vec3 {
 /// 원뿔 밖(20°)의 적은 찾지 않고, 스틱을 안 기울이면 바라보는 쪽(0213 그대로).
 #[test]
 fn a_pad_stick_snaps_to_a_foe_within_the_narrow_cone() {
-    let off = |deg: f32| vec2(deg.to_radians().sin(), deg.to_radians().cos());
+    let off = |deg: f32| vec2(deg.to_radians().sin_d(), deg.to_radians().cos_d());
     let foe = vec3(0.0, 0.0, -10.0); // 앞(화면 위 = -z) 10m
     let shoot = |stick: Vec2, assist: f32| {
         let mut w = World::new("test", 40.0);
@@ -339,7 +340,7 @@ fn a_pad_stick_snaps_to_a_foe_within_the_narrow_cone() {
     assert!(d.z < -0.999, "snapped onto the foe: {d:?}");
     let d = shoot(off(5.0), 0.0);
     assert!(
-        (d.x - 5f32.to_radians().sin()).abs() < 0.01,
+        (d.x - 5f32.to_radians().sin_d()).abs() < 0.01,
         "no assist: the stick as is {d:?}"
     );
     let d = shoot(off(20.0), 8.0);
@@ -455,7 +456,7 @@ fn aim_help_skips_foes_behind_a_wall() {
         min: vec3(-3.0, 0.0, -5.2),
         max: vec3(3.0, 4.0, -4.8),
     };
-    let off = |deg: f32| vec2(deg.to_radians().sin(), deg.to_radians().cos());
+    let off = |deg: f32| vec2(deg.to_radians().sin_d(), deg.to_radians().cos_d());
     // 패드 보조: 앞 10m의 적, 스틱은 5° 빗나감.
     let assisted = |walled: bool| {
         let mut w = World::new("test", 40.0);

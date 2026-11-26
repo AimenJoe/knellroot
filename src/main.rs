@@ -21,6 +21,7 @@ mod charms;
 mod codex;
 mod core_echo;
 mod descent;
+mod det;
 mod ember;
 mod enemy;
 mod fall;

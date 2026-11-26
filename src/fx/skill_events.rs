@@ -1,6 +1,7 @@
 //! 사건 묶음 "스킬 · 원거리 · 궁극기"의 갈래마다 이펙트(0278 R25a — `Fx::on_skill_event`의 갈래를 사건마다 이름 있는 함수로,
 //! 몸은 그대로). 새 사건 = `on_skill_event`의 갈래 한 줄 + 여기 함수 하나.
 use super::*;
+use crate::det::Det;
 
 impl Fx {
     /// 종류의 RB(0274 ②b): 던지는 것은 손끝의 쇳빛 바람 줄(손도끼·창 — 돌은 먼지 한 줌), 신성한 빛은 손 위로 솟는 금빛 —
@@ -469,7 +470,7 @@ impl Fx {
         for _ in 0..12 {
             let a = self.r() * std::f32::consts::TAU;
             let rr = radius * self.r().sqrt();
-            let p = g + vec3(a.sin() * rr, height, a.cos() * rr);
+            let p = g + vec3(a.sin_d() * rr, height, a.cos_d() * rr);
             let life = 0.45 + 0.3 * self.r();
             let up = lift * (1.0 + 0.7 * self.r());
             self.push(Part {
@@ -995,7 +996,7 @@ impl Fx {
         );
         for i in 0..24 {
             let a = i as f32 / 24.0 * std::f32::consts::TAU;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let side = vec3(d.z, 0.0, -d.x);
             let (life, up) = (0.8 + 0.4 * self.r(), 0.3 + self.r());
             self.push(Part {
@@ -1049,7 +1050,7 @@ impl Fx {
         let turn = self.r() * std::f32::consts::TAU;
         for i in 0..20 {
             let a = turn + i as f32 / 20.0 * std::f32::consts::TAU;
-            let d = vec3(a.sin(), 0.0, a.cos());
+            let d = vec3(a.sin_d(), 0.0, a.cos_d());
             let life = 0.7 + 0.3 * self.r();
             let up = 1.6 + 1.4 * self.r();
             self.later.push((

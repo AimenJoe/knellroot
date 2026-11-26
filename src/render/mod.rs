@@ -3,6 +3,7 @@
 //! 스테이지(0019): 굽힌 지형(`scenery.rs`) + 모델(`models.rs` 목록, 상태 → 동작 이름) + 빛(달빛 + 화로, 정점 색). 모델이 없는 종류는
 //! 상자로. 개발 시나리오(스테이지 없음)는 PoC의 회색 아레나 그대로.
 //! 바닥 예고는 모양마다(원판·부채꼴·띠·고리, `TeleShape`) 옅은 면 + 테두리, 채움이 자라 테두리에 닿는 순간 공격(nail 0186~0188).
+use crate::det::Det;
 use crate::progression::Cell;
 use macroquad::camera::Camera as _;
 use macroquad::prelude::*;
@@ -337,7 +338,7 @@ impl Renderer {
             cam.view.pos,
             tg,
         );
-        let k = 1.0 - (-10.0 * get_frame_time()).exp();
+        let k = 1.0 - (-10.0 * get_frame_time()).exp_d();
         // 법선 패스에 다시 그릴 불투명 기하를 모은다(0061) — 지형·소품·배우까지, 옅은 덩어리·효과는 빼고.
         let edges_on = t[crate::tuning::P::RenderEdge] >= 0.5;
         self.batch.record = edges_on;

@@ -1,5 +1,6 @@
 //! 바닥 예고(모양마다 옅은 면 + 테두리, nail 0186~0188)와 적 발밑의 것들(그림자·퍼지는 고리·뿌리 가시·엘리트 표지).
 use super::*;
+use crate::det::Det;
 
 /// 예고 색(붉은 계열 하나 — 붉은색은 위험에만, 그림 팔레트에는 없다).
 pub(super) const TELE: Color = Color::new(0.85, 0.15, 0.1, 1.0);
@@ -44,7 +45,7 @@ pub(super) fn telegraph(
 ) {
     // 줄지은 원(0133 뿌리 기둥): 원 하나하나를 같은 규칙으로(원 = 피할 것).
     if let TeleShape::Row { n, r, step, start } = shape {
-        let (sn, cs) = facing.sin_cos();
+        let (sn, cs) = facing.sin_cos_d();
         let dir = vec3(sn, 0.0, cs);
         for i in 0..n {
             let c = p + dir * (start + i as f32 * step);
@@ -72,7 +73,7 @@ pub(super) fn telegraph(
             d.ring(p, r, facing, arc, ink);
         }
         TeleShape::Lane { len, w } => {
-            let (s, c) = facing.sin_cos();
+            let (s, c) = facing.sin_cos_d();
             let dir = vec3(s, 0.0, c);
             d.lane(p, dir, len, w, bg);
             d.lane(p, dir, len, w * k, ink);
@@ -110,7 +111,7 @@ fn telegraph_density(d: &Drape, p: Vec3, facing: f32, k: f32, shape: TeleShape, 
             d.ring(p, r, facing, arc, edge);
         }
         TeleShape::Lane { len, w } => {
-            let (s, c) = facing.sin_cos();
+            let (s, c) = facing.sin_cos_d();
             let dir = vec3(s, 0.0, c);
             d.lane(p, dir, len, w, ink);
             d.lane_edge(p, dir, len, w, edge);
@@ -234,7 +235,7 @@ fn wave_spikes(wc: Vec3, front: f32, drape: &Drape, body: Color, tip: Color) {
         let off = j as f32 * 0.61;
         for i in 0..n {
             let a = off + i as f32 * std::f32::consts::TAU / n as f32;
-            let out = vec3(a.sin(), 0.0, a.cos());
+            let out = vec3(a.sin_d(), 0.0, a.cos_d());
             let h = WAVE_SPIKE_H * rise * [1.0, 0.7, 0.85][(i + j as usize) % 3];
             let at = drape.at(wc.x + out.x * r, wc.z + out.z * r, wc.y, 0.0);
             // 바깥으로 기운다(밀려 나오는 쪽 — 꼴은 +z로 기울이고 `turn`이 바깥으로 돌린다).
@@ -374,7 +375,7 @@ pub(super) fn cart_tells(v: &View, w: &World) {
         telegraph(
             &drape,
             p,
-            head.x.atan2(head.z),
+            head.x.atan2_d(head.z),
             k,
             TeleShape::Lane {
                 len: len + crate::tuning::CART_HALF_L,

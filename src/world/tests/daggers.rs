@@ -1,6 +1,7 @@
 //! 쌍단검(0274 ③ — 도적): 빠른 4연타 · 가벼운 자세 피해 · 주특성 급소(등 뒤 · 휘청 · 기절 · 묶인 적에게 피해 배) · 강공격은 적을 꿰뚫고
 //! 지나 등 뒤에 선다 · RB 투척 단검 셋(좁은 부채꼴) · 날카로움의 덤은 이제 쌍단검의 것.
 use super::*;
+use crate::det::Det;
 use crate::weapons::{Id as W, Look, ART_SNEAK, SNEAK_BACK_DEG};
 
 /// 표: 4연타, 타마다 검보다 빠르고(시간 배 < 1) 자세 피해는 검의 반 이하, 닿는 거리는 맨손보다 조금 길고 검보다 짧다. 두 손이 다 차
@@ -52,8 +53,8 @@ fn the_sneak_attack_lands_from_behind_or_on_a_reeling_foe() {
     let back = vec3(0.0, 0.0, -4.0);
     let side = vec3(2.0, 0.0, -2.0);
     let edge = SNEAK_BACK_DEG.to_radians();
-    let just_in = vec3(-(edge + 0.05).sin(), 0.0, (edge + 0.05).cos()) * 2.0 + en.pos;
-    let just_out = vec3(-(edge - 0.05).sin(), 0.0, (edge - 0.05).cos()) * 2.0 + en.pos;
+    let just_in = vec3(-(edge + 0.05).sin_d(), 0.0, (edge + 0.05).cos_d()) * 2.0 + en.pos;
+    let just_out = vec3(-(edge - 0.05).sin_d(), 0.0, (edge - 0.05).cos_d()) * 2.0 + en.pos;
     let sneak = crate::skills::scaled(100, ART_SNEAK);
     assert_eq!(hurt_by(en, 100, false, 0, knack(front), &t), 100);
     assert_eq!(hurt_by(en, 100, false, 0, knack(side), &t), 100, "aside");
@@ -126,7 +127,7 @@ pub(super) fn huddle_dps(id: W, secs: f32, on_beat: bool) -> f32 {
     let hp0 = 1_000_000;
     let at = |k: usize| {
         let a = (k as f32 - 1.0) * 35f32.to_radians();
-        vec3(a.sin(), 0.0, -a.cos()) * 1.3
+        vec3(a.sin_d(), 0.0, -a.cos_d()) * 1.3
     };
     for k in 0..3 {
         mob_with(&mut w, at(k), hp0);

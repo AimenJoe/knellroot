@@ -1,4 +1,5 @@
 use super::*;
+use crate::det::Det;
 use crate::skills::Id as Sk;
 use std::f32::consts::PI;
 
@@ -100,7 +101,7 @@ fn whirl_cuts_everyone_around_twice_and_pushes_them_out() {
     let (mut w, t) = world();
     for k in 0..6 {
         let a = k as f32 / 6.0 * std::f32::consts::TAU;
-        w.spawn_mob(vec3(a.cos() * 2.2, 0.0, a.sin() * 2.2));
+        w.spawn_mob(vec3(a.cos_d() * 2.2, 0.0, a.sin_d() * 2.2));
     }
     w.spawn_mob(vec3(0.0, 0.0, -6.0));
     still(&mut w);
@@ -3593,7 +3594,7 @@ fn reap_life_cuts_all_around_and_heals_for_each_foe_up_to_four() {
         wear(&mut w, Sk::Harvest, 1, Pick::A);
         for k in 0..n {
             let a = k as f32 / n as f32 * std::f32::consts::TAU;
-            w.spawn_mob(vec3(a.sin() * 1.6, 0.0, a.cos() * 1.6));
+            w.spawn_mob(vec3(a.sin_d() * 1.6, 0.0, a.cos_d() * 1.6));
         }
         w.spawn_mob(vec3(0.0, 0.0, -6.0));
         still(&mut w);
