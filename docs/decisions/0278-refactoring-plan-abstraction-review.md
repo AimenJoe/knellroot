@@ -109,7 +109,7 @@
 | 신호 | 지금 | 목표 |
 |---|---|---|
 | 내용 enum의 조용한 와일드카드(제품 코드) | 15쯤 | 0 |
-| 새 종류에 고치는 `src` 파일 | 40 | 28 아래(표에서 나오는 12가 2~3으로) |
+| 새 종류에 고치는 `src` 파일 | 40 | 28 아래(표에서 나오는 12가 2~3으로) — R19 뒤: 손으로 지키는 목록 12 → 1(+ 옛 눈금 표 한 줄), 완드 커밋을 지금 하면 31쯤(나머지는 내용) |
 | 새 모양(`Form`)에 손으로 찾아야 하는 자리 | 8(넷은 조용) | 서술자 1 + 컴파일러가 짚는 match |
 | 200줄 넘는 함수 | 40 | 30 아래(그림 데이터 · 글 표 빼고) |
 | 헤드리스의 세어 누르기 | 63 | 0 |
@@ -233,6 +233,45 @@
   헤드리스(한 번에 하나): CI 넷(`shot` 291초 · `touch` 109 · `save` 50 · `pwa` 15 + `away` 10) · `fx.js rb`(꼴 열하나 전부 — 1,238초) ·
   `bare shield`(방패 던지기 114) · `throw`(36) · `tabs`(186) 모두 종료 0. 꼴마다 틱 사진을 눈으로 — 손도끼 · 창 · 단검 · 돌의 몸, 마법 탄 민트 ·
   저주탄 하늘빛, 땅 내려찍기의 물결, 신성한 빛 · 가시 씨앗의 고리와 솟는 뿌리, 볼트 · 화살의 빛 띠, 튕기는 방패가 그대로 그려진다.
+- **R18**(무기 줄에 글 · 그림 — 2.2 G): `weapons::Weapon`에 `name` · `desc` · `place`(도감의 나오는 곳, `Tr`) · `icon`(`touch::Kind` — 탄의 꼴
+  `LookDef::icon`(R17)과 같은 방향: 월드 쪽 표가 터치 그림의 이름표만 든다, 마스크는 `touch.rs`에) · `view`(아이템 그림의 각) · `twin`.
+  지운 것: `Id` → 글 match 셋(`app/mod.rs` `weapon_name` · `equip.rs` `weapon_desc` · `codex.rs` `weapon_texts`), `touch::attack_icon`의 무기마다
+  match, `item_view::view`의 무기마다 각 match(순수한 수라 줄로 — 렌더 타입이 없다). `weapon_name` · `attack_icon`은 줄을 읽는 얇은 함수로
+  남겼다(부르는 곳 열넷 · 넷). `charms::TABLE`은 줄마다 `Mods` 칸 스물다섯을 다 적던 것을 `..Mods::NONE`으로(283줄 → 줄마다 바뀌는 칸만),
+  `garb::MODS0`(= `Mods::NONE`의 복사) 지움. `Toss::BASE`(부채꼴 · 칸 · 차는 배 — 쌍단검 · 완드만 다르다) · `Heavy::BASE`(여진 · 깨기 · 끌기 ·
+  속성 — 그 무기만의 것) · 사격 볼트의 `dose` · `lame`은 `..MAGIC`. **"그대로" 증명**: 바꾸기 전에 고정 파일 셋을 찍었다 —
+  `save_fixture.txt`(모든 칸이 찬 기록 — 무기 열 · 장신구 열 · 방패 · 덧옷 · 무기마다 벼린 단 · 판마다 산 스킬 스물다섯 · 궁극기 · 주/부무기와
+  그 칸 — 의 글, 바이트로) · `weapon_fixture.txt`(무기 · 종류 표의 수 Debug) · `charm_fixture.txt`(장신구 · 덧옷 · 보조특성의 `Mods`와
+  `Stats::compute`). 셋 다 R18 · R19 뒤에 그대로. 골든 102 · 신호 표 · 글 맞춤 그대로.
+- **R19**(표에서 나오는 목록 — 2.2 G): `Class::index` = `CLASSES`에서 찾는 const fn(손 match 지움) · `Weapon { key, class }`(`Id::key` ·
+  `Id::class`의 match 지움 — 기록 키는 줄로 옮겼을 뿐, 고정 파일이 바이트로 본다) · `IDS` = `WEAPONS`의 차례 · `WEAPONS` · `CLASSES`는 길이를
+  적지 않는 슬라이스 · `skills::ONE`/`TWO`/`RANGED` = `hand_bits(종류 표의 계열)`(옛 합과 같은지 시험 — 뒤에 오는 종류는 고치지 않게
+  `& known`으로) · 종류 표의 `Quirks { keen, steady_swing }`(`World::keen` · `World::steady_swing` — 옛 `Class::Dagger` · `swinging_greatsword`의
+  이름 비교) · 완드의 상황 힌트 = 저주탄을 쏘는 무기(탄의 꼴) · 활쏘기 동작(`anim` · 모션 보기) = 당기는 리듬(`Id::draws`). 개발 창: 상자 줄
+  일곱 → `DevStart::WeaponChest(Id)` 하나(지역은 스테이지 표 `chest_loot`에서 — 상자에 든 무기마다 줄이 서서 망치 · 활의 상자도 생겼다,
+  이름은 무기 줄의 이름 · 나오는 곳으로 채운다) · 모션 보기 줄 열하나는 `IDS`에서(`dev_list` = 손으로 적는 `FIXED_ROWS` + 무기마다의 줄) ·
+  `ARM_CYCLE` → `arm_cycle`(`IDS` + 한손 종류는 방패와 함께 — 망치 + 방패 · 낫 + 방패가 새로 든다) · 개발 창 설명의 무기 차례 글(두 언어의
+  산문 목록 넷)은 표에서 채운다. 시험 스크립트가 쓰는 이름 서른셋은 그대로(바뀐 이름 없음). `i18n::all`의 무기 · 종류 글 83줄은 표의 줄에서
+  (글 모음은 언어마다 앞뒤로 같다 — 견줘 봄). 시험: 종류마다 베낀 기록 왕복 넷(쌍단검 · 대검 · 낫 · 완드) → 종류 표를 도는 고리 하나
+  (`every_class_weapon_and_its_plate_round_trip` — 열 종류 모두, 전엔 넷), 쌍단검 시험의 옛 기록 부분은 `the_moved_rogue_arts_keep_through_a_save`로.
+  `hold_for`는 `IDS` 차례(마법력의 배가 붙는 종류는 끝에 — "속성 스킬은 배 없는 쇠뇌 · 활로" 그대로). 남긴 것(일부러): 판 차례 시험의
+  줄(`the_strip_is_common_then_every_class_then_the_shield` — 읽는 차례를 박아 둔 것) · 옛 눈금 표 `OLD_WEAPONS`(0158 N0 전의 수 — 새 무기는
+  한 줄을 적는다) · 스킬 표의 종류 비트 이름(`skills::SWORD` … — 스킬이 이름으로 부른다) · 렌더 시험의 동작 이름 목록(무기가 아니라 동작마다의 예외).
+  **시험 이름**: 1,033 → 1,036(무시 20 포함) — 더함 다섯(고정 파일 셋 · `every_class_weapon_and_its_plate_round_trip` ·
+  `hand_masks_from_the_class_table_equal_the_old_unions` · `weapon_chest_rows_come_from_the_stage_tables`) − 지움 셋(`the_greatsword_and_its_arts_round_trip` ·
+  `the_scythe_and_its_arts_round_trip` · `the_wand_and_its_arts_round_trip` — 고리가 대신) · 이름 바꿈 하나(`the_moved_rogue_arts_and_the_daggers_keep_through_a_save`
+  → `the_moved_rogue_arts_keep_through_a_save`).
+  **잰 것 — 열한째 종류 + 무기 하나(가짜 `Class::Flail` + `Id::Flail`, 망치의 줄을 베껴 — 커밋하지 않고 되돌림)**: `cargo check`까지 고친 파일
+  **1**(`weapons.rs`: `Class` 갈래 · `CLASSES` 줄 · `Id` 갈래 · `WEAPONS` 줄). `cargo test`까지: 손으로 지키는 목록은 **`plates.rs`의 판 차례 시험 한 줄 +
+  같은 `weapons.rs`의 `OLD_WEAPONS` 한 줄**, 다시 쓰는 고정 파일 넷(`golden.txt` · `save_fixture.txt` · `weapon_fixture.txt` · `charm_fixture.txt` —
+  명령 하나씩). 나머지 실패 열넷은 모두 **내용**을 묻는다(시험이 짚는다): 종류만의 궁극기 · 빈 손의 결 · RB 꼴 · 터치 그림 · 아이템 부위 ·
+  상자 · 첫 줄 스킬 둘(스킬 표의 비트) · 이름 글(글 맞춤의 키 수). 아무것도 짚지 않는 손일: `tools/test/hearth.js`의 `PLATE_ORDER` · 보스 모의 줄
+  (`balance.rs`) · Blender 부위 · 동작(`wanderer.py` · `wanderer_skin.py` · `check_glb.py`) · 문서. 견줌: 완드 커밋 `0c00bac`의 `src` 40 파일 가운데
+  표에서 나오게 된 아홉(`app/codex` · `app/dev` · `app/equip` · `app/mod` · `charms` · `garb` · `item_view` · `i18n/dev` · `save`)은 이제 손대지 않는다
+  — 같은 일을 지금 하면 31쯤(나머지는 새 동작 · 내용). 손으로 지키는 목록 12 → 1(+ 같은 파일의 옛 눈금 표).
+  헤드리스(한 번에 하나): CI 넷(`shot` 259초 · `touch` 100 · `save` 46 · `pwa` + `away` 24) · `hearth` ko(287 — 장비 탭 · 도감의 무기 글이 줄에서) ·
+  `items`(235) · `fx.js wand`(129 — `Arm(Wand)` · 개발 창 `Dev(Arm)`의 차례 글) · `swap`(264 — 든 무기 차례) 모두 종료 0, 그리고 `WeaponChest(Wand)` ·
+  `(Spear)` · `(Hammer)`를 개발 명령으로 열어 상자 곁에 서는 것을 한 번(스크립트에 두지 않은 손 확인).
 - 함께(R16 · R17과 따로 된 커밋): **가로 줄 기호가 작은 글에서 빈칸처럼 보이던 것**(`tabs.js` 영어 844 px 멈춤 창 아래 줄 "View only — raise at a
   hearth"). 글자가 없거나 `Face`를 비껴간 것이 아니었다 — 고운바탕 원본의 엠 대시 · 엔 대시는 0.05 em(굵게 0.065) 두께라 9~11 px 글에서
   반 화소 밑으로 녹았다. `subset_ui.py`의 `thicken_rules`가 — – −를 가운데 그대로 0.09 em으로(원본을 받아 다시 만들었다 — 그 단계 전까지는 레포의
