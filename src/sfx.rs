@@ -4,7 +4,7 @@
 //!   Kenney·OpenGameArt, 크레딧 의무 없음). 변형이 여럿이면 바로 전과 다른 것.
 //! - **합성 소리**(시작할 때 만든다, 이 레포의 코드): 패링(맑은 쇳소리), 예고 넷(모양마다 다른 소리 — 소리만 듣고도 부채꼴·돌진·
 //!   파동·둘레를 가르게, 0064 R4), 문지기 깨어남(낮은 울림), 쉼터(따뜻한 화륵 + 종), 등잔 한 모금, 성소 환경음(낮은 바람 + 먼 종 — Knell).
-//! - 같은 소리는 `SAME_GAP`초 안에 겹쳐 내지 않는다(떼를 한 번에 맞혀도 귀가 아프지 않게).
+//! - 같은 소리는 `SAME_GAP`초 안에 겹쳐 내지 않는다(떼를 한 번에 맞혀도 귀가 아프지 않게). 흡수(`Id::Drain`)는 `DRAIN_GAP`초(0278).
 use std::cell::{Cell, RefCell};
 
 use macroquad::audio::{load_sound_from_bytes, play_sound, stop_sound, PlaySoundParams, Sound};
@@ -13,6 +13,16 @@ const SR: u32 = 44_100;
 /// 전체 크기(설정 0..10에 곱한다).
 const MASTER: f32 = 0.7;
 const SAME_GAP: f64 = 0.045;
+/// 흡수의 소리(`Id::Drain`)는 떼를 치는 동안 틱마다 날 수 있다 — 이 간격(초) 안에는 한 번만(0278).
+const DRAIN_GAP: f64 = 0.25;
+
+/// 같은 소리를 다시 내기까지 쉬는 시간(초).
+fn same_gap(id: Id) -> f64 {
+    match id {
+        Id::Drain => DRAIN_GAP,
+        _ => SAME_GAP,
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Id {
@@ -61,6 +71,18 @@ pub enum Id {
     Fury,
     /// 걸어 당김(0277 — 낫): 덩굴이 감겨 끌리는 소리 — 내려가는 휘익(채찍처럼) + 끝의 둔한 덜컥.
     Pull,
+    /// 강공격이 다 모였다(0278 — 빠진 소리): 짧게 위로 미끄러져 맑게 서는 '찡' — 지금 떼면 센 것이 나간다는 박자 신호. 박자의 종(0.32초)·
+    /// 패링(0.5초)보다 짧고, 급소의 '칭'보다 낮다. 크기는 패링 아래.
+    Charged,
+    /// 문지기가 2단계로 깨어난다(0278 — 빠진 소리): 낮게 부풀어 오르는 으르렁(톱니 55 → 82Hz + 걸러 낸 숨) 1초 — 깨어남(2초 땅울림)보다
+    /// 짧고 높게, 겹이 300Hz 위에도 있어 폰에서도 들린다.
+    Rouse,
+    /// 적이 벽에 부딪힌다(0278 — 빠진 소리): 둔한 쿵(90 → 48Hz) + 부딪히는 순간의 흙 부서짐 — 맞힘 둘째 층의 '둥'보다 무겁고 길다.
+    Slam,
+    /// 수류탄을 던진다(0278 — 빠진 소리): 가볍게 도는 휘익 — 걸러 낸 바람이 초당 22번 끊겨 돈다(휘두름의 한 줄기 바람과 갈린다).
+    Throw,
+    /// 흡수로 체력이 돌아온다(0278 — 빠진 소리): 작고 부드러운 오르는 음 하나(440 → 620Hz) — 자주 나므로 `DRAIN_GAP`초에 한 번만.
+    Drain,
 }
 
 /// 잇단 박자 수(1부터) → 종소리(셋째부터는 가장 높은 것).
@@ -179,11 +201,23 @@ fn synth_gain(id: Id) -> f32 {
         Id::Sneak => 0.45,
         Id::Fury => 0.55,
         Id::Pull => 0.45,
+        // 0278: 다 모임은 박자 신호라 들려야 하지만 패링(0.55)보다 작게 · 2단계는 깨어남(0.7) 아래 · 벽 쿵은 맞힘 둘째 층과 같게 ·
+        // 던짐은 휘두름(0.45) 아래 · 흡수는 자주 나므로 한 모금(0.4) 아래.
+        Id::Charged => 0.42,
+        Id::Rouse => 0.6,
+        Id::Slam => 0.5,
+        Id::Throw => 0.35,
+        Id::Drain => 0.3,
         _ => 0.5,
     }
 }
 
-const SYNTHS: [Id; 19] = [
+const SYNTHS: [Id; 24] = [
+    Id::Charged,
+    Id::Rouse,
+    Id::Slam,
+    Id::Throw,
+    Id::Drain,
     Id::Sneak,
     Id::Fury,
     Id::Pull,
@@ -274,7 +308,7 @@ impl Sfx {
         let mut last = self.last.borrow_mut();
         let prev = last.iter().position(|(k, _, _)| *k == id);
         if let Some(i) = prev {
-            if now - last[i].1 < SAME_GAP {
+            if now - last[i].1 < same_gap(id) {
                 return;
             }
         }
@@ -635,6 +669,92 @@ pub fn synth(id: Id) -> Vec<i16> {
                 })
                 .collect()
         }
+        // 다 모임(0278): 0.05초에 700 → 1,400Hz로 미끄러져 올라 맑게 서고(2배 겹이 빨리 사라진다) 0.16초에 사라지는 '찡' — 처음 3ms만
+        // 부드럽게(딱 소리 없이).
+        Id::Charged => {
+            let mut ph = 0.0f32;
+            (0..len(0.16))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let k = (t / 0.05).min(1.0);
+                    let f = 700.0 + 700.0 * (1.0 - (1.0 - k) * (1.0 - k));
+                    ph += f / SR as f32;
+                    let tone = (TAU * ph).sin() + 0.35 * (TAU * 2.0 * ph).sin() * (-t * 30.0).exp();
+                    let env = (t / 0.003).min(1.0)
+                        * if t < 0.05 {
+                            1.0
+                        } else {
+                            (-(t - 0.05) * 22.0).exp()
+                        };
+                    tone * env
+                })
+                .collect()
+        }
+        // 2단계(0278): 톱니(55 → 82Hz — 겹이 300~700Hz에도 있다) + 두 번 거른 숨이 0.75초 부풀고 0.25초에 잦아든다, 4Hz로 떨린다.
+        Id::Rouse => {
+            let n = len(1.0);
+            let (mut lp, mut lp2, mut ph) = (0.0f32, 0.0f32, 0.0f32);
+            (0..n)
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let k = i as f32 / n as f32;
+                    lp += (rng(&mut seed) - lp) * 0.06;
+                    lp2 += (lp - lp2) * 0.06;
+                    ph += (55.0 + 27.0 * k) / SR as f32;
+                    let saw = (ph.fract() * 2.0 - 1.0) * 0.7 + (TAU * ph).sin() * 0.3;
+                    let shake = 0.8 + 0.2 * (TAU * 4.0 * t).sin();
+                    let swell =
+                        (k / 0.75).min(1.0).powf(1.8) * (1.0 - ((k - 0.75) / 0.25).max(0.0));
+                    (saw + lp2 * 5.0) * shake * swell
+                })
+                .collect()
+        }
+        // 벽 쿵(0278): 90 → 48Hz로 떨어지는 몸(0.22초) + 처음 30ms의 흙 부서짐(걸러 낸 잡음 — 몸보다 높은 결이 작은 스피커에 남는다).
+        Id::Slam => {
+            let mut ph = 0.0f32;
+            let mut lp = 0.0f32;
+            (0..len(0.24))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    ph += (90.0 - 300.0 * t).max(48.0) / SR as f32;
+                    let body =
+                        ((TAU * ph).sin() + 0.3 * (TAU * 3.0 * ph).sin()) * (-t * 14.0).exp();
+                    lp += (rng(&mut seed) - lp) * 0.15;
+                    let crunch = lp * 2.5 * (-t * 60.0).exp();
+                    (body + crunch) * (t / 0.002).min(1.0)
+                })
+                .collect()
+        }
+        // 던짐(0278): 걸러 낸 바람(가운데가 높아졌다 낮아진다)이 초당 22번 끊겨 도는 휘익 0.22초 — 가볍게.
+        Id::Throw => {
+            let n = len(0.22);
+            let (mut lp, mut hp) = (0.0f32, 0.0f32);
+            (0..n)
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let k = i as f32 / n as f32;
+                    let a = 0.08 + 0.22 * (std::f32::consts::PI * k).sin();
+                    lp += (rng(&mut seed) - lp) * a;
+                    hp += (lp - hp) * 0.03;
+                    let air = (lp - hp) * 3.0;
+                    let spin = 0.55 + 0.45 * (TAU * 22.0 * t).sin();
+                    let env = (k / 0.25).min(1.0) * (1.0 - ((k - 0.4) / 0.6).max(0.0));
+                    air * spin * env
+                })
+                .collect()
+        }
+        // 흡수(0278): 440 → 620Hz로 천천히 오르는 부드러운 음 하나(2배 겹 조금, 25ms에 피어 0.2초에 사라진다).
+        Id::Drain => {
+            let mut ph = 0.0f32;
+            (0..len(0.2))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    ph += (440.0 + 900.0 * t) / SR as f32;
+                    let tone = (TAU * ph).sin() + 0.2 * (TAU * 2.0 * ph).sin();
+                    tone * (t / 0.025).min(1.0) * (-(t - 0.025).max(0.0) * 14.0).exp()
+                })
+                .collect()
+        }
         _ => vec![0.0; 64],
     };
     // 끝 5ms를 줄인다(딸깍 없이).
@@ -836,6 +956,71 @@ mod tests {
             sneak.1 > pull.1 && pull.1 > fury.1,
             "high glint · middle whip · low breath: {sneak:?} {pull:?} {fury:?}"
         );
+    }
+
+    /// 소리의 대략의 결(0064 R4 · 0277과 같은 잣대): (길이 초, 초당 영점 교차 — 대략의 높이).
+    fn feat(id: Id) -> (f32, f32) {
+        let s = synth(id);
+        let crossings = s.windows(2).filter(|w| (w[0] < 0) != (w[1] < 0)).count() as f32;
+        let secs = s.len() as f32 / SR as f32;
+        (secs, crossings / secs)
+    }
+
+    /// 300Hz 1차 고역 통과를 지난 에너지의 몫(0175 — 폰·노트북 스피커가 내는 대역).
+    fn above_300(id: Id) -> f64 {
+        let x: Vec<f32> = synth(id).iter().map(|&v| v as f32).collect();
+        let dt = 1.0 / SR as f32;
+        let rc = 1.0 / (std::f32::consts::TAU * 300.0);
+        let k = rc / (rc + dt);
+        let (mut y, mut prev, mut hi, mut all) = (0.0f32, 0.0f32, 0.0f64, 0.0f64);
+        for &v in &x {
+            y = k * (y + v - prev);
+            prev = v;
+            hi += (y as f64).powi(2);
+            all += (v as f64).powi(2);
+        }
+        hi / all
+    }
+
+    /// 0278: 빠진 소리 다섯(다 모임 · 2단계 · 벽 쿵 · 던짐 · 흡수)은 서로, 그리고 가까운 소리(패링 · 맞힘 둘째 층 · 분노 · 급소 · 걸어 당김 ·
+    /// 깨어남 · 한 모금 · 박자)와 귀로 갈린다 — 길이나 높이가 한쪽이 1.25배 넘게 다르다. 신호인 것(다 모임 · 2단계)은 몸이 작은
+    /// 스피커의 대역에도 있고, 다 모임은 패링보다 크지 않다.
+    #[test]
+    fn the_five_new_cues_sound_apart() {
+        let new = [Id::Charged, Id::Rouse, Id::Slam, Id::Throw, Id::Drain];
+        let near = [
+            Id::Parry,
+            Id::Thwack,
+            Id::Fury,
+            Id::Sneak,
+            Id::Pull,
+            Id::Wake,
+            Id::Gulp,
+            Id::Beat,
+            Id::Shell,
+            Id::Recall,
+            Id::TeleRelease,
+        ];
+        let apart = |a: (f32, f32), b: (f32, f32)| {
+            let r = |x: f32, y: f32| x.max(y) / x.min(y).max(1e-6);
+            r(a.0, b.0) > 1.25 || r(a.1, b.1) > 1.25
+        };
+        for (i, &a) in new.iter().enumerate() {
+            for &b in new[i + 1..].iter().chain(near.iter()) {
+                assert!(
+                    apart(feat(a), feat(b)),
+                    "{a:?} {:?} sounds like {b:?} {:?}",
+                    feat(a),
+                    feat(b)
+                );
+            }
+        }
+        assert!(above_300(Id::Charged) > 0.5, "{}", above_300(Id::Charged));
+        assert!(above_300(Id::Rouse) > 0.15, "{}", above_300(Id::Rouse));
+        assert!(synth_gain(Id::Charged) < synth_gain(Id::Parry));
+        assert!(synth_gain(Id::Drain) < synth_gain(Id::Gulp));
+        // 흡수는 떼를 치는 동안 자주 난다 — 다른 소리보다 길게 쉰다.
+        assert!(same_gap(Id::Drain) >= 0.25 && same_gap(Id::Hit) < same_gap(Id::Drain));
     }
 
     #[test]

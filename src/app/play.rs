@@ -1671,6 +1671,13 @@ pub(super) fn sound_of(e: &Event, chain: u32, player: Vec3) -> Option<crate::sfx
         Event::Toll { .. } => Id::Beat,
         Event::AilBurst { .. } => Id::Hit,
         Event::Flurry { .. } => Id::Beat3,
+        // 0278(빠진 소리): 다 모임 = 짧게 오르는 '찡'(떼면 센 것) · 2단계 = 부풀어 오르는 으르렁 · 벽 쿵 = 둔한 쿵 · 수류탄 던짐 =
+        // 도는 휘익 · 흡수 = 작게 오르는 음(자주 나므로 `sfx`가 0.25초에 한 번만).
+        Event::Charged => Id::Charged,
+        Event::Rouse { .. } => Id::Rouse,
+        Event::Slam { .. } => Id::Slam,
+        Event::Throw => Id::Throw,
+        Event::Drain { .. } => Id::Drain,
         _ => return None,
     })
 }
@@ -1686,14 +1693,9 @@ mod tests {
         "LockOff",
         "LockLost",
         "Turn",
-        "Slam",
         "EnemyStrike",
-        "Rouse",
         "Bleed",
-        "Drain",
         "WeaponSwap",
-        "Charged",
-        "Throw",
         "RootSpike",
         // 화상이 타는 틱(초마다 — 떼에서 겹친다): 걸린 순간의 `Ail`이 잔불 소리를 낸다.
         "Burn",

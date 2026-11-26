@@ -1402,6 +1402,36 @@ impl Fx {
                 self.star(at, 0.8, 0.08, MINT);
                 self.rise(at, 0.2, 4, Shape::Dot, (0.06, 0.03), 0.3, MINT, LIFE, true);
             }
+            // 수류탄을 던졌다(0278 — 빠진 이펙트): 손끝에서 던지는 쪽으로 튀는 불티 셋(심지) + 손에서 떨어지는 흙먼지 몇(꾸밈).
+            // 수류탄 자체와 터짐은 렌더 `bombs` · `Boom`.
+            Event::Throw => {
+                let fwd = w.player.facing_dir();
+                let hand = pp + Vec3::Y * (w.player.air + 1.2) + fwd * 0.35;
+                self.spray(
+                    hand,
+                    fwd + Vec3::Y * 0.6,
+                    0.35,
+                    3,
+                    3.5,
+                    Shape::Dot,
+                    0.06,
+                    0.25,
+                    6.0,
+                    WHITE_HOT,
+                    AMBER,
+                );
+                self.rise(
+                    hand,
+                    0.12,
+                    3,
+                    Shape::Puff,
+                    (0.12, 0.2),
+                    0.35,
+                    DUST,
+                    DUST,
+                    true,
+                );
+            }
             Event::Cast { at, look } if look == crate::weapons::STONE => {
                 self.spray(
                     at,
@@ -4282,7 +4312,6 @@ mod tests {
         "FlaskDenied",
         "CastDenied",
         "StaminaDenied",
-        "Throw",
         "Beat",
         "SkillDenied",
     ];
