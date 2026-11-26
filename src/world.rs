@@ -1989,6 +1989,45 @@ impl World {
         self.player.shield.is_some() && self.player.weapon.hand() == weapons::Hand::One
     }
 
+    /// 방랑자가 놓거나 던진 것을 모두 치운다(0278 고침 — 쉬기 · 쓰러져 다시 서기가 부른다): 날고 있는 탄(던진 창 · 방패도 — 날고 있는
+    /// 것을 지우면 곧 손에 있는 것이다: `rb_out` · `shield_out`은 날고 있는 탄을 볼 뿐), 꽂히기 전의 신성한 빛 · 수류탄 · 폭발 고리(남는
+    /// 엘리트가 터뜨린 것도) · 금 간 땅 · 불똥, 스킬이 남긴 것(모인 자리 · 갈라진 땅 · 던진 무기 · 마당과 덫 · 솟은 뿌리)과 그 스킬이
+    /// 기억하던 적 번호(적은 다시 세워지면 번호가 바뀐다). 다시 선 방랑자 곁에서 지난 싸움의 것이 터지거나 남지 않게.
+    /// 적이 던진 것(종 조각 `shards`)과 남는 엘리트의 고리(`lingers`)는 부르는 쪽이 적을 다시 세우며 지운다.
+    pub fn clear_placed(&mut self) {
+        self.bolts.clear();
+        self.smites.clear();
+        self.bombs.clear();
+        self.blasts.clear();
+        self.cracks.clear();
+        self.sparks.clear();
+        self.skill_bursts.clear();
+        self.skill_zones.clear();
+        self.skill_blades.clear();
+        self.skill_fields.clear();
+        self.skill_spikes.clear();
+        self.brace_caught.clear();
+        self.hop_seen.clear();
+    }
+
+    /// 놓이거나 날고 있는 것의 가짓수마다 수(시험 — `clear_placed`가 치우는 것과 같은 차례).
+    #[cfg(test)]
+    pub fn placed_counts(&self) -> [usize; 11] {
+        [
+            self.bolts.len(),
+            self.smites.len(),
+            self.bombs.len(),
+            self.blasts.len(),
+            self.cracks.len(),
+            self.sparks.len(),
+            self.skill_bursts.len(),
+            self.skill_zones.len(),
+            self.skill_blades.len(),
+            self.skill_fields.len(),
+            self.skill_spikes.len(),
+        ]
+    }
+
     /// 던진 방패가 날고 있나(0276 — 가는 길이든 돌아오는 길이든). 그동안 왼손에는 방패가 없다(렌더 `hide_unheld`).
     pub fn shield_out(&self) -> bool {
         self.bolts

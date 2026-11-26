@@ -21,6 +21,7 @@ mod hurt;
 mod jump_ledge;
 mod off_hand;
 mod parry;
+mod placed;
 mod ranged;
 mod scenario_golden;
 mod scythe;

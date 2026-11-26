@@ -2174,3 +2174,85 @@ fn the_sanctuarys_old_weapon_chests_keep_their_place_and_hold_a_whetstone_and_a_
 
 /// 성소 상자 넷의 칸(탑 · 성벽길 · 뜰 남동 단 · 뿌리 굴) — 0274 ⑦ 전과 같다(기록 `chests`의 번호가 이 자리를 가리킨다).
 const OLD_SANCTUARY_CHESTS: [(usize, usize); 4] = [(40, 17), (2, 18), (34, 29), (2, 49)];
+
+/// 시험용: 수류탄(쇠뇌의 평타) · 신성한 빛(망치의 RB)을 차례로 — 둘 다 아직 놓여 있다. `rest`면 던진 몸짓이 끝나 손이 빌
+/// 때까지(쉬려면 서 있어야 한다), 아니면 창도 던진다(날고 있다 — 손에 돌아오기 전).
+fn throw_things(w: &mut World, rest: bool) {
+    let t = Tuning::default();
+    let go = |w: &mut World, a: Actions, ticks: usize| {
+        for k in 0..ticks {
+            let a = if k == 0 { a } else { Actions::default() };
+            w.step(&a, &t);
+        }
+    };
+    w.set_weapon(crate::weapons::Id::Crossbow);
+    w.player.ranged.grenades = 2.0;
+    w.player.stamina = 100.0;
+    go(
+        w,
+        Actions {
+            attack: true,
+            ..Default::default()
+        },
+        (t[crate::tuning::P::ThrowTime] / (1.0 / 60.0)) as usize + 2,
+    );
+    let rb = Actions {
+        cast: true,
+        cast_held: true,
+        ..Default::default()
+    };
+    // RB는 누른 뒤 손을 떠날 때까지 몇 틱 — 놓일 때까지만 걷는다.
+    let until = |w: &mut World, done: &dyn Fn(&World) -> bool| {
+        for k in 0..60 {
+            if done(w) {
+                return;
+            }
+            let a = if k == 0 { rb } else { Actions::default() };
+            w.step(&a, &t);
+        }
+    };
+    w.set_weapon(crate::weapons::Id::Hammer);
+    until(w, &|w| !w.smites.is_empty());
+    if rest {
+        for _ in 0..60 {
+            if matches!(w.player.state, PState::Idle) {
+                break;
+            }
+            w.step(&Actions::default(), &t);
+        }
+    } else {
+        w.set_weapon(crate::weapons::Id::Spear);
+        until(w, &|w| w.rb_out());
+        assert!(w.rb_out(), "the javelin is in the air");
+    }
+    let n = w.placed_counts();
+    assert!(n[1] > 0 && n[2] > 0, "smite · bomb {n:?}");
+}
+
+/// 0278 고침: 쉬기 · 쉰 화로에서 다시 서기 · 서막 숲에서 다시 서기는 방랑자가 놓거나 던진 것을 모두 치운다 — 쉬기 전 · 쓰러지기 전에
+/// 던진 수류탄 · 꽂히기 전의 신성한 빛이 다시 선 뒤에 터지지 않고, 날던 창은 손에 있다(RB가 막히지 않는다).
+#[test]
+fn resting_and_rising_again_clear_what_the_wanderer_threw() {
+    let (mut run, mut w) = StageRun::start(&sanctuary::DEF);
+    let i = entrance_rest(&run);
+    w.player.pos = run.rests[i] + vec3(0.0, 0.0, 1.0);
+    w.player.prev = w.player.pos;
+    throw_things(&mut w, true);
+    rest_now(&mut run, &mut w, i);
+    assert_eq!(run.rest_at.map(|r| r.0), Some(i), "rested");
+    assert_eq!(w.placed_counts(), [0; 11], "rest");
+    assert!(!w.rb_out());
+    // 쉰 화로에서 다시 선다.
+    throw_things(&mut w, false);
+    w.player.hp = 0;
+    assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
+    assert_eq!(w.placed_counts(), [0; 11], "respawn at the hearth");
+    assert!(!w.rb_out());
+    // 서막 숲(쉼터가 없다)에서 깨어난 자리로.
+    let (mut run, mut w) = StageRun::start(STAGES[PROLOGUE]);
+    throw_things(&mut w, false);
+    w.player.hp = 0;
+    assert_eq!(run.tick(&mut w, 1.0 / 60.0), StageOut::Respawned);
+    assert_eq!(w.placed_counts(), [0; 11], "respawn in the forest");
+    assert!(!w.rb_out());
+}

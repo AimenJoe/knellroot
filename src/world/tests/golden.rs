@@ -88,7 +88,7 @@ pub(super) fn quantized(s: &str) -> String {
 
 /// 고정 마당: 30 m 둘레 · 방랑자는 가운데에서 화면 위(-z)를 본다 · 보스 하나(앞 6 m) · 잡몹 다섯(거리 · 쪽을 정해서).
 /// 처음에는 모두 서 있다(쫓지도 치지도 않는다) — 맞으면 깨어나는 것은 월드의 규칙대로.
-fn yard() -> World {
+pub(super) fn yard() -> World {
     let mut w = World::new("test", 30.0);
     w.player.facing = std::f32::consts::PI;
     w.spawn_boss(vec3(0.0, 0.0, -6.0));
@@ -108,7 +108,7 @@ fn yard() -> World {
 }
 
 /// 스킬 `id`를 쓸 수 있는 것을 든다(정한 차례 — 같은 스킬은 늘 같은 것): 검 → 검과 방패 → 무기 표의 차례.
-fn arm_for(w: &mut World, id: crate::skills::Id) {
+pub(super) fn arm_for(w: &mut World, id: crate::skills::Id) {
     let def = id.def();
     if def.fits(w.grip()) {
         return;
@@ -128,7 +128,7 @@ fn arm_for(w: &mut World, id: crate::skills::Id) {
 }
 
 /// 그 궁극기를 가진 종류의 첫 무기(종류의 것이 아닌 궁극기는 검).
-fn arm_for_ult(w: &mut World, u: Ult) {
+pub(super) fn arm_for_ult(w: &mut World, u: Ult) {
     let arm = weapons::IDS
         .into_iter()
         .find(|i| i.class().is_some_and(|c| c.def().great == u))

@@ -845,6 +845,8 @@ impl StageRun {
     fn respawn_at_start(&mut self, w: &mut World) {
         w.lingers.clear();
         w.shards.clear();
+        // 방랑자가 놓거나 던진 것도(0278 고침 — 쉬기 전 · 쓰러지기 전에 던진 수류탄 · 신성한 빛 · 마당이 다시 선 뒤에 터지거나 남았다).
+        w.clear_placed();
         w.lock = None;
         w.hitstop = 0.0;
         let full = w.stats.max_stamina();
@@ -967,6 +969,8 @@ impl StageRun {
         w.lock = None;
         w.lingers.clear();
         w.shards.clear();
+        // 방랑자가 놓거나 던진 것도(0278 고침 — 쉬기 전 · 쓰러지기 전에 던진 수류탄 · 신성한 빛 · 마당이 다시 선 뒤에 터지거나 남았다).
+        w.clear_placed();
         self.elite_ids.clear();
         // 바라보는 쪽은 자리마다 정해진 값(자리로 섞는다) — 늘어선 적이 한 쪽만 보지 않게.
         let face = |p: Vec3| {
@@ -1544,6 +1548,8 @@ impl StageRun {
         self.elite_ids.clear();
         w.lingers.clear();
         w.shards.clear();
+        // 방랑자가 놓거나 던진 것도(0278 고침 — 쉬기 전 · 쓰러지기 전에 던진 수류탄 · 신성한 빛 · 마당이 다시 선 뒤에 터지거나 남았다).
+        w.clear_placed();
         w.lock = None;
         w.hitstop = 0.0;
         let pl = &mut w.player;
