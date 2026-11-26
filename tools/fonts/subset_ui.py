@@ -4,7 +4,9 @@
 KS X 1001 한글 2,350자를 다 넣으면 두 파일 2.7MB — 표 글자만이면 수백 KB(KB `reference/fonts/cjk-pixel-fonts.md`의 서브셋 방식).
 `--ks`를 붙이면 2,350자를 다 넣는다.
 원본(각 8MB)은 레포에 넣지 않는다 — https://github.com/google/fonts/tree/main/ofl/gowunbatang
-표에 새 글자를 쓰면 다시 돌린다(`cargo test`의 글꼴 시험 `every_string_is_drawable_with_the_font`가 잡는다)."""
+표에 새 글자를 쓰면 다시 돌린다(`cargo test`의 글꼴 시험 `every_string_is_drawable_with_the_font`가 잡는다).
+가로 줄 기호(— – −)는 굵힌다(`thicken_rules`): 원본의 줄은 0.05 em 두께라 화면 글 크기(9~11 px)에서 반 화소 밑으로 녹아
+빈칸처럼 보였다(0278 — 영어 큰 창 아래 줄의 "View only — raise at a hearth"). 시험 `rules_are_thick_enough_to_draw`."""
 import re
 import sys
 from pathlib import Path
@@ -35,6 +37,33 @@ def table_chars():
     return text + (m.group(1) if m else "")
 
 
+# 가로 줄 기호(네 점 직사각형): 엠 대시 · 엔 대시 · 빼기. 두께를 이만큼(1000 단위 em)까지 위아래로 같이 늘린다 — 가운데는 그대로.
+RULES = (0x2014, 0x2013, 0x2212)
+RULE_MIN = 90
+
+
+def thicken_rules(font):
+    glyf = font["glyf"]
+    cmap = font.getBestCmap()
+    for u in RULES:
+        name = cmap.get(u)
+        if not name:
+            continue
+        g = glyf[name]
+        coords = g.getCoordinates(glyf)[0]
+        if len(coords) != 4:
+            raise SystemExit(f"U+{u:04X}: not a plain rule ({len(coords)} points)")
+        lo = min(y for _, y in coords)
+        hi = max(y for _, y in coords)
+        if hi - lo >= RULE_MIN:
+            continue
+        mid = (lo + hi) / 2
+        new_lo, new_hi = round(mid - RULE_MIN / 2), round(mid + RULE_MIN / 2)
+        for i, (x, y) in enumerate(coords):
+            coords[i] = (x, new_hi if y == hi else new_lo)
+        g.recalcBounds(glyf)
+
+
 def main(regular, bold):
     chars = set(ks_x_1001_hangul()) if "--ks" in sys.argv else set()
     chars |= {chr(c) for c in range(0x20, 0x7F)}
@@ -52,6 +81,7 @@ def main(regular, bold):
         s = subset.Subsetter(opts)
         s.populate(unicodes=unicodes)
         s.subset(font)
+        thicken_rules(font)
         out = OUT / name
         subset.save_font(font, str(out), opts)
         print(f"{out.relative_to(ROOT)}: {len(unicodes)} chars, {out.stat().st_size // 1024} KB")

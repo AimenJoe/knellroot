@@ -2611,6 +2611,26 @@ mod tests {
         }
     }
 
+    /// 가로 줄 기호(— – −)는 화면 글 크기에서 보일 만큼 굵다(0278): 고운바탕 원본의 줄은 0.05 em이라 9~11 px 글에서 반 화소
+    /// 밑으로 녹아 빈칸처럼 보였다(영어 큰 창 아래 줄 "View only — raise at a hearth"). `tools/fonts/subset_ui.py`의
+    /// `thicken_rules`가 굵힌다 — 그 단계 없이 서브셋을 다시 만들면 여기서 깨진다.
+    #[test]
+    fn rules_are_thick_enough_to_draw() {
+        for font in [
+            &include_bytes!("../../assets/fonts/GowunBatang-UI-Regular.ttf")[..],
+            include_bytes!("../../assets/fonts/GowunBatang-UI-Bold.ttf"),
+        ] {
+            let face = ttf_parser::Face::parse(font, 0).unwrap();
+            let em = face.units_per_em() as f32;
+            for c in ['—', '–', '−'] {
+                let g = face.glyph_index(c).expect("in the font");
+                let b = face.glyph_bounding_box(g).expect("has ink");
+                let thick = (b.y_max - b.y_min) as f32 / em;
+                assert!(thick >= 0.085, "{c:?}: {thick:.3} em — too thin to draw");
+            }
+        }
+    }
+
     /// 자리표시자({0}…)가 언어끼리 같다.
     #[test]
     fn placeholders_match_across_languages() {
