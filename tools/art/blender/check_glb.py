@@ -84,7 +84,9 @@ EXPECT = {
                  # 0274 ⑤ 낫: 걸어 당기며 베기 · 걸어 당기기 · 생기 거두기(휘돌이와 같은 한 바퀴) · 깨어나는 숲(땅을 짚는다).
                  "staff_cast": 0.4, "scythe1": 0.43, "scythe2": 0.43, "scythe_dash": 0.43, "wand_dash": 0.34, "scythe3": 0.56, "scythe_charge": 0.3, "scythe_heavy": 0.58, "sk_reap": 0.48, "sk_withdraw": 0.66, "sk_plunge": 0.9, "sk_boomerang": 0.53, "sk_word": 0.5, "sk_harvest": 0.67, "ult_grove": 1.49,
                  # 0274 ⑥ 완드: 저주 새기기 · 시드는 그늘(손을 내미는 시전) · 치른 값(들어 올렸다 내리꽂고 머문다).
-                 "sk_hex": 0.52, "sk_blight": 0.55, "ult_price": 1.5},
+                 "sk_hex": 0.52, "sk_blight": 0.55, "ult_price": 1.5,
+                 # 0286 몽크: 손바닥 치기 · 할퀴기 · 날아 차기 · 쓸어 차기 · 천 개의 손바닥.
+                 "sk_palm": 0.4, "sk_rake": 0.55, "sk_kick": 0.82, "sk_sweep": 0.67, "ult_palms": 1.45},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},
     "thorn_beast": {"idle": 1.4, "run": 0.5, "charge_windup": 0.6, "charge": 0.4, "recover": 0.7, "hurt": 0.3},
     "gatekeeper": {"idle": 2.0, "walk": 1.4, "slam": 1.5, "charge_windup": 0.8, "charge": 0.5,

@@ -459,6 +459,10 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
         "ult_palms",
         ("궁극기: 천 개의 손바닥", "ult: thousand palms"),
     ),
+    ("sk_palm", ("스킬: 손바닥 치기", "skill: palm strike")),
+    ("sk_rake", ("스킬: 할퀴기", "skill: rake")),
+    ("sk_kick", ("스킬: 날아 차기", "skill: flying kick")),
+    ("sk_sweep", ("스킬: 쓸어 차기", "skill: leg sweep")),
     // 0283 — 빈 노드 넷의 제 동작
     (
         "sk_withdraw",

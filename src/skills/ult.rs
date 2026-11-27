@@ -601,9 +601,9 @@ pub const PALMS: Palms = Palms {
     stagger: 0.8,
     dose: (Kind::Shock, 2.0),
     anim: "fist3",
-    // 처음에는 질풍 찌르기의 동작을 빌린다(같은 박자 — 멈춤 0.3 · 시동 0.2 · 타 여섯이 0.11초마다 · 꼬리 0.4).
+    // 제 동작(Meshy 라이브러리 Punch_Combo_5 — 0286). 박자는 질풍 찌르기와 같다(멈춤 0.3 · 시동 0.2 · 타 여섯이 0.11초마다 · 꼬리 0.4).
     clip: Clip {
-        name: "ult_gale",
+        name: "ult_palms",
         seg: [0.30, 0.20, 0.95],
     },
 };

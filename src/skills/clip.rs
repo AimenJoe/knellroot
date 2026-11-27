@@ -134,7 +134,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 49] = [
+    const FACES: [(&str, Face); 54] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -192,6 +192,12 @@ mod clip_facing {
         ("sk_plunge", Face::Hips),
         ("sk_boomerang", Face::Tip),
         ("sk_word", Face::Hips),
+        // 0286 몽크의 제 동작.
+        ("sk_palm", Face::Hips),
+        ("sk_rake", Face::Hips),
+        ("sk_kick", Face::Hips),
+        ("sk_sweep", Face::Spin),
+        ("ult_palms", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {

@@ -1411,8 +1411,8 @@ pub const SKILLS: [Skill; N] = [
         ],
         cap: Cap::Break,
     },
-    // ---- 0286: 몽크(맨손 — 충격 · 날카로움). 있는 모양에 새 수. 동작은 0286 처음에는 같은 구간 길이의 있는 전용 동작을 빌린다(시동 ·
-    // 이어짐 · 후딜이 그 동작과 같다) ----
+    // ---- 0286: 몽크(맨손 — 충격 · 날카로움). 있는 모양에 새 수. 동작은 제 것(Meshy 라이브러리 — 구간 길이는 처음에 빌려 쓰던 있는 동작
+    // 그대로: 자루 치기 · 바늘땀 · 제비걸음 · 휘돌이) ----
     // 손바닥 치기(충격 첫 줄): 손바닥으로 짧고 조금 넓게(2.0 m · 80°) 밀쳐 친다 — 막아치기의 꼴(`Form::Bash`): 준비하던 잡몹의 공격을 끊고
     // 자세 피해 ×2.5 · 충격을 한 번에 쌓는다(기절). 보스는 끊기지 않고 자세만(보스 규칙 그대로). 자루 치기(한손검)보다 짧게 닿고
     // 자세를 더 깎는다. 넓은 손(ㄱ 120°) · 드러난 틈(ㄴ — 끊긴 적 2초 피해 +25%) · 최종 효과 = 끊긴 적은 자세가 곧바로 무너진다.
@@ -1431,7 +1431,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "fist3",
         clip: Clip {
-            name: "sk_pommel",
+            name: "sk_palm",
             seg: [0.12, 0.0, 0.28],
         },
         row: 0,
@@ -1466,7 +1466,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "fist1",
         clip: Clip {
-            name: "sk_stitch",
+            name: "sk_rake",
             seg: [0.10, 0.20, 0.25],
         },
         row: 0,
@@ -1495,7 +1495,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "fist_dash",
         clip: Clip {
-            name: "sk_swallow",
+            name: "sk_kick",
             seg: [0.12, 0.45, 0.25],
         },
         row: 1,
@@ -1527,7 +1527,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "fist_heavy",
         clip: Clip {
-            name: "sk_whirl",
+            name: "sk_sweep",
             seg: [0.15, 0.22, 0.30],
         },
         row: 1,
@@ -1650,11 +1650,10 @@ mod tests {
                 }
             }
         }
-        // 0286: 몽크의 넷이 같은 구간의 있는 동작을 빌린다(손바닥 치기 = 자루 치기 · 할퀴기 = 바늘땀 · 날아 차기 = 제비걸음 · 쓸어 차기 =
-        // 장대 휩쓸기).
+        // 0286: 몽크의 넷도 제 동작(Meshy 라이브러리)이다.
         assert_eq!(
-            shared, 4,
-            "the monk's four borrow until their own clips come"
+            shared, 0,
+            "no skill borrows another skill's clip (0283 · 0286)"
         );
         let keys: Vec<_> = IDS.iter().map(|i| i.key()).collect();
         for (i, k) in keys.iter().enumerate() {
