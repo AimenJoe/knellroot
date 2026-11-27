@@ -405,6 +405,12 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
         "dagger_lunge",
         ("쌍단검: 꿰뚫고 지나가기", "daggers: lunge through"),
     ),
+    // 0285 — 낫의 제 대시 · 완드 대시(쌍단검이 빌려 쓰던 내디디며 찌르기를 제 이름으로)
+    (
+        "scythe_dash",
+        ("낫: 내디디며 걸어 베기", "sickle: lunging hook"),
+    ),
+    ("wand_dash", ("완드: 내디디며 찌르기", "wand: lunging poke")),
     ("sk_slip", ("스킬: 빠지며 베기", "skill: slip away")),
     ("ult_ambush", ("궁극기: 그림자 습격", "ult: shadow ambush")),
     // 0274 ④ — 대검

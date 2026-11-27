@@ -52,7 +52,7 @@ pub enum Sweep {
 /// 구간(시작 s, 길이 s): `tools/art/blender/wanderer_skin.py` `HIT_WINDOWS` 그대로(시험 `swing_windows_match_the_blender_table`) —
 /// 동작 시계는 타의 판정 시작이 이 시작에 오게 돈다(`clip_rate` — 맨손처럼 남의 동작을 빌린 타·대시 공격도 칼이 닿는 순간에 맞는다).
 /// 새 동작을 무기 표에 쓰면 여기에도 한 줄(시험 `every_weapon_motion_has_a_sweep`).
-pub const SWEEPS: [(&str, Sweep, (f32, f32)); 42] = [
+pub const SWEEPS: [(&str, Sweep, (f32, f32)); 44] = [
     ("attack", Sweep::RightToLeft, (0.08, 0.10)),
     ("attack2", Sweep::LeftToRight, (0.08, 0.10)),
     ("attack3", Sweep::Center, (0.10, 0.12)),
@@ -98,11 +98,14 @@ pub const SWEEPS: [(&str, Sweep, (f32, f32)); 42] = [
     ("gs_heavy", Sweep::Center, (0.084, 0.168)),
     // 낫(0274 ⑤): 셋째 타 = 걸어 당기며 베기(M13 — 뻗어 걸고 몸으로 당긴다) — 랩 시간에 표의 배 1.3 · 강공격 = 검의 모아 베기(같은
     // 배 — 휜 날의 끝이 정면을 지나게 몸만 조금 더 돌린 제 동작). 앞의 두 타는 0283부터 제 동작(오른쪽에서 걸어 베기 · 되받아 걸기 —
-    // 검 1 · 2타와 같은 구간), 대시는 검의 동작을 같은 배(1.0)로 빌린다.
+    // 검 1 · 2타와 같은 구간), 대시도 0285부터 제 동작(내디디며 오른쪽에서 크게 걸어 베기 — 검 대시와 같은 구간 · 쪽).
     ("scythe1", Sweep::RightToLeft, (0.08, 0.10)),
     ("scythe2", Sweep::LeftToRight, (0.08, 0.10)),
     ("scythe3", Sweep::Center, (0.104, 0.13)),
     ("scythe_heavy", Sweep::Center, (0.06, 0.12)),
+    ("scythe_dash", Sweep::RightToLeft, (0.08, 0.10)),
+    // 완드(0274 ⑥)의 대시: 쌍단검 대시가 빌려 쓰던 내디디며 찌르기(Thrust_Slash)를 제 이름으로(0285 — 쌍단검 대시가 제 동작이 되었다).
+    ("wand_dash", Sweep::Center, (0.064, 0.08)),
 ];
 
 /// 동작의 휘두르는 쪽(표에 없으면 가운데).
@@ -1682,7 +1685,7 @@ pub const WEAPONS: &[Weapon] = &[
         dash: Some(Hit {
             knock: 1.4,
             cancel: 0.2,
-            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "sword_dash")
+            ..hit(1.0, 1.25, 0.5, 2.4, 20, 2.0, "scythe_dash")
         }),
         heavy: Some(Heavy {
             time: 1.0,
@@ -1725,7 +1728,7 @@ pub const WEAPONS: &[Weapon] = &[
         dash: Some(Hit {
             knock: 1.0,
             cancel: 0.15,
-            ..hit(0.9, 0.9, 0.5, 2.0, 10, 1.0, "dagger_dash")
+            ..hit(0.9, 0.9, 0.5, 2.0, 10, 1.0, "wand_dash")
         }),
         heavy: Some(Heavy {
             time: 0.9,
