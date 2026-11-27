@@ -9,7 +9,7 @@
 
 ## 무기 표 · 주/보조무기 · 교체 공격 · 방패
 
-무기는 `weapons.rs` 표(0051): 줄 = (X 콤보·강타, RB = 종류의 원거리 수단(`Rb::Toss`)/사격, 수류탄), 시간·거리는 랩 `attack.*`·`heavy.*`에 곱하는 배율, 동작 이름은 `wanderer.py`, 모델 부위는 오른손 뼈(든 것만 보인다). 새 무기 = `Id` 한 줄 + 표 한 줄(`key` · `class` · 글 `name`·`desc`·`place` · 터치 그림 `icon` · 아이템 그림의 각 `view`·`twin` — 0278 R18 · R19, `Id`에서 글 · 그림으로 가는 match는 없다) + 동작 + 부위 + 글. 표의 칸은 바탕에서(`..Heavy::BASE` · `..Toss::BASE` · 장신구 · 덧옷은 `..Mods::NONE` — 새 칸은 바탕과 쓰는 줄만). 자세 막대는 `world::add_poise` 한 곳. 후딜레이 캔슬·누름 받아 두기는 `World::cancel_or_buffer` 한 곳(0057).
+무기는 `weapons.rs` 표(0051): 줄 = (X 콤보·강타, RB = 종류의 원거리 수단(`Rb::Toss`)/사격, 수류탄), 시간·거리는 랩 `attack.*`·`heavy.*`에 곱하는 배율(들어 올림 `Hit::windup`은 선딜에만 한 번 더 — 0284 대검, `world::hit_times` 한 곳 · `Hit`의 Debug는 바탕이 아닌 `windup`만 덧붙인다: 고정 파일의 다른 줄이 그대로), 동작 이름은 `wanderer.py`, 모델 부위는 오른손 뼈(든 것만 보인다). 새 무기 = `Id` 한 줄 + 표 한 줄(`key` · `class` · 글 `name`·`desc`·`place` · 터치 그림 `icon` · 아이템 그림의 각 `view`·`twin` — 0278 R18 · R19, `Id`에서 글 · 그림으로 가는 match는 없다) + 동작 + 부위 + 글. 표의 칸은 바탕에서(`..Heavy::BASE` · `..Toss::BASE` · 장신구 · 덧옷은 `..Mods::NONE` — 새 칸은 바탕과 쓰는 줄만). 자세 막대는 `world::add_poise` 한 곳. 후딜레이 캔슬·누름 받아 두기는 `World::cancel_or_buffer` 한 곳(0057).
 
 **무기 갈래·주/부무기(0223)**: `weapons::Hand`(한손·양손·원거리, `Id::hand`), 부무기 `Player::sub`(기록 `weapon.sub`, 앱은 `arm_world`·`wield`·`set_sub_weapon`로만), 바꾸기 버튼(`Bind::Swap` — 패드 L3·키보드 X, 0261) = `World::weapon_swap`(틱 들머리 한 곳 — 서 있으면 바로, 동작 중이면 `SWAP_BUFFER` 받아 두기, 튕긴 뒤의 평타는 반격), 탄은 무기마다(`sub_load` = `world::Stowed` — 멘 동안 멈춰 있고 쇠뇌만 등에서 장전된다), 터치는 상황 버튼 `touch::Kind::Swap` → `Actions::swap`, HUD는 스킬 칸 왼쪽의 부무기 그림(`hud::draw_skills`).
 
