@@ -1,7 +1,7 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
 //   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,pull,wand,rb,bare,throw] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed,curse · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,wand,shield]
-// skills(0158 G2): 개발 창 기술 탭 "기술 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "기술 끼우기"에서 칸·큰 기술을 고르고 →
+// skills(0158 G2): 개발 창 기술 탭 "스킬 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "스킬 장착"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
 // 처음에 "키보드만 배치로"(J 공격·K 패링·L 락온·Space 회피·F 점프·U 마법), 판은 개발 명령의 이름으로 연다(0278 R13 — `Scenario(Line)` ·
@@ -72,7 +72,7 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
     // 칸 0·2·4(몰아치기·한 줄기·쟁반 뒤집기). 칸에서 확인 = 목록의 첫 줄 "칸 1에 끼우기"(큰 기술은 "끼우기"). 처음 끼워진 것은 휘돌이(Q)·
     // 가로지르기(E)·쟁반 뒤집기라 그 셋은 건드리지 않는다. 큰 기술은 Q+E.
     // 일곱째 = 들 무기(개발 명령 `Arm(<무기>)`, 0223 V3 — 스킬마다 쥔 꼴이 있다: 땅울림 = 망치, 되울림·잔불 흩기 = 지팡이. 예전에는
-    // 개발 창 "든 무기 바꾸기"를 누를 횟수였고, 활(0231)이 돌림에 끼자 하나씩 밀려 망치 대신 검을 들고 "못 쓴다"로 끼우지 못했다 — 0278 R13에서 이름으로).
+    // 개발 창 "주무기 바꾸기"를 누를 횟수였고, 활(0231)이 돌림에 끼자 하나씩 밀려 망치 대신 검을 들고 "못 쓴다"로 끼우지 못했다 — 0278 R13에서 이름으로).
     // 끼울 칸은 이름(게임이 기술 탭의 고른 칸을 장면 이름 끝에 붙인다 — `… @Skill(Embers)`, 개발판)으로 찾는다: 자리 숫자는 판이 넓어질
     // 때마다 낡았다(0214·0215 뒤 잔불 흩기를 못 찾았다).
     // 0272: 맨손은 무기 판의 스킬을 쓰지 못한다(새 판은 맨손) — 한손검의 스킬도 검을 든다(둘). 쇠뇌 판·활 판의 새 스킬 둘·큰 기술 하나.
@@ -138,10 +138,10 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
     const names = process.argv[5] ? process.argv[5].split(',') : null;
     for (const [name, slot, ult, wait, key, n, arm] of RUNS) {
       if (names && !names.includes(name)) continue;
-      // 기술 다 올리기(켬 — 판은 그대로 타이틀) → 무기를 들고 개발 창을 "든 무기 바꾸기" 줄에 열어 한 장 → 그 위에 기술 탭(host: Dev).
-      p = await fresh(); await p.kit.dev('SkillsMax', `Arm(${arm})`, 'Dev(Arm)'); await p.kit.until(/^Dev \{.* @Arm$/, '개발 창 든 무기 바꾸기 줄');
+      // 스킬 다 올리기(켬 — 판은 그대로 타이틀) → 무기를 들고 개발 창을 "주무기 바꾸기" 줄에 열어 한 장 → 그 위에 기술 탭(host: Dev).
+      p = await fresh(); await p.kit.dev('SkillsMax', `Arm(${arm})`, 'Dev(Arm)'); await p.kit.until(/^Dev \{.* @Arm$/, '개발 창 주무기 바꾸기 줄');
       await p.screenshot({ path: path.join(OUT, `sk-arm-${name}.png`) });
-      await p.kit.dev('Skills'); await p.kit.until('Skills', '기술 끼우기 → 기술 탭');
+      await p.kit.dev('Skills'); await p.kit.until('Skills', '스킬 장착 → 스킬 탭');
       if (slot) await wear(p, slot);
       await p.screenshot({ path: path.join(OUT, `sk-arm-${name}-worn.png`) });
       if (ult !== null) await wear(p, ult);

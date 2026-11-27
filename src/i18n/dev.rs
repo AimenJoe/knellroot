@@ -68,10 +68,10 @@ pub const TAB_STAGE: Pair = ("스테이지", "stage");
 pub const TAB_COMBAT: Pair = ("전투·적", "combat");
 pub const TAB_PERF: Pair = ("성능", "perf");
 pub const TAB_MOTION: Pair = ("모션", "motion");
-pub const TAB_SKILLS: Pair = ("기술", "skills");
+pub const TAB_SKILLS: Pair = ("스킬", "skills");
 pub const MOTION_START: Pair = ("모션 보기 — {0}", "motions: {0}");
 pub const MOTION_NOTE: Pair = (
-    "이 무기를 든 방랑자의 동작을 하나씩 인형으로 돌려 본다 — 평타·강타·패링·회피·맞음·기술. 판정이 있는 동작은 시간 막대에 판정 구간이 호박색으로 보인다.",
+    "이 무기를 장착한 방랑자의 동작을 하나씩 인형으로 돌려 본다: 평타·강공격·패링·회피·맞음·스킬. 판정이 있는 동작은 시간 막대에 판정 구간이 호박색으로 보인다.",
     "plays each motion of the wanderer holding this weapon on the doll: hits, heavy, parry, dodge, hurt, skills. the hit window shows in amber on the time bar.",
 );
 pub const MOTION_TITLE: Pair = ("모션 — {0}", "motions: {0}");
@@ -150,33 +150,33 @@ pub const LAB_NOTE: Pair = (
     "값을 바로 바꿔 본다. 메뉴의 설정 아래 연구소와 같은 창.",
     "change tuning live; same as the lab row under settings",
 );
-pub const SKILLS_START: Pair = ("기술 끼우기", "skill slots");
+pub const SKILLS_START: Pair = ("스킬 장착", "skill slots");
 pub const SKILLS_NOTE: Pair = (
-    "아레나에서 쓸 기술 둘과 큰 기술을 끼운다. 멈춤의 기술 화면과 같다(칸 → 확인 → 끼우기).",
+    "아레나에서 쓸 스킬 둘과 궁극기를 장착한다. 멈춤의 스킬 탭과 같다(슬롯 → 확인 → 장착).",
     "wear the two skills and the great skill for the arenas; the pause menu's skills screen (cell, confirm, wear)",
 );
-pub const SKILLS_MAX: Pair = ("기술 다 올리기(켬/끔)", "max skills (on/off)");
+pub const SKILLS_MAX: Pair = ("스킬 다 올리기(켬/끔)", "max skills (on/off)");
 pub const SKILLS_MAX_NOTE: Pair = (
-    "모든 기술과 큰 기술을 끝 단으로, 패시브 칸을 모두 열림으로. 다시 고르면 이 슬롯의 판으로 돌아간다. 저장하지 않는다. 지금: {0}",
+    "모든 스킬과 궁극기를 최고 레벨로, 패시브 노드를 모두 열림으로. 다시 고르면 이 슬롯의 스킬 트리로 돌아간다. 저장하지 않는다. 지금: {0}",
     "every skill and great skill at max rank, every passive open; pick again for this slot's board. nothing is saved. now: {0}",
 );
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
-pub const ARM: Pair = ("든 무기 바꾸기", "change the held weapon");
+pub const ARM: Pair = ("주무기 바꾸기", "change the main weapon");
 pub const ARM_NOTE: Pair = (
-    "지금: {0}. 든 무기를 다음 것으로 바꾼다({1}). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다) — 여기서 든 무기로 끼우고 아레나에 선다. 저장하지 않는다.",
+    "지금: {0}. 주무기를 다음 것으로 바꾼다({1}). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다). 여기서 고른 무기를 장착하고 아레나에 선다. 저장하지 않는다.",
     "now: {0}. cycle the held weapon ({1}). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved.",
 );
 pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
 pub const ARM_SUB_NOTE: Pair = (
-    "지금: {0}. 아레나의 보조무기를 다음 것으로 바꾼다({1}). 든 무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 바꾸기)을 본다. 저장하지 않는다.",
+    "지금: {0}. 아레나의 보조무기를 다음 것으로 바꾼다({1}). 주무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 교체)을 본다. 저장하지 않는다.",
     "now: {0}. cycle the arena's off-hand weapon ({1}); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved.",
 );
 pub const ARM_BARE: Pair = ("보조무기 비우기(켬/끔)", "empty the off hand (on/off)");
 pub const ARM_BARE_NOTE: Pair = (
-    "아레나의 보조무기 슬롯을 비운다(보조무기 · 방패를 내린다) — 든 무기 종류의 빈 손의 결로 선다. 다시 고르면 되돌린다. 저장하지 않는다. 지금: {0}",
+    "아레나의 보조무기 슬롯을 비운다(보조무기 · 방패를 내린다). 주무기 종류의 보조무기 미장착 효과로 선다. 다시 고르면 되돌린다. 저장하지 않는다. 지금: {0}",
     "empty the arena's off-hand slot (no off-hand weapon, no shield) — the held weapon's empty-hand way. pick again to undo. nothing is saved. now: {0}",
 );
-pub const ARM_BARE_ON: Pair = ("빈 손", "empty");
+pub const ARM_BARE_ON: Pair = ("미장착", "empty");
 pub const ARM_BARE_OFF: Pair = ("그대로", "as set");
 pub const PERF_LINE: Pair = ("성능 줄 켬/끔", "perf line on/off");
 pub const PERF_LINE_NOTE: Pair = (
@@ -184,12 +184,12 @@ pub const PERF_LINE_NOTE: Pair = (
     "show fps, cpu, frame time and vertices at the bottom (same as F3). Flip render.resident 0/1 in the lab to compare.",
 );
 pub const SKILLS_FLIP_NOTE: Pair = (
-    "끝 단으로 올린 판의 고르기를 모두 ㄱ·ㄴ으로 뒤집는다(꺼져 있으면 켠다). 저장하지 않는다. 지금: {0}",
+    "최고 레벨로 올린 스킬 트리의 고르기를 모두 ㄱ·ㄴ으로 뒤집는다(꺼져 있으면 켠다). 저장하지 않는다. 지금: {0}",
     "flips every pick on the maxed board (turns it on if off). nothing is saved. now: {0}",
 );
-pub const BOARD_SLOT: Pair = ("슬롯의 판", "the slot's board");
-pub const BOARD_MAX_A: Pair = ("끝 단 · 고르기 ㄱ", "max rank · pick A");
-pub const BOARD_MAX_B: Pair = ("끝 단 · 고르기 ㄴ", "max rank · pick B");
+pub const BOARD_SLOT: Pair = ("슬롯의 스킬 트리", "the slot's board");
+pub const BOARD_MAX_A: Pair = ("최고 레벨 · 고르기 ㄱ", "max rank · pick A");
+pub const BOARD_MAX_B: Pair = ("최고 레벨 · 고르기 ㄴ", "max rank · pick B");
 pub const SCENARIO_NOTE: Pair = ("아레나에서 숫자 키 {0} · {1}", "key {0} in the arena · {1}");
 
 /// 위의 쌍 전부(글꼴 시험·글자 미리 굽기 `i18n::dev_texts`).
@@ -276,8 +276,8 @@ pub const PAIRS: &[Pair] = &[
 /// 모션 보기의 동작 이름(모델의 동작 이름 → 화면 이름). 표에 없으면 동작 이름 그대로.
 pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("idle", ("서기", "idle")),
-    ("idle_look", ("몸짓 — 둘러보기", "fidget: look")),
-    ("idle_shake", ("몸짓 — 털기", "fidget: shake")),
+    ("idle_look", ("몸짓: 둘러보기", "fidget: look")),
+    ("idle_shake", ("몸짓: 털기", "fidget: shake")),
     ("walk", ("걷기", "walk")),
     ("run", ("달리기", "run")),
     ("walk_back", ("뒷걸음(락온)", "walk back (lock-on)")),
@@ -288,24 +288,24 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("attack3", ("평타 3", "hit 3")),
     (
         "sword_dash",
-        ("검 — 달리며 올려 베기", "sword: running rising slash"),
+        ("검: 달리며 올려 베기", "sword: running rising slash"),
     ),
-    ("charge", ("강타 모으기", "heavy charge")),
-    ("heavy", ("강타", "heavy")),
+    ("charge", ("강공격 차지", "heavy charge")),
+    ("heavy", ("강공격", "heavy")),
     ("hammer1", ("평타 1", "hit 1")),
     ("hammer2", ("평타 2", "hit 2")),
     ("hammer3", ("평타 3", "hit 3")),
-    ("hammer_charge", ("강타 모으기", "heavy charge")),
-    ("hammer_slam", ("강타", "heavy")),
+    ("hammer_charge", ("강공격 차지", "heavy charge")),
+    ("hammer_slam", ("강공격", "heavy")),
     ("staff1", ("평타 1", "hit 1")),
     ("staff2", ("평타 2", "hit 2")),
     ("staff3", ("평타 3", "hit 3")),
     ("staff4", ("평타 4", "hit 4")),
-    ("staff_charge", ("강타 모으기", "heavy charge")),
-    ("staff_release", ("강타", "heavy")),
-    ("cast_charge", ("마법 모으기", "magic charge")),
+    ("staff_charge", ("강공격 차지", "heavy charge")),
+    ("staff_release", ("강공격", "heavy")),
+    ("cast_charge", ("마법 차지", "magic charge")),
     ("cast", ("마법", "magic")),
-    ("xbow_charge", ("쇠뇌 모으기", "crossbow charge")),
+    ("xbow_charge", ("쇠뇌 차지", "crossbow charge")),
     ("xbow_shoot", ("쇠뇌 쏘기", "crossbow shot")),
     ("bow_draw", ("활 당기기", "bow draw")),
     ("bow_shoot", ("활 쏘기", "bow shot")),
@@ -315,17 +315,17 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("jump", ("점프", "jump")),
     ("pickup", ("줍기·상자 열기", "pick up / open")),
     ("pull", ("장치 당기기", "pull lever")),
-    ("fist1", ("주먹 — 왼 잽", "fists: left jab")),
-    ("fist2", ("주먹 — 오른 잽", "fists: right jab")),
-    ("fist3", ("주먹 — 어퍼컷", "fists: uppercut")),
-    ("fist_charge", ("주먹 — 차기 모으기", "fists: kick charge")),
-    ("fist_heavy", ("주먹 — 앞차기", "fists: front kick")),
-    ("fist_dash", ("주먹 — 달리며 앞차기", "fists: running kick")),
+    ("fist1", ("주먹: 왼 잽", "fists: left jab")),
+    ("fist2", ("주먹: 오른 잽", "fists: right jab")),
+    ("fist3", ("주먹: 어퍼컷", "fists: uppercut")),
+    ("fist_charge", ("주먹: 차기 차지", "fists: kick charge")),
+    ("fist_heavy", ("주먹: 앞차기", "fists: front kick")),
+    ("fist_dash", ("주먹: 달리며 앞차기", "fists: running kick")),
     (
         "hammer_dash",
-        ("망치 — 달리며 앞차기", "hammer: running kick"),
+        ("망치: 달리며 앞차기", "hammer: running kick"),
     ),
-    ("parry_push", ("패링 성공 — 밀쳐내기", "parry: shove")),
+    ("parry_push", ("패링 성공: 밀쳐내기", "parry: shove")),
     ("dodge_back", ("뒤로 뛰기(회피)", "back hop (dodge)")),
     ("land", ("내려서기", "land")),
     ("plunge", ("내려찍기", "plunge")),
@@ -334,129 +334,114 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("hurt", ("맞음", "hurt")),
     ("fall", ("쓰러짐", "fall")),
     ("wake", ("깨어남", "wake")),
-    ("sk_whirl", ("기술 — 휘돌이", "skill: whirl")),
-    ("sk_cut", ("기술 — 가로지르기", "skill: cut")),
-    ("sk_gather", ("기술 — 모아 끌기", "skill: gather")),
-    ("sk_quake", ("기술 — 땅울림", "skill: quake")),
-    ("sk_brace", ("기술 — 버티기", "skill: brace")),
-    ("sk_echo", ("기술 — 되울림", "skill: echo")),
-    ("sk_throw", ("기술 — 던지기", "skill: throw")),
-    ("sk_embers", ("기술 — 잔불 흩기", "skill: embers")),
-    ("ult_upend", ("큰 기술 — 쟁반 뒤집기", "ult: upend")),
-    ("ult_flurry", ("큰 기술 — 몰아치기", "ult: flurry")),
-    ("ult_line", ("큰 기술 — 한 줄기", "ult: line")),
+    ("sk_whirl", ("스킬: 휘돌이", "skill: whirl")),
+    ("sk_cut", ("스킬: 가로지르기", "skill: cut")),
+    ("sk_gather", ("스킬: 모아 끌기", "skill: gather")),
+    ("sk_quake", ("스킬: 땅울림", "skill: quake")),
+    ("sk_brace", ("스킬: 버티기", "skill: brace")),
+    ("sk_echo", ("스킬: 되울림", "skill: echo")),
+    ("sk_throw", ("스킬: 던지기", "skill: throw")),
+    ("sk_embers", ("스킬: 잔불 흩기", "skill: embers")),
+    ("ult_upend", ("궁극기: 쟁반 뒤집기", "ult: upend")),
+    ("ult_flurry", ("궁극기: 몰아치기", "ult: flurry")),
+    ("ult_line", ("궁극기: 한 줄기", "ult: line")),
     // 0270 C3
-    ("sk_stitch", ("기술 — 바늘땀", "skill: needle stitch")),
-    ("sk_ram", ("기술 — 방패 돌진", "skill: shield rush")),
-    ("sk_toll", ("기술 — 종 치기", "skill: toll the bell")),
-    ("sk_swat", ("기술 — 후려치기", "skill: swat")),
-    ("sk_ripple", ("기술 — 파문", "skill: ripple")),
-    ("sk_snow", ("기술 — 눈발", "skill: snowfall")),
-    ("sk_flare", ("기술 — 불길", "skill: flare")),
-    ("sk_snare", ("기술 — 뿌리 덫", "skill: root snare")),
-    ("ult_bell", ("큰 기술 — 큰 종", "ult: great bell")),
-    ("ult_blizzard", ("큰 기술 — 눈보라", "ult: blizzard")),
+    ("sk_stitch", ("스킬: 바늘땀", "skill: needle stitch")),
+    ("sk_ram", ("스킬: 방패 돌진", "skill: shield rush")),
+    ("sk_toll", ("스킬: 종 치기", "skill: toll the bell")),
+    ("sk_swat", ("스킬: 후려치기", "skill: swat")),
+    ("sk_ripple", ("스킬: 파문", "skill: ripple")),
+    ("sk_snow", ("스킬: 눈발", "skill: snowfall")),
+    ("sk_flare", ("스킬: 불길", "skill: flare")),
+    ("sk_snare", ("스킬: 뿌리 덫", "skill: root snare")),
+    ("ult_bell", ("궁극기: 큰 종", "ult: great bell")),
+    ("ult_blizzard", ("궁극기: 눈보라", "ult: blizzard")),
     // 0272
-    ("sk_fuse", ("기술 — 심지 볼트", "skill: fuse bolt")),
-    ("sk_mine", ("기술 — 화약 덫", "skill: powder trap")),
-    ("ult_rain", ("큰 기술 — 화살비", "ult: arrow rain")),
+    ("sk_fuse", ("스킬: 심지 볼트", "skill: fuse bolt")),
+    ("sk_mine", ("스킬: 화약 덫", "skill: powder trap")),
+    ("ult_rain", ("궁극기: 화살비", "ult: arrow rain")),
     // 0272 2단계 — 창
-    ("spear1", ("창 — 1타 찌르기", "spear: thrust 1")),
-    ("spear2", ("창 — 2타 찌르기", "spear: thrust 2")),
+    ("spear1", ("창: 1타 찌르기", "spear: thrust 1")),
+    ("spear2", ("창: 2타 찌르기", "spear: thrust 2")),
     (
         "spear3",
-        ("창 — 3타 내디뎌 찌르기", "spear: lunging thrust 3"),
+        ("창: 3타 내디뎌 찌르기", "spear: lunging thrust 3"),
     ),
-    (
-        "spear_dash",
-        ("창 — 달리며 찌르기", "spear: running thrust"),
-    ),
-    ("spear_charge", ("창 — 모으기", "spear: charge")),
+    ("spear_dash", ("창: 달리며 찌르기", "spear: running thrust")),
+    ("spear_charge", ("창: 차지", "spear: charge")),
     (
         "spear_lunge",
-        ("창 — 내달려 꿰뚫기", "spear: piercing lunge"),
+        ("창: 내달려 꿰뚫기", "spear: piercing lunge"),
     ),
-    ("sk_skewer", ("기술 — 꿰뚫기", "skill: skewer")),
-    ("sk_pole", ("기술 — 장대 휩쓸기", "skill: pole sweep")),
-    ("sk_pin", ("기술 — 못 박기", "skill: pinning thrust")),
-    (
-        "ult_gale",
-        ("큰 기술 — 질풍 찌르기", "ult: gale of thrusts"),
-    ),
+    ("sk_skewer", ("스킬: 꿰뚫기", "skill: skewer")),
+    ("sk_pole", ("스킬: 장대 휩쓸기", "skill: pole sweep")),
+    ("sk_pin", ("스킬: 못 박기", "skill: pinning thrust")),
+    ("ult_gale", ("궁극기: 질풍 찌르기", "ult: gale of thrusts")),
     // 0274 — 한손검의 전투 기술
-    ("sk_pommel", ("기술 — 자루 치기", "skill: pommel strike")),
-    ("sk_shove", ("기술 — 밀치기", "skill: shove")),
-    ("sk_rally", ("기술 — 재기", "skill: rally")),
+    ("sk_pommel", ("스킬: 자루 치기", "skill: pommel strike")),
+    ("sk_shove", ("스킬: 밀치기", "skill: shove")),
+    ("sk_rally", ("스킬: 재기", "skill: rally")),
     // 0274 ③ — 쌍단검
     (
         "dagger1",
-        ("쌍단검 — 1타 왼손 찌르기", "daggers: left stab 1"),
+        ("쌍단검: 1타 왼손 찌르기", "daggers: left stab 1"),
     ),
     (
         "dagger2",
-        ("쌍단검 — 2타 오른손 찌르기", "daggers: right stab 2"),
+        ("쌍단검: 2타 오른손 찌르기", "daggers: right stab 2"),
     ),
-    ("dagger3", ("쌍단검 — 3타 가로 베기", "daggers: slash 3")),
+    ("dagger3", ("쌍단검: 3타 가로 베기", "daggers: slash 3")),
     (
         "dagger4",
-        ("쌍단검 — 4타 올려 베기", "daggers: rising cut 4"),
+        ("쌍단검: 4타 올려 베기", "daggers: rising cut 4"),
     ),
     (
         "dagger_dash",
-        ("쌍단검 — 달려들며 찌르기", "daggers: running stab"),
+        ("쌍단검: 달려들며 찌르기", "daggers: running stab"),
     ),
-    ("dagger_charge", ("쌍단검 — 모으기", "daggers: charge")),
+    ("dagger_charge", ("쌍단검: 차지", "daggers: charge")),
     (
         "dagger_lunge",
-        ("쌍단검 — 꿰뚫고 지나가기", "daggers: lunge through"),
+        ("쌍단검: 꿰뚫고 지나가기", "daggers: lunge through"),
     ),
-    ("sk_slip", ("기술 — 빠지며 베기", "skill: slip away")),
-    (
-        "ult_ambush",
-        ("큰 기술 — 그림자 습격", "ult: shadow ambush"),
-    ),
+    ("sk_slip", ("스킬: 빠지며 베기", "skill: slip away")),
+    ("ult_ambush", ("궁극기: 그림자 습격", "ult: shadow ambush")),
     // 0274 ④ — 대검
     (
         "gs1",
-        ("대검 — 1타 오른쪽에서 휩쓸기", "greatsword: sweep 1"),
+        ("대검: 1타 오른쪽에서 휩쓸기", "greatsword: sweep 1"),
     ),
     (
         "gs2",
-        ("대검 — 2타 되받아 휩쓸기", "greatsword: back sweep 2"),
+        ("대검: 2타 되받아 휩쓸기", "greatsword: back sweep 2"),
     ),
-    ("gs3", ("대검 — 3타 다시 휩쓸기", "greatsword: sweep 3")),
-    (
-        "gs4",
-        ("대검 — 4타 크게 휩쓸기", "greatsword: wide sweep 4"),
-    ),
-    ("gs5", ("대검 — 5타 내려찍기", "greatsword: overhead 5")),
+    ("gs3", ("대검: 3타 다시 휩쓸기", "greatsword: sweep 3")),
+    ("gs4", ("대검: 4타 크게 휩쓸기", "greatsword: wide sweep 4")),
+    ("gs5", ("대검: 5타 내려찍기", "greatsword: overhead 5")),
     (
         "gs_dash",
-        ("대검 — 달려들며 올려 베기", "greatsword: running cut"),
+        ("대검: 달려들며 올려 베기", "greatsword: running cut"),
     ),
-    ("gs_charge", ("대검 — 모으기", "greatsword: charge")),
+    ("gs_charge", ("대검: 차지", "greatsword: charge")),
     (
         "gs_heavy",
-        ("대검 — 두 손 내려베기", "greatsword: great cleave"),
+        ("대검: 두 손 내려베기", "greatsword: great cleave"),
     ),
-    ("sk_sunder", ("기술 — 땅 가르기", "skill: sunder")),
-    ("sk_sear", ("기술 — 불씨 휩쓸기", "skill: cinder sweep")),
-    ("ult_tempest", ("큰 기술 — 칼바람", "ult: bladestorm")),
+    ("sk_sunder", ("스킬: 땅 가르기", "skill: sunder")),
+    ("sk_sear", ("스킬: 불씨 휩쓸기", "skill: cinder sweep")),
+    ("ult_tempest", ("궁극기: 칼바람", "ult: bladestorm")),
     // 0274 ⑤ — 낫
     (
         "scythe3",
-        ("낫 — 3타 걸어 당기며 베기", "sickle: hook and drag 3"),
+        ("낫: 3타 걸어 당기며 베기", "sickle: hook and drag 3"),
     ),
-    ("sk_reap", ("기술 — 걸어 당기기", "skill: hook and drag")),
-    ("sk_harvest", ("기술 — 생기 거두기", "skill: reap life")),
-    ("ult_grove", ("큰 기술 — 깨어나는 숲", "ult: waking grove")),
+    ("sk_reap", ("스킬: 걸어 당기기", "skill: hook and drag")),
+    ("sk_harvest", ("스킬: 생기 거두기", "skill: reap life")),
+    ("ult_grove", ("궁극기: 깨어나는 숲", "ult: waking grove")),
     // 0274 ⑥ — 완드
-    ("sk_hex", ("기술 — 저주 새기기", "skill: etch a curse")),
-    (
-        "sk_blight",
-        ("기술 — 시드는 그늘", "skill: withering shade"),
-    ),
-    ("ult_price", ("큰 기술 — 치른 값", "ult: the price paid")),
+    ("sk_hex", ("스킬: 저주 새기기", "skill: etch a curse")),
+    ("sk_blight", ("스킬: 시드는 그늘", "skill: withering shade")),
+    ("ult_price", ("궁극기: 치른 값", "ult: the price paid")),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).
@@ -508,7 +493,7 @@ pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
     (
         "moss-clad warden",
         "이끼 덮인 문지기",
-        "0185 낮게 쓸기·껍질 받기(앞 평타는 튕김, 옆·뒤·강타는 든다)·틈새 돌진(뒤에 늦게 돈다)",
+        "0185 낮게 쓸기·껍질 받기(앞 평타는 튕김, 옆·뒤·강공격는 든다)·틈새 돌진(뒤에 늦게 돈다)",
     ),
     (
         "moss-clad warden phase two",
@@ -530,7 +515,7 @@ pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
         "깨진 종지기",
         "0125 울림 고리(뛰거나 구르며 지나기)·종 조각 부채꼴(패링하면 되돌아감)·종 끌기 돌진",
     ),
-    ("elites", "엘리트", "0112 엘리트 성질: 굳은·되풀이·남는"),
+    ("elites", "정예", "0112 정예 성질: 굳은·되풀이·남는"),
     (
         "shellback + pods + scavenger",
         "등딱지짐승 + 꼬투리 + 청소자",
@@ -553,8 +538,8 @@ pub const SCENARIO_KO: &[(&str, &str, &str)] = &[
     ),
     (
         "skills: horde 24 + full gauge",
-        "기술 연습(무리 24)",
-        "0151 큰 기술 가득 — 모으고 쓸기, 기세(쓰러뜨리면 기술이 빨리 돌아옴), 두 버튼 함께 = 큰 기술",
+        "스킬 연습(무리 24)",
+        "0151 궁극기 가득 — 모으고 쓸기, 기세(쓰러뜨리면 스킬이 빨리 돌아옴), 두 버튼 함께 = 궁극기",
     ),
     ("pillars + boss", "기둥 + 보스", "P2 카메라 벽 당기기, 가림"),
     ("empty", "빈 아레나", "이동 실험(빠르기·가속·돌기·회피)"),
@@ -603,10 +588,10 @@ pub const GROUP_KO: [&str; 17] = [
     "점프·내려찍기",
     "땅 돌리기·쏟기",
     "락온·자동 조준",
-    "피격·스태미나",
+    "피격·기력",
     "등잔",
     "마법·던지기",
-    "기술",
+    "스킬",
     "자세",
     "동작",
     "그림(P5 스위치)",
@@ -639,13 +624,13 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("attack.arc deg", "평타 각(도)"),
     ("feel.hitstop s", "히트스톱(초)"),
     ("feel.knockback", "넉백"),
-    ("feel.zoom", "강타·패링 때 카메라 당김(0끔)"),
-    ("skill.cooldown x", "기술 대기 배율"),
-    ("skill.momentum s", "쓰러뜨리면 기술 대기 당김(초)"),
-    ("skill.momentum by skill s", "기술로 쓰러뜨리면 당김(초)"),
+    ("feel.zoom", "강공격·패링 때 카메라 당김(0끔)"),
+    ("skill.cooldown x", "스킬 쿨타임 배율"),
+    ("skill.momentum s", "쓰러뜨리면 스킬 쿨타임 당김(초)"),
+    ("skill.momentum by skill s", "스킬로 쓰러뜨리면 당김(초)"),
     ("skill.chord s", "두 버튼 함께 누름 창(초)"),
-    ("skill.gauge per hit", "큰 기술: 맞힐 때 차는 몫"),
-    ("skill.gauge per parry", "큰 기술: 패링 때 차는 몫"),
+    ("skill.gauge per hit", "궁극기: 맞힐 때 차는 몫"),
+    ("skill.gauge per parry", "궁극기: 패링 때 차는 몫"),
     ("render.enemy lift", "적 밝기(1 = 예전)"),
     ("render.enemy ash", "적 잿빛(0 = 예전)"),
     ("lock.range", "락온 거리 한도"),
@@ -669,7 +654,7 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("turn.settle s", "땅 돌리기 자리잡기(초)"),
     ("turn.snap kick", "땅 돌리기 끝 튕김"),
     ("turn.plant s", "땅 돌리기 버팀(초)"),
-    ("turn.cooldown s", "땅 돌리기 대기(초)"),
+    ("turn.cooldown s", "땅 돌리기 쿨타임(초)"),
     ("spill.range m", "쏟기 범위(m)"),
     ("spill.slide per m", "쏟기 미끄럼(m당)"),
     ("spill.slide max m", "쏟기 미끄럼 상한(m)"),
@@ -686,28 +671,28 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("hurt.stun s", "맞은 경직(초)"),
     ("hurt.iframes s", "맞은 뒤 무적(초)"),
     ("hurt.knock m", "맞은 밀림(m)"),
-    ("stamina.max", "스태미나 최대"),
-    ("stamina.regen /s", "스태미나 회복(/초)"),
-    ("stamina.regen delay s", "스태미나 회복 대기(초)"),
-    ("stamina.dodge cost", "회피 스태미나"),
-    ("stamina.attack cost", "평타 스태미나"),
+    ("stamina.max", "기력 최대"),
+    ("stamina.regen /s", "기력 회복(/초)"),
+    ("stamina.regen delay s", "기력 회복 대기(초)"),
+    ("stamina.dodge cost", "회피 기력"),
+    ("stamina.attack cost", "평타 기력"),
     ("parry.window s", "패링 창(초)"),
     ("parry.time s", "패링 동작(초)"),
-    ("parry.stamina cost", "패링 스태미나"),
+    ("parry.stamina cost", "패링 기력"),
     ("parry.stagger s", "패링 휘청(초)"),
     ("parry.boss stagger s", "패링 보스 휘청(초)"),
     ("parry.reach m", "돌진 받는 거리(m)"),
     ("parry.crit bonus", "드러난 적 치명 피해"),
     ("jump.height m", "점프 높이(m)"),
     ("jump.air s", "체공(초)"),
-    ("jump.stamina cost", "점프 스태미나"),
+    ("jump.stamina cost", "점프 기력"),
     ("jump.air control x", "공중 조종 배율"),
     ("jump.clear m", "파동 넘는 높이(m)"),
     ("jump.land s", "착지 빈틈(초)"),
     ("plunge.damage", "내려찍기 피해"),
     ("plunge.range m", "내려찍기 범위(m)"),
     ("plunge.land s", "내려찍기 빈틈(초)"),
-    ("heavy.charge s", "강공격 다 모으기(초)"),
+    ("heavy.charge s", "강공격 차지 완료(초)"),
     ("heavy.startup s", "강공격 선딜(초)"),
     ("heavy.active s", "강공격 활성(초)"),
     ("heavy.recovery s", "강공격 후딜(초)"),
@@ -718,12 +703,12 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("heavy.knock x", "강공격 넉백 배율"),
     ("heavy.stagger s", "강공격 휘청(초)"),
     ("heavy.boss stagger s", "강공격 보스 휘청(초)"),
-    ("heavy.stamina", "강공격 스태미나"),
-    ("heavy.hold start s", "모으기 들어서는 쥠(초)"),
+    ("heavy.stamina", "강공격 기력"),
+    ("heavy.hold start s", "차지에 들어가는 홀드(초)"),
     ("flask.heal", "등잔 회복"),
     ("flask.raise s", "등잔 들기(초)"),
     ("flask.time s", "등잔 동작(초)"),
-    ("flask.lock s", "등잔 다시 마시기 대기(초)"),
+    ("flask.lock s", "등잔 다시 마시기 쿨타임(초)"),
     ("flask.walk x", "마시며 걷기 배율"),
     ("render.toon 0off 1on", "툰 빛(0끔 1켬)"),
     ("render.rim", "가장자리 빛"),
@@ -736,10 +721,10 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("anim.squash", "찌그러짐"),
     ("render.lock fade", "락온 가림 옅게"),
     ("render.actor shadow", "배우 그림자"),
-    ("heavy.charge walk x", "모으며 걷기 배율"),
+    ("heavy.charge walk x", "차지 중 걷기 배율"),
     ("cast.speed m/s", "마법 탄 빠르기(m/초)"),
     ("cast.range m", "마법 탄 거리(m)"),
-    ("cast.cooldown s", "마법 한 칸이 차는 초"),
+    ("cast.cooldown s", "마법 충전 하나가 차는 초"),
     ("cast.startup s", "마법 선딜(초)"),
     ("cast.time s", "마법 동작(초)"),
     ("cast.walk x", "마법 쏘며 걷기 배율"),
@@ -757,8 +742,8 @@ pub const SPEC_KO: &[(&str, &str)] = &[
     ("throw.startup s", "던지기 선딜(초)"),
     ("throw.time s", "던지기 동작(초)"),
     ("poise.break damage x", "깨진 동안 피해 배율"),
-    ("cast.hold start s", "원거리 모으기 들어서는 쥠(초)"),
-    ("cast.charge s", "원거리 다 모으기(초)"),
+    ("cast.hold start s", "원거리 차지에 들어가는 홀드(초)"),
+    ("cast.charge s", "원거리 차지 완료(초)"),
     ("dodge.cancel x", "회피 끊기 시점 배율"),
     ("land.cancel x", "착지 끊기 시점 배율"),
     ("render.edge 0off 1on", "화면 선(0끔 1켬)"),
