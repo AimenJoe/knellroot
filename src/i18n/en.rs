@@ -732,7 +732,7 @@ pub const EN: Strings = Strings {
     menu_weapon: "Main weapon",
     menu_sub_weapon: "Off hand",
     shield_pilgrim: "Pilgrim's shield",
-    shield_pilgrim_d: "Equipped with a one-handed weapon. Skills from both the weapon tree and the shield tree can be used. Hold parry to take blows from the front on the shield. They cost stamina, not health, and the guard breaks when it runs out. Power builds while guarding; let go to bash forward. With a sword, hammer or scythe, the ranged attack button throws the shield. It bounces between enemies and comes back, and you cannot guard until it does (the attack button calls it back). With a wand, the ranged attack stays the curse bolt",
+    shield_pilgrim_d: "Equipped with a one-handed weapon. Skills from both the weapon tree and the shield tree can be used. Hold parry to take blows from the front on the shield. They cost stamina, not health, and the guard breaks when it runs out. Power builds while guarding; let go to bash forward. With a sword, hammer or sickle, the ranged attack button throws the shield. It bounces between enemies and comes back, and you cannot guard until it does (the attack button calls it back). With a wand, the ranged attack stays the curse bolt",
     menu_shield: "Shield",
     shield_none: "No shield",
     shield_idle: "Your main weapon is two-handed. The shield can't be used",
