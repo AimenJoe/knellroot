@@ -103,6 +103,11 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Harvest),
     // 0274 ⑥ — 완드 판의 둘째 줄(균열)
     Entry::Skill(Id::Blight),
+    // 0280 — 빈 노드 넷: 창(날카로움) · 대검(잔불) · 낫(가운데) · 완드(가운데)의 둘째 줄
+    Entry::Skill(Id::Withdraw),
+    Entry::Skill(Id::Plunge),
+    Entry::Skill(Id::Boomerang),
+    Entry::Skill(Id::Word),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),

@@ -66,6 +66,14 @@ skill.Hex.A 3313bcece2349032
 skill.Hex.B 3313bcece2349032
 skill.Blight.A 600aec54691c54e8
 skill.Blight.B cf3fa430fb869263
+skill.Withdraw.A 9631483427b7f295
+skill.Withdraw.B 8318f9b95426912f
+skill.Plunge.A 8ceb70009107076d
+skill.Plunge.B 3436cebc276f00a0
+skill.Boomerang.A 10981159084f4f17
+skill.Boomerang.B 1b25fc46dd919baa
+skill.Word.A e39d93f8905d0348
+skill.Word.B 33147d4518f6fa34
 ult.Upend b3c0d52387df9ee1
 ult.Flurry ce2443fe61e5aafd
 ult.Line d27df575ebf7d95c

@@ -473,11 +473,12 @@ mod tests {
         assert_eq!(at(Col::Mid, 1), sk(&[]));
         assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Tempest)]);
         assert_eq!(at(Col::Right, 0), sk(&[Id::Sear]));
-        assert_eq!(at(Col::Right, 1), sk(&[]));
+        // 0280: 비어 있던 오른쪽(잔불) 둘째 줄에 불씨 내리꽂기. 가운데 둘째 줄은 비워 둔다(첫 줄 가운데에 셋이 있다).
+        assert_eq!(at(Col::Right, 1), sk(&[Id::Plunge]));
         assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Ember)]);
-        assert_eq!(GREATSWORD.seats().len(), 9);
+        assert_eq!(GREATSWORD.seats().len(), 10);
         for p in PLATES {
-            for id in [Id::Sunder, Id::Sear] {
+            for id in [Id::Sunder, Id::Sear, Id::Plunge] {
                 assert_eq!(p.has(Entry::Skill(id)), p == GREATSWORD, "{p:?} {id:?}");
             }
         }
@@ -509,18 +510,19 @@ mod tests {
         assert_eq!(at(Col::Left, 1), sk(&[Id::Roots]));
         assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Root)]);
         assert_eq!(at(Col::Mid, 0), sk(&[Id::Gather]));
-        assert_eq!(at(Col::Mid, 1), sk(&[]));
+        // 0280: 비어 있던 가운데(참격) 둘째 줄에 돌아오는 낫.
+        assert_eq!(at(Col::Mid, 1), sk(&[Id::Boomerang]));
         assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Grove)]);
         assert_eq!(at(Col::Right, 0), sk(&[Id::Brace]));
         assert_eq!(at(Col::Right, 1), sk(&[Id::Harvest]));
         assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Drain)]);
-        assert_eq!(SCYTHE.seats().len(), 8);
+        assert_eq!(SCYTHE.seats().len(), 9);
         assert!(
             !SCYTHE.has(Entry::Skill(Id::Whirl)),
             "the druid does not spin"
         );
         for p in PLATES {
-            for id in [Id::Reap, Id::Harvest] {
+            for id in [Id::Reap, Id::Harvest, Id::Boomerang] {
                 assert_eq!(p.has(Entry::Skill(id)), p == SCYTHE, "{p:?} {id:?}");
             }
         }
@@ -551,18 +553,19 @@ mod tests {
         assert_eq!(at(Col::Left, 1), sk(&[Id::Blight]));
         assert_eq!(at(Col::Left, 2), [Entry::Vein(Vein::Rift)]);
         assert_eq!(at(Col::Mid, 0), sk(&[Id::Gather]));
-        assert_eq!(at(Col::Mid, 1), sk(&[]));
+        // 0280: 비어 있던 가운데(마법) 둘째 줄에 끊는 말.
+        assert_eq!(at(Col::Mid, 1), sk(&[Id::Word]));
         assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Price)]);
         assert_eq!(at(Col::Right, 0), sk(&[Id::Toll]));
         assert_eq!(at(Col::Right, 1), sk(&[Id::Echo]));
         assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Knell)]);
-        assert_eq!(WAND.seats().len(), 8);
+        assert_eq!(WAND.seats().len(), 9);
         assert!(
             !WAND.has(Entry::Skill(Id::Brace)),
             "the warlock does not brace"
         );
         for p in PLATES {
-            for id in [Id::Hex, Id::Blight] {
+            for id in [Id::Hex, Id::Blight, Id::Word] {
                 assert_eq!(p.has(Entry::Skill(id)), p == WAND, "{p:?} {id:?}");
             }
         }
@@ -636,7 +639,8 @@ mod tests {
                 n(WAND)
             ],
             // 0274 ④: 한손검 9 → 10(가운데 둘째 줄의 되울림), 대검 9. 0274 ⑤: 낫 8. 0274 ⑥: 완드 8.
-            [10, 11, 10, 9, 8, 10, 10, 9, 9, 8, 8]
+            // 0280: 빈 노드 넷 — 창 10 → 11, 대검 9 → 10, 낫 8 → 9, 완드 8 → 9.
+            [10, 11, 10, 9, 8, 10, 11, 9, 10, 9, 9]
         );
         // 옛 원거리 판에 섰던 스킬은 모두 두 판 가운데 하나에는 선다(0270 C5 — 돌려줄 것이 없다).
         for id in [
@@ -674,11 +678,12 @@ mod tests {
         assert_eq!(at(Col::Mid, 1), sk(&[Id::Pole]));
         assert_eq!(at(Col::Mid, 2), [Entry::Ult(Ult::Gale)]);
         assert_eq!(at(Col::Right, 0), sk(&[Id::Stitch]));
-        assert_eq!(at(Col::Right, 1), sk(&[]));
+        // 0280: 비어 있던 오른쪽(날카로움) 둘째 줄에 찌르고 물러서기.
+        assert_eq!(at(Col::Right, 1), sk(&[Id::Withdraw]));
         assert_eq!(at(Col::Right, 2), [Entry::Vein(Vein::Sharp)]);
-        assert_eq!(SPEAR.seats().len(), 10);
+        assert_eq!(SPEAR.seats().len(), 11);
         for p in PLATES {
-            for id in [Id::Skewer, Id::Pole, Id::Pin] {
+            for id in [Id::Skewer, Id::Pole, Id::Pin, Id::Withdraw] {
                 assert_eq!(p.has(Entry::Skill(id)), p == SPEAR, "{p:?} {id:?}");
             }
         }

@@ -3962,3 +3962,245 @@ fn a_frail_mark_keeps_the_longer_time() {
         );
     }
 }
+
+// ---- 0280: 빈 노드 넷 ----
+
+/// 찌르고 물러서기(창): 앞을 길고 좁게(3.4 m · 40°) 한 번 찔러 — 빠지며 베기(2.4 m)가 못 닿는 3 m 앞의 적도 — 출혈을 걸고, 창끝을
+/// 겨눈 채 3 m 물러선다. 옆의 적은 아니다. 한 걸음 더(ㄱ)는 4.5 m, 벌어진 상처(ㄴ)는 찔린 적이 더 다친다(보스는 아니다). 무적은 없다.
+#[test]
+fn thrust_and_withdraw_pierces_far_makes_it_bleed_and_steps_back() {
+    let go = |pick: Pick, rank: u8| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Withdraw, rank, pick);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Spear);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        w.spawn_mob(vec3(1.6, 0.0, -1.8));
+        w.spawn_boss(vec3(-0.5, 0.0, -2.2));
+        still(&mut w);
+        w.enemies[2].hp = 900;
+        w.enemies[2].max_hp = 900;
+        let ev = run(&mut w, &t, skill(0), 60);
+        (w, ev)
+    };
+    let (w, ev) = go(Pick::A, 1);
+    assert!(w.enemies[0].hp < 90, "the far foe ahead is pierced");
+    // 날카로움을 한 번에 가득(1.0) — 잔재처럼 덜 쌓이는 적(×0.75)은 두 번째 찌름에 출혈.
+    let sharp = crate::status::TYPED
+        .iter()
+        .position(|k| *k == crate::status::Kind::Sharp)
+        .unwrap();
+    assert!(w.enemies[0].ail.gauge[sharp] >= 0.7, "sharpness builds");
+    assert_eq!(w.enemies[1].hp, 90, "the narrow line only");
+    assert!(w.enemies[2].hp < 900, "a boss is pierced too");
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        Event::Skill {
+            id: Sk::Withdraw,
+            ..
+        }
+    )));
+    assert!(
+        (w.player.pos.z - 3.0).abs() < 0.35,
+        "stepped 3 m back: {:?}",
+        w.player.pos
+    );
+    assert!(!w.player.skill.ghost, "no invincibility");
+    let (w, _) = go(Pick::A, 3);
+    assert!(
+        (w.player.pos.z - 4.5).abs() < 0.4,
+        "one more step: {:?}",
+        w.player.pos
+    );
+    let (w, _) = go(Pick::B, 3);
+    assert!(w.enemies[0].marks.frail > 0.0 && w.enemies[0].marks.frail_mult > 1.2);
+    assert_eq!(w.enemies[2].marks.frail, 0.0, "not a boss");
+}
+
+/// 불씨 내리꽂기(대검): 둘레(5 m)로 번지는 불길이 지나는 적을 한 번씩 치고 불을 붙인다 — 밀어내지 않는다(떼가 둘레에 남는다), 5 m 밖은
+/// 아니다. 넓은 불길(ㄱ)은 1.3배 멀리, 타는 땅(ㄴ)은 불티를 남기고, 최종 효과는 불길이 휘청이게 한다.
+#[test]
+fn cinder_plunge_spreads_fire_around_and_sets_the_pack_alight() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Plunge, 1, Pick::A);
+    assert_eq!(w.player.weapon, crate::weapons::Id::Greatsword);
+    w.spawn_mob(vec3(0.0, 0.0, -1.5));
+    w.spawn_mob(vec3(4.0, 0.0, 0.0));
+    w.spawn_mob(vec3(0.0, 0.0, 6.2));
+    still(&mut w);
+    let was: Vec<Vec3> = w.enemies.iter().map(|e| e.pos).collect();
+    finish(&mut w, &t, 0);
+    for i in [0, 1] {
+        assert!(w.enemies[i].hp < 90, "{i}: in the fire");
+        assert!(w.enemies[i].ail.burn > 0, "{i}: alight");
+        assert!(flat(w.enemies[i].pos, was[i]) < 0.3, "{i}: not pushed");
+    }
+    assert_eq!(
+        90 - w.enemies[0].hp,
+        90 - w.enemies[1].hp,
+        "once each, the same"
+    );
+    assert_eq!(w.enemies[2].hp, 90, "beyond 5 m");
+    assert!(w.skill_fields.is_empty(), "no embers left without the pick");
+    // 넓은 불길(ㄱ — 3단): 6.2 m 앞도 닿는다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Plunge, 3, Pick::A);
+    w.spawn_mob(vec3(0.0, 0.0, 6.2));
+    still(&mut w);
+    finish(&mut w, &t, 0);
+    assert!(w.enemies[0].hp < 90, "the wide blaze reaches");
+    // 타는 땅(ㄴ — 3단) · 최종 효과(5단): 불티가 남고 불길에 휘청인다.
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Plunge, 5, Pick::B);
+    w.spawn_mob(vec3(0.0, 0.0, -2.0));
+    still(&mut w);
+    let mut ev = w.step(&skill(0), &t);
+    let mut staggered = false;
+    for _ in 0..40 {
+        ev.extend(w.step(&Actions::default(), &t));
+        staggered |= matches!(w.enemies[0].state, EState::Stagger { .. });
+    }
+    assert_eq!(w.skill_fields.len(), 1, "burning ground");
+    assert!(staggered, "the fire lifts them");
+}
+
+/// 돌아오는 낫(낫): 휜 날이 7 m를 넓게(반 폭 1.3 m — 던지기 0.9) 돌며 가는 길 · 오는 길에 한 번씩 벤다 — 길 옆 1.6 m의 적도, 3 m 옆 ·
+/// 7 m 밖은 아니다. 끌어오는 날(ㄱ)은 돌아오는 길에 맞은 적을 2.5 m 끌어온다(보스는 아니다), 넓게 도는 날(ㄴ)은 더 넓게.
+#[test]
+fn returning_sickle_cuts_wide_out_and_back_and_hooks_foes_home() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Boomerang, 1, Pick::A);
+    assert_eq!(w.player.weapon, crate::weapons::Id::Scythe);
+    w.spawn_mob(vec3(0.0, 0.0, -3.0));
+    w.spawn_mob(vec3(1.6, 0.0, -5.0));
+    w.spawn_mob(vec3(3.0, 0.0, -4.0));
+    w.spawn_mob(vec3(0.0, 0.0, -9.5));
+    still(&mut w);
+    let ev = throw_all(&mut w, &t, skill(0));
+    assert!(ev.iter().any(|e| matches!(e, Event::ThrowBack { .. })));
+    assert!(!w.weapon_away(), "back in hand");
+    assert_eq!(w.enemies[0].hp, 90 - 20, "out and back");
+    assert_eq!(w.enemies[1].hp, 90 - 20, "the wide sweep reaches aside");
+    assert_eq!(w.enemies[2].hp, 90, "off the path");
+    assert_eq!(w.enemies[3].hp, 90, "beyond 7 m");
+    assert_eq!(w.player.skill.gauge, 0.0, "a skill hit: no gauge");
+    // 끌어오는 날(ㄱ — 3단): 잡몹은 2.5 m 끌려오고 보스는 그대로.
+    let pulled = |rank: u8, pick: Pick| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Boomerang, rank, pick);
+        w.spawn_mob(vec3(0.0, 0.0, -4.0));
+        w.spawn_boss(vec3(0.0, 0.0, -6.8));
+        still(&mut w);
+        let was: Vec<Vec3> = w.enemies.iter().map(|e| e.pos).collect();
+        throw_all(&mut w, &t, skill(0));
+        run(&mut w, &t, Actions::default(), 40);
+        (
+            flat(was[0], Vec3::ZERO) - flat(w.enemies[0].pos, Vec3::ZERO),
+            flat(was[1], Vec3::ZERO) - flat(w.enemies[1].pos, Vec3::ZERO),
+        )
+    };
+    let (mob, boss) = pulled(3, Pick::A);
+    assert!((mob - 2.5).abs() < 0.6, "hooked home ~2.5 m: {mob}");
+    assert!(boss < 0.2, "a boss is not dragged: {boss}");
+    let (mob, _) = pulled(2, Pick::A);
+    assert!(mob < 0.5, "no pick: {mob}");
+    // 넓게 도는 날(ㄴ — 3단): 2 m 옆도 벤다(ㄱ은 아니다). 던지는 쪽은 가까운 적(한 대상을 겨눈다) — 앞의 적을 겨눈다.
+    let aside = |pick: Pick| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Boomerang, 3, pick);
+        w.spawn_mob(vec3(0.0, 0.0, -3.0));
+        w.spawn_mob(vec3(2.0, 0.0, -5.0));
+        still(&mut w);
+        throw_all(&mut w, &t, skill(0));
+        w.enemies[1].hp
+    };
+    assert_eq!(aside(Pick::A), 90, "too far aside");
+    assert!(aside(Pick::B) < 90, "the wide arc reaches");
+}
+
+/// 끊는 말(완드): 앞 4 m(자루 치기 2.2 m의 두 배 가까이)에서 공격을 준비하던 적의 공격을 끊는다 — 보스는 끊기지 않고 휘청이지도 않는다.
+/// 부채꼴(70°) 밖은 아니다. 물리(마법) — 속성은 싣지 않는다.
+#[test]
+fn severing_word_cuts_off_a_winding_foe_from_afar_but_not_a_boss() {
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Word, 1, Pick::A);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Wand);
+        if boss {
+            w.spawn_boss(vec3(0.0, 0.0, -3.4));
+        } else {
+            w.spawn_mob(vec3(0.0, 0.0, -3.4));
+        }
+        // 닿는 거리 안 · 부채꼴(70°) 밖 — 앞의 적보다 멀어 겨누는 쪽은 앞의 적(가장 가까운 적을 겨눈다).
+        w.spawn_mob(vec3(2.9, 0.0, -2.3));
+        still(&mut w);
+        let en = &mut w.enemies[0];
+        en.facing = 0.0;
+        en.atk = Atk::Smash;
+        en.state = EState::Tele { t: 0.0 };
+        let ev = run(&mut w, &t, skill(0), 40);
+        let cut = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Interrupt { .. }))
+            .count();
+        (w, cut)
+    };
+    let (w, cut) = go(false);
+    assert_eq!(cut, 1, "the winding foe is cut off from 3.4 m");
+    assert!(w.enemies[0].hp < 90);
+    assert!(
+        w.enemies[0].ail.gauge.iter().all(|g| *g == 0.0),
+        "no element"
+    );
+    assert_eq!(w.enemies[1].hp, 90, "outside the arc");
+    let (w, cut) = go(true);
+    assert_eq!(cut, 0, "a boss keeps its swing");
+    assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
+}
+
+/// 0280 탐침: 스킬 한 번의 피해 ÷ 쿨타임(초당) — 서 있는 적 하나(앞 2 m)와 앞에 붙은 셋(2 m · 2.6 m 양옆), 1레벨 · 5레벨(고르기 ㄱ),
+/// 놓는 것 · 화상 · 출혈까지 4초. 같은 줄의 이웃과 견준다(`cargo test skill_damage_per_cooldown_probe -- --ignored --nocapture`).
+#[test]
+#[ignore]
+fn skill_damage_per_cooldown_probe() {
+    let spots: [&[Vec3]; 2] = [
+        &[vec3(0.0, 0.0, -2.0)],
+        &[
+            vec3(0.0, 0.0, -2.0),
+            vec3(-0.9, 0.0, -2.6),
+            vec3(0.9, 0.0, -2.6),
+        ],
+    ];
+    for id in skills::IDS {
+        let mut out = Vec::new();
+        for rank in [1, MAX_RANK] {
+            for at in spots {
+                let (mut w, t) = world();
+                wear(&mut w, id, rank, Pick::A);
+                for p in at {
+                    w.spawn_mob(*p);
+                }
+                still(&mut w);
+                for e in &mut w.enemies {
+                    e.hp = 900;
+                    e.max_hp = 900;
+                }
+                w.step(&skill(0), &t);
+                for _ in 0..ticks(4.0) {
+                    still_keep(&mut w);
+                    w.step(&Actions::default(), &t);
+                }
+                let dmg: i32 = w.enemies.iter().map(|e| 900 - e.hp).sum();
+                let cd = id.def().at(rank, Pick::A).skill.cooldown;
+                out.push(format!("{:.1}", dmg as f32 / cd));
+            }
+        }
+        println!(
+            "{id:?} row {} — Lv1 하나 {} · 셋 {} / Lv5 하나 {} · 셋 {}",
+            id.def().row,
+            out[0],
+            out[1],
+            out[2],
+            out[3]
+        );
+    }
+}

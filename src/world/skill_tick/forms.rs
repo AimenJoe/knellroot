@@ -250,8 +250,8 @@ impl World {
         }
     }
 
-    /// 파문(0270 C3): 물결의 앞머리가 몸에서 둘레로 번진다 — 지나는 적을 한 번씩(같은 타 번호). 밀어내는 물결(ㄱ)은
-    /// 바깥으로 밀고, 갈라진 땅(ㄴ)은 물결이 지난 둘레가 남아 늦춘다, 맺음은 휘청.
+    /// 파문(0270 C3) · 불씨 내리꽂기(0280): 물결의 앞머리가 몸에서 둘레로 번진다 — 지나는 적을 한 번씩(같은 타 번호). 밀어내는
+    /// 물결(ㄱ)은 바깥으로 밀고, 갈라진 땅(ㄴ)은 물결이 지난 둘레가 남아 늦춘다, 타는 땅(ㄴ)은 둘레에 불티를 남긴다, 맺음은 휘청.
     pub(super) fn tick_wave(&mut self, k: &mut SkillCx, radius: f32, time: f32) {
         let SkillCx {
             t,
@@ -278,6 +278,18 @@ impl World {
                     total: secs + time,
                     slow,
                 });
+            }
+            // 타는 땅(불씨 내리꽂기 ㄴ, 0280): 내리꽂은 자리 둘레에 불티가 남는다(불길 ㄴ과 같은 불 — 반지름은 번지는 둘레의 반).
+            if let Some(Twist::Scorch { secs }) = d.twist {
+                self.skill_fields.push(Field::lay(
+                    at,
+                    radius * 0.5,
+                    secs,
+                    SCORCH_EVERY,
+                    s.damage,
+                    0.0,
+                    self.dosed(s.dose()),
+                ));
             }
         }
         if e1 >= s.startup && e < s.startup + time {

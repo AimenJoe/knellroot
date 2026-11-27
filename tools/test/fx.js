@@ -104,7 +104,10 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
       ['grove', null, 'Ult(Grove)', 1300, 'ult', 100, 'Scythe'],
       // 0274 ⑥: 완드 판 — 저주 새기기 · 시드는 그늘(4초 — 앞의 1.6초) · 치른 값(두 박이 1초 남짓).
       ['hex', 'Skill(Hex)', null, 1000, 'Q', 34, 'Wand'], ['blight', 'Skill(Blight)', null, 1000, 'Q', 60, 'Wand'],
-      ['price', null, 'Ult(Price)', 1300, 'ult', 100, 'Wand']];
+      ['price', null, 'Ult(Price)', 1300, 'ult', 100, 'Wand'],
+      // 0280: 빈 노드 넷 — 찌르고 물러서기 · 불씨 내리꽂기 · 돌아오는 낫(날아갔다 돌아오는 0.8초) · 끊는 말.
+      ['withdraw', 'Skill(Withdraw)', null, 1000, 'Q', 34, 'Spear'], ['plunge', 'Skill(Plunge)', null, 1000, 'Q', 44, 'Greatsword'],
+      ['boomerang', 'Skill(Boomerang)', null, 900, 'Q', 60, 'Scythe'], ['word', 'Skill(Word)', null, 900, 'Q', 30, 'Wand']];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
     // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 한손검부터 차례로(판 줄에서 → — 공통 판에는 스킬이 없다).

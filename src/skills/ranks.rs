@@ -117,9 +117,11 @@ pub enum Twist {
     Shove { push: f32 },
     /// 눈발 ㄱ "흐르는 눈발"(0270 C3): 눈발이 겨눈 쪽으로 초속 `speed` m 흘러간다.
     Flow { speed: f32 },
-    /// 눈발·뿌리 덫 ㄴ "큰 눈송이"·"넓은 덫"(0270 C3): 둘레 × `mult`.
+    /// 눈발·뿌리 덫 ㄴ "큰 눈송이"·"넓은 덫"(0270 C3): 둘레 × `mult`. 불씨 내리꽂기 ㄱ "넓은 불길"(0280): 번지는 둘레 × `mult`.
+    /// 돌아오는 낫 ㄴ "넓게 도는 날"(0280): 날이 지나는 길의 반 폭 × `mult`.
     Big { mult: f32 },
-    /// 불길 ㄴ "타는 땅"(0270 C3): 불길이 지난 부채꼴의 가운데에 `secs`초 남는 불티(잔불 흩기와 같은 불 — 초마다).
+    /// 불길 ㄴ "타는 땅"(0270 C3): 불길이 지난 부채꼴의 가운데에 `secs`초 남는 불티(잔불 흩기와 같은 불 — 초마다). 불씨 내리꽂기 ㄴ
+    /// (0280): 내리꽂은 자리 둘레에.
     Scorch { secs: f32 },
     /// 뿌리 덫 ㄱ "두 알"(0270 C3): 씨를 둘 — 겨눈 자리의 양옆에.
     Twin,
@@ -347,7 +349,8 @@ impl Form {
             Form::Cone { arc_deg, .. } | Form::Bash { arc_deg, .. } => {
                 *arc_deg = g.wide(*arc_deg) * size
             }
-            Form::Wave { radius, .. } => *radius *= size,
+            // 불씨 내리꽂기(0280)의 넓은 불길(ㄱ): 번지는 둘레 × 배.
+            Form::Wave { radius, .. } => *radius = *radius * size * g.big(),
             Form::Drift { radius, secs, .. } => {
                 *radius = *radius * size * g.big();
                 *secs += g.smolder();
@@ -363,7 +366,11 @@ impl Form {
                 *secs += if g.rank >= 2 { RANK2_SECS } else { 0.0 };
                 *radius *= size;
             }
-            Form::Throw { dist, .. } => *dist *= size,
+            // 돌아오는 낫(0280)의 넓게 도는 날(ㄴ): 길의 반 폭 × 배(4단의 치수는 거리).
+            Form::Throw { dist, half, .. } => {
+                *dist *= size;
+                *half *= g.big();
+            }
             Form::Field { radius, secs, .. } => {
                 *radius *= size;
                 *secs += g.smolder();

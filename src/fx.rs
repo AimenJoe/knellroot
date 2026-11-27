@@ -1010,7 +1010,11 @@ impl Fx {
             | Sk::Reap
             | Sk::Harvest
             | Sk::Hex
-            | Sk::Blight => {}
+            | Sk::Blight
+            | Sk::Withdraw
+            | Sk::Plunge
+            | Sk::Boomerang
+            | Sk::Word => {}
         }
     }
 
@@ -1055,6 +1059,10 @@ impl Fx {
             Sk::Reap => self.fx_reap(dir, g, d),
             Sk::Harvest => self.fx_harvest(g, d),
             Sk::Rally => self.fx_rally(g, d),
+            Sk::Withdraw => self.fx_withdraw(dir, g, d),
+            Sk::Plunge => self.fx_plunge(g, d),
+            Sk::Boomerang => self.fx_boomerang(dir, g, d),
+            Sk::Word => self.fx_word(dir, g, d),
         }
     }
 

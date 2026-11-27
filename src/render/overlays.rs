@@ -337,10 +337,16 @@ impl Renderer {
                             }
                         }
                     }
-                    // 파문(0270 C3): 몸에서 번지는 물결의 앞머리(흰 테 + 민트 테), 지나간 안쪽은 옅게.
+                    // 파문(0270 C3): 몸에서 번지는 물결의 앞머리(흰 테 + 민트 테), 지나간 안쪽은 옅게. 불씨 내리꽂기(0280)는 같은
+                    // 앞머리를 호박빛으로 — 물결이 아니라 번지는 불길(잔불을 싣는 물결이면).
                     Form::Wave { radius, time } => {
                         let k = (e0 / time.max(1e-3)).clamp(0.0, 1.0);
                         let fade = 1.0 - ((e0 - time) / SKILL_GLOW_FADE).clamp(0.0, 1.0);
+                        let mint = if d.kind == crate::status::Kind::Ember {
+                            Color::new(1.0, 0.72, 0.32, 1.0)
+                        } else {
+                            mint
+                        };
                         if fade > 0.0 {
                             let r = (radius * k).max(0.3);
                             fl.sector(pp + Vec3::Y * 0.05, r, 0.0, 360.0, with_a(mint, 0.1 * fade));

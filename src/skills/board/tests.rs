@@ -291,7 +291,7 @@ fn number_cells_pick_one_of_two_and_flip_for_free() {
 fn the_board_stands_as_the_0161_table_says() {
     use Branch::{Beat, Footing, Riposte};
     use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-    let table: [(usize, Branch, &[Entry]); 51] = [
+    let table: [(usize, Branch, &[Entry]); 54] = [
         (
             0,
             Beat,
@@ -361,6 +361,10 @@ fn the_board_stands_as_the_0161_table_says() {
         (1, Footing, &[S(Id::Sunder)]),
         (1, Riposte, &[S(Id::Harvest)]),
         (1, Footing, &[S(Id::Blight)]),
+        // 0280: 빈 노드 넷.
+        (1, Beat, &[S(Id::Withdraw)]),
+        (1, Footing, &[S(Id::Plunge), S(Id::Boomerang)]),
+        (1, Riposte, &[S(Id::Word)]),
         (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
         (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
         (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -417,7 +421,7 @@ fn the_board_stands_as_the_0161_table_says() {
             assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
         }
     }
-    assert_eq!(NE, 81);
+    assert_eq!(NE, 85);
     for (i, e) in ENTRIES.iter().enumerate() {
         assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
     }

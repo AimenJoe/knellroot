@@ -907,4 +907,159 @@ impl Fx {
         );
         self.dust_ring(g, 0.4, 8, 3.0, 0.4, DUST);
     }
+
+    /// 찌르고 물러서기(0280 — 창): 창끝의 흰 별 + 찌른 줄의 강철빛 띠(흰 속) + 창끝에 조여드는 서늘한 고리(꿰뚫어 출혈) + 물러난 길의 잿빛 띠
+    /// + 앞으로 차이는 먼지(뒤로 디딘 발). 빠지며 베기(넓게 벤 면)와 갈리게 면이 아니라 줄 · 고리.
+    pub(super) fn fx_withdraw(&mut self, dir: Vec3, g: Vec3, d: crate::skills::Eff) {
+        let Form::Slip { range, back, .. } = d.skill.form else {
+            return;
+        };
+        let tip = g + dir * range * 0.75;
+        self.star(tip + Vec3::Y * 0.9, 1.4, 0.1, WHITE_HOT);
+        self.mark(
+            g,
+            MarkKind::Streak {
+                dir,
+                len: range,
+                half: 0.2,
+            },
+            0.3,
+            STEEL,
+        );
+        self.mark(
+            g,
+            MarkKind::Streak {
+                dir,
+                len: range,
+                half: 0.12,
+            },
+            0.22,
+            WHITE_HOT,
+        );
+        self.mark(tip, MarkKind::Ring { r0: 0.75, r1: 0.2 }, 0.35, COOL);
+        self.spray(
+            tip + Vec3::Y * 0.9,
+            dir,
+            0.15,
+            4,
+            5.0,
+            Shape::Streak,
+            0.05,
+            0.12,
+            0.0,
+            WHITE_HOT,
+            STEEL,
+        );
+        self.mark(
+            g - dir * back,
+            MarkKind::Streak {
+                dir: -dir,
+                len: back,
+                half: 0.25,
+            },
+            0.3,
+            ASH,
+        );
+        self.dust_kick(g, dir, 3, 0.4);
+    }
+
+    /// 불씨 내리꽂기(0280 — 대검): 꽂힌 자리의 잔불빛 별 + 둘레로 번지는 불길의 고리 둘(분노의 주황 · 잔불빛, 바닥에 남는다) + 꽂힌 자리
+    /// 둘레에서 솟는 불씨 + 흙먼지. 파문(몸을 따르는 서리빛 · 민트 물결)과 갈리게 바닥의 불빛.
+    pub(super) fn fx_plunge(&mut self, g: Vec3, d: crate::skills::Eff) {
+        let Form::Wave { radius, time } = d.skill.form else {
+            return;
+        };
+        self.star(g + Vec3::Y * 0.4, 1.6, 0.12, AMBER);
+        self.mark(
+            g,
+            MarkKind::Ring {
+                r0: 0.4,
+                r1: radius,
+            },
+            time + 0.1,
+            FURY,
+        );
+        self.mark_with(
+            g,
+            MarkKind::Ring {
+                r0: 0.3,
+                r1: radius * 0.85,
+            },
+            time + 0.2,
+            AMBER,
+            0.06,
+            Stick::Ground,
+        );
+        self.ring_sparks(g + Vec3::Y * 0.3, radius * 0.3, 10, 3.0, 0.35, GOLD, AMBER);
+        self.dust_ring(g, 0.5, 10, 4.0, 0.5, DUST);
+    }
+
+    /// 돌아오는 낫(0280 — 낫): 손을 떠나는 순간의 새싹빛 별 + 앞으로 짧게 휘는 강철빛 호(돌기 시작한 날) + 던진 쪽으로 튀는 줄. 던지기
+    /// (흰 별 · 금빛 줄)와 갈리게 빛깔과 호.
+    pub(super) fn fx_boomerang(&mut self, dir: Vec3, g: Vec3, d: crate::skills::Eff) {
+        let Form::Throw { half, .. } = d.skill.form else {
+            return;
+        };
+        let hand = g + Vec3::Y * 1.0 + dir * 0.6;
+        self.star(hand, 1.0, 0.08, SPROUT);
+        self.mark(
+            g,
+            MarkKind::Shock {
+                dir,
+                r0: 0.4,
+                r1: 0.6 + half,
+                arc_deg: 120.0,
+            },
+            0.18,
+            STEEL,
+        );
+        self.spray(
+            hand,
+            dir,
+            0.45,
+            6,
+            7.0,
+            Shape::Streak,
+            0.06,
+            0.18,
+            1.5,
+            STEEL,
+            SPROUT,
+        );
+        self.dust_kick(g, -dir, 3, 0.4);
+    }
+
+    /// 끊는 말(0280 — 완드): 내민 손의 작은 연보랏빛 별 + 앞으로 번지는 말의 결 둘(연보라 · 은빛, 둘째는 조금 늦게) — 막아치기(흰 별 ·
+    /// 민트 충격파 하나) · 자루 치기(노란 별)와 갈린다. 끊긴 적은 따로(`Interrupt`).
+    pub(super) fn fx_word(&mut self, dir: Vec3, g: Vec3, d: crate::skills::Eff) {
+        let Form::Bash { range, arc_deg, .. } = d.skill.form else {
+            return;
+        };
+        let hand = g + Vec3::Y * 1.1 + dir * 0.6;
+        self.star(hand, 0.8, 0.08, LAVENDER);
+        self.mark(
+            g,
+            MarkKind::Shock {
+                dir,
+                r0: 0.5,
+                r1: range,
+                arc_deg,
+            },
+            0.3,
+            LAVENDER,
+        );
+        self.mark_with(
+            g,
+            MarkKind::Shock {
+                dir,
+                r0: 0.4,
+                r1: range * 0.75,
+                arc_deg: arc_deg * 0.8,
+            },
+            0.3,
+            SNEAK,
+            0.08,
+            Stick::Ground,
+        );
+    }
 }

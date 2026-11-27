@@ -126,6 +126,11 @@ pub enum Kind {
     Blight,
     Price,
     CurseBolt,
+    /// 그림만(0280): 빈 노드 넷의 스킬 — 찌르고 물러서기 · 불씨 내리꽂기 · 돌아오는 낫 · 끊는 말.
+    Withdraw,
+    Plunge,
+    Boomerang,
+    Word,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -1091,7 +1096,11 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Hex
         | Kind::Blight
         | Kind::Price
-        | Kind::CurseBolt => {}
+        | Kind::CurseBolt
+        | Kind::Withdraw
+        | Kind::Plunge
+        | Kind::Boomerang
+        | Kind::Word => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1189,6 +1198,10 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Harvest => Kind::Harvest,
         Id::Hex => Kind::Hex,
         Id::Blight => Kind::Blight,
+        Id::Withdraw => Kind::Withdraw,
+        Id::Plunge => Kind::Plunge,
+        Id::Boomerang => Kind::Boomerang,
+        Id::Word => Kind::Word,
     }
 }
 
@@ -1627,6 +1640,10 @@ mod tests {
             Kind::Blight,
             Kind::Price,
             Kind::CurseBolt,
+            Kind::Withdraw,
+            Kind::Plunge,
+            Kind::Boomerang,
+            Kind::Word,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

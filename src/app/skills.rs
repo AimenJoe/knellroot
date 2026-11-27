@@ -79,6 +79,10 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Harvest => (s.skill_harvest, s.skill_harvest_d),
         sk::Id::Hex => (s.skill_hex, s.skill_hex_d),
         sk::Id::Blight => (s.skill_blight, s.skill_blight_d),
+        sk::Id::Withdraw => (s.skill_withdraw, s.skill_withdraw_d),
+        sk::Id::Plunge => (s.skill_plunge, s.skill_plunge_d),
+        sk::Id::Boomerang => (s.skill_boomerang, s.skill_boomerang_d),
+        sk::Id::Word => (s.skill_word, s.skill_word_d),
     }
 }
 
@@ -213,6 +217,14 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Hex, Pick::B) => (s.pick_hex_b, s.pick_hex_b_d),
         (sk::Id::Blight, Pick::A) => (s.pick_blight_a, s.pick_blight_a_d),
         (sk::Id::Blight, Pick::B) => (s.pick_blight_b, s.pick_blight_b_d),
+        (sk::Id::Withdraw, Pick::A) => (s.pick_withdraw_a, s.pick_withdraw_a_d),
+        (sk::Id::Withdraw, Pick::B) => (s.pick_withdraw_b, s.pick_withdraw_b_d),
+        (sk::Id::Plunge, Pick::A) => (s.pick_plunge_a, s.pick_plunge_a_d),
+        (sk::Id::Plunge, Pick::B) => (s.pick_plunge_b, s.pick_plunge_b_d),
+        (sk::Id::Boomerang, Pick::A) => (s.pick_boomerang_a, s.pick_boomerang_a_d),
+        (sk::Id::Boomerang, Pick::B) => (s.pick_boomerang_b, s.pick_boomerang_b_d),
+        (sk::Id::Word, Pick::A) => (s.pick_word_a, s.pick_word_a_d),
+        (sk::Id::Word, Pick::B) => (s.pick_word_b, s.pick_word_b_d),
     };
     (mark, name, desc)
 }
@@ -255,6 +267,10 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Harvest => s.cap_harvest,
         sk::Id::Hex => s.cap_hex,
         sk::Id::Blight => s.cap_blight,
+        sk::Id::Withdraw => s.cap_withdraw,
+        sk::Id::Plunge => s.cap_plunge,
+        sk::Id::Boomerang => s.cap_boomerang,
+        sk::Id::Word => s.cap_word,
     }
 }
 
@@ -3467,6 +3483,8 @@ mod tests {
         // 0274 ⑥: 완드의 저주 새기기 · 치른 값도 맞받기 갈래.
         keyless.rank[Id::Hex.index()] = 0;
         keyless.ult[Ult::Price.index()] = 0;
+        // 0280: 완드의 끊는 말도 맞받기 갈래.
+        keyless.rank[Id::Word.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         keyless.ult[Ult::Bell.index()] = 0;
         keyless.rank[Id::Pin.index()] = 0;

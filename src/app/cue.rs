@@ -346,7 +346,12 @@ fn skill_start_sound(id: Sk) -> Id {
         | Sk::Sunder
         | Sk::Reap
         | Sk::Harvest
-        | Sk::Hex => Id::Swing,
+        | Sk::Hex
+        | Sk::Withdraw
+        | Sk::Boomerang => Id::Swing,
+        // 0280: 불씨 내리꽂기 = 잔불 소리(달군 날), 끊는 말 = 가운데 종(말 한마디가 울린다).
+        Sk::Plunge => Id::Ember,
+        Sk::Word => Id::Beat2,
         // 0274 ⑥: 시드는 그늘 = 낮은 울림.
         Sk::Blight => Id::Wake,
         // 0274 ④: 불씨 휩쓸기 = 잔불 소리(달군 날).
@@ -404,6 +409,12 @@ fn skill_sound(id: Sk) -> Id {
         // 0274 ⑥(완드): 저주 새기기 = 쇳소리(금이 가는 소리), 시드는 그늘 = 낮은 울림(그늘이 드리운다).
         Sk::Hex => Id::Parry,
         Sk::Blight => Id::Wake,
+        // 0280: 찌르고 물러서기 = 타격(박히는 창끝 — 물러나는 걸음은 소리 없이), 불씨 내리꽂기 = 낮은 울림(땅에 꽂힌다 — 불은
+        // 시동의 잔불 소리), 돌아오는 낫 = 스치는 바람(던지기와 같은 손), 끊는 말 = 쇳소리(끊기는 소리).
+        Sk::Withdraw => Id::Hit,
+        Sk::Plunge => Id::Wake,
+        Sk::Boomerang => Id::Dodge,
+        Sk::Word => Id::Parry,
     }
 }
 
@@ -445,7 +456,11 @@ fn skill_zoom(id: Sk, brace_full: bool) -> f32 {
         | Sk::Reap
         | Sk::Harvest
         | Sk::Hex
-        | Sk::Blight => 0.0,
+        | Sk::Blight
+        | Sk::Withdraw
+        | Sk::Plunge
+        | Sk::Boomerang
+        | Sk::Word => 0.0,
     }
 }
 
@@ -473,7 +488,7 @@ pub(super) mod tests {
     pub(in crate::app) const SNAPSHOT: &str =
         concat!(env!("CARGO_MANIFEST_DIR"), "/src/app/cue_snapshot.txt");
 
-    /// 견줄 표본: 사건의 표본(`Event::samples`) + 반응이 실린 값으로 갈리는 것들(스킬 34 · 타입 · 탄의 꼴 · 적의 큰 타 · 여러 타의
+    /// 견줄 표본: 사건의 표본(`Event::samples`) + 반응이 실린 값으로 갈리는 것들(스킬 38 · 타입 · 탄의 꼴 · 적의 큰 타 · 여러 타의
     /// 마지막) × 맥락 넷(박자 이음 0·1·2·3, 가까이·14~18m·멀리, 버팀을 다 받아냄).
     pub(in crate::app) fn cases() -> Vec<(Event, CueCtx)> {
         let events = Event::varied();
