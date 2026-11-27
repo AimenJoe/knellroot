@@ -4,7 +4,8 @@ use crate::progression::{Branch, Cell, Tree, Vein, VEINS};
 
 /// 기술 점수(0158 나 → 0161): 줍는 화폐가 아니라 셈 — 총 레벨 + 처음 쓰러뜨린 엘리트 수 + **핵**(보스를 이길 때마다, 보스마다
 /// `progression::CORE_CAP`까지 — 부르는 쪽이 자른 수) + 주운 **종소리 조각**. 핵·조각은 옛 나무 화폐 "마디"였다 — 이제 점수의 샘이다.
-/// 0158의 "보스 첫 쓰러뜨림 +1"은 핵의 수로 바뀌었다. 지금 내용으로 15 + 6 + 6 + 3 = 30.
+/// 0158의 "보스 첫 쓰러뜨림 +1"은 핵의 수로 바뀌었다. 지금 내용의 상한과 트리마다 다 올리는 값은 재는 시험이 찍는다
+/// (`stage::economy` — `cargo test economy_probe -- --ignored --nocapture`).
 /// 처음부터 가진 점수는 없다(0167) — 옛 기록의 몫 `GIFT_POINTS`는 기록이 따로 더한다(`Progress::skill_points`).
 pub fn points(level: u32, elites: u32, cores: u32, shards: u32) -> u32 {
     level + elites + cores + shards

@@ -11,11 +11,11 @@ use crate::tuning::{
     Tuning, AIR_SHOT_HOVER, AIR_SHOT_MIN, AIR_SHOT_REACH, AIR_VOLLEY, AIR_VOLLEY_SPREAD_DEG,
     BEAT_CUE_MIN, BEAT_CUE_SHOT_ARC, BEAT_CUE_SHOT_REACH, BEAT_WINDOW, BEAT_WINDOW_MIN, BLAST_SHOW,
     BOLT_HEIGHT, BOLT_RADIUS, BOMB_BOUNCE, BOMB_GRAVITY, BOMB_SHOT_REACH, BOMB_SKID, CAST_CHARGES,
-    DASH_ATTACK_LATE, ELITE_EMBERS, ELITE_HARD_POISE, ELITE_LINGER_DELAY, ELITE_LINGER_RADIUS,
-    FLASK_CHARGES, GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, HP_UNIT, LOCK_BOSS_M,
-    LOCK_FACE_M, LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X,
-    RUN_STAMINA, SHARD_R, SHARD_RANGE, SHARD_REFLECT_DAMAGE, SHARD_REFLECT_SPEED, SHARD_SPEED,
-    STAMINA_DENIED_SHOW, STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
+    DASH_ATTACK_LATE, ELITE_HARD_POISE, ELITE_LINGER_DELAY, ELITE_LINGER_RADIUS, FLASK_CHARGES,
+    GROUND_STEP, HEAVY_SWAY, HIT_DY, HIT_HITSTOP, HIT_SWAY, HP_UNIT, LOCK_BOSS_M, LOCK_FACE_M,
+    LOCK_HANDOFF, P, PERFECT_RELEASE, PLAYER_HP, PLAYER_RADIUS, RUN_SPEED_X, RUN_STAMINA, SHARD_R,
+    SHARD_RANGE, SHARD_REFLECT_DAMAGE, SHARD_REFLECT_SPEED, SHARD_SPEED, STAMINA_DENIED_SHOW,
+    STUN_CHAIN_GRACE, STUN_CHAIN_MAX, TICK_DT,
 };
 use crate::tuning::{ALERT_RADIUS, HEAR_RANGE, SIGHT_DY, SIGHT_RANGE};
 use crate::tuning::{PARRY_CHAIN, PARRY_CHAIN_DECAY, PARRY_CHAIN_WIDEN_DEG, RIPOSTE_WINDOW};
@@ -2776,12 +2776,8 @@ impl World {
                 en.dropped = true;
                 self.fallen.push(i);
                 let seed = (self.time * 1000.0) as u32 ^ (i as u32).wrapping_mul(2654435761);
-                // 잔불 주머니(0064 M3): 값에 배. 엘리트(0112)는 × `ELITE_EMBERS`.
-                let elite = if en.elite.is_some() { ELITE_EMBERS } else { 1 };
-                // 구역 등급(0112): 종 값 × 등급 배율(올림) — 잔재 2 → 4, 가시짐승 3 → 5(등급 2).
-                let base = (en.def().embers as f32 * crate::tuning::tier(en.tier).embers).ceil();
-                // 남는 불씨(0158 G2, 잔불 흩기 ㄴ): 불티 속에서 쓰러졌으면 잔불을 더 남긴다.
-                let value = (base * elite as f32 * self.stats.ember).round() as u32 + en.kindled;
+                // 값은 `Enemy::ember_worth` 한 곳(벌이를 재는 시험 `stage::economy`가 같은 식을 쓴다).
+                let value = en.ember_worth(self.stats.ember);
                 // 남는 엘리트(0112): 쓰러진 자리에 고리가 남는다.
                 if en.elite == Some(Affix::Lingering) {
                     self.lingers.push(Linger {

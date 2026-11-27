@@ -477,7 +477,10 @@ fn elites_drop_more_embers_and_hardened_ones_hold_their_poise() {
         w.step(&Actions::default(), &t);
         w.drops.iter().map(|d| d.value).sum::<u32>()
     };
-    assert_eq!(drop(Some(Affix::Repeating)), drop(None) * ELITE_EMBERS);
+    assert_eq!(
+        drop(Some(Affix::Repeating)),
+        drop(None) * crate::tuning::ELITE_EMBERS
+    );
     let mut plain = Enemy::new(Kind::Husk, Vec3::ZERO);
     plain.make_elite(Affix::Repeating);
     let mut hard = Enemy::new(Kind::Husk, Vec3::ZERO);

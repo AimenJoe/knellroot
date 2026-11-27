@@ -610,6 +610,18 @@ impl Enemy {
         self.hp = self.max_hp;
     }
 
+    /// 쓰러지면 떨구는 잔불(0064 M1): 종 값 × 구역 등급 배율(올림, 0112) × 엘리트 `ELITE_EMBERS` × 잔불 주머니의 배(`mul`,
+    /// 반올림) + 불티 속에서 쓰러졌으면 남는 불씨(0158 G2).
+    pub fn ember_worth(&self, mul: f32) -> u32 {
+        let elite = if self.elite.is_some() {
+            crate::tuning::ELITE_EMBERS
+        } else {
+            1
+        };
+        let base = (self.def().embers as f32 * crate::tuning::tier(self.tier).embers).ceil();
+        (base * elite as f32 * mul).round() as u32 + self.kindled
+    }
+
     /// 엘리트로(0112): 체력 × `ELITE_HP`(올림), 몸 × `ELITE_SCALE`, 성질 하나. 보스는 엘리트가 되지 않는다.
     pub fn make_elite(&mut self, affix: Affix) {
         if self.boss {

@@ -1813,4 +1813,6 @@ impl StageRun {
 }
 
 #[cfg(test)]
+mod economy;
+#[cfg(test)]
 mod tests;
