@@ -68,6 +68,10 @@ pub struct Kit {
     pub rank: u8,
     pub rb: bool,
     pub guard: bool,
+    /// 캐스터의 거리(0282): RB가 주된 공격인 종류(`Quirks::rb_main`)를 들면 틈에 붙은 적(몸 사이 1.6 m 안)은 평타로 밀어내고, 칸이
+    /// 있는 동안은 `KEEP_NEAR`..`KEEP_FAR` m에 서서 쏜다(가까우면 물러서고 멀면 다가간다). 칸이 없으면 다가가지 않고 서 있는다.
+    /// 거짓이면 옛 봇(붙어서 치고 틈에 쏜다).
+    pub keep: bool,
 }
 
 impl Kit {
@@ -76,7 +80,40 @@ impl Kit {
         rank: 0,
         rb: false,
         guard: false,
+        keep: false,
     };
+}
+
+/// 캐스터가 서는 거리(몸 사이 m — 0282 `Kit::keep`).
+const KEEP_NEAR: f32 = 3.0;
+const KEEP_FAR: f32 = 6.0;
+
+/// 캐스터의 거리(0282 `Kit::keep`): 틈(`opening`)에만 — 지키는 움직임(물러나기 · 비키기)은 건드리지 않는다.
+fn caster_stance(w: &World, b: &Build, gap: f32, opening: bool, a: &mut Actions) {
+    let main = w
+        .player
+        .weapon
+        .class()
+        .is_some_and(|c| c.def().quirks.rb_main)
+        && !w.shield_throws();
+    if !(b.kit.keep && main && opening) || a.flask || a.dodge {
+        return;
+    }
+    if gap <= 1.6 {
+        // 붙은 적은 평타로 밀어낸다(위에서 누른 평타 그대로 — 쏘지 않는다).
+        a.move_dir = Vec2::ZERO;
+    } else if w.player.ranged.mana >= 1.0 {
+        a.attack = false;
+        a.move_dir = if gap < KEEP_NEAR {
+            vec2(0.0, -1.0)
+        } else if gap > KEEP_FAR {
+            vec2(0.0, 1.0)
+        } else {
+            Vec2::ZERO
+        };
+    } else if gap <= KEEP_FAR {
+        a.move_dir = Vec2::ZERO;
+    }
 }
 
 /// 스킬을 쓰는 거리(몸 사이 m).
@@ -478,6 +515,7 @@ fn boss_fight(
         if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy && !a.dodge {
             a.attack = true;
         }
+        caster_stance(&w, b, gap, opening, &mut a);
         // 강공격의 손(0276): 평타를 누른 채 다 모을 때까지 쥐고 뗀다(지키는 때가 오면 뗀다).
         if b.style == Style::Heavy {
             let full = t[crate::tuning::P::HeavyCharge]
@@ -703,6 +741,7 @@ pub fn pack_fight(
         if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy {
             a.attack = true;
         }
+        caster_stance(&w, b, gap, opening, &mut a);
         if w.player.hp <= 2 * crate::tuning::HP_UNIT && w.player.flask > 0 && opening && !busy {
             a.flask = true;
             a.attack = false;
@@ -790,7 +829,9 @@ fn kit_strike(w: &World, b: &Build, gap: f32, dist: f32, once: bool, a: &mut Act
         } else {
             w.player.weapon.toss().is_some() && w.player.ranged.mana >= 1.0
         };
-        if ready && (once || main) {
+        // 캐스터의 거리(0282 `Kit::keep`): 붙은 적에게는 쏘지 않고 평타로 밀어낸다.
+        let pushing = main && b.kit.keep && gap <= 1.6;
+        if ready && (once || main) && !pushing {
             a.cast = true;
             a.attack = false;
             return true;
@@ -1635,6 +1676,7 @@ fn multiclass_shield_probe() {
                 rank: RANK,
                 rb: true,
                 guard: true,
+                keep: false,
             },
             ..all[body].clone()
         };
@@ -1752,7 +1794,8 @@ fn multiclass_shield_probe() {
 /// 잡몹 스물과 싸운다. 봇은 0281의 손(종류의 스킬 둘 3레벨 · 틈의 RB · 막거나 구르기) 그대로 — RB가 주된 공격인 종류
 /// (`Quirks::rb_main`)는 틈에 칸이 있는 한 쏜다. 줄마다 이긴 몫 · 이긴 판의 초 · 받은 피해 · 이길 때까지의 초 · RB 수와 **준 피해의 몫**
 /// (RB 탄 · 손의 타 · 나머지 = 스킬 · 속성, `World::tally`). 장비는 보조무기를 비운 것(빈 손의 결)과 쌍단검을 멘 것(보조특성이 잔불뿐이라
-/// 싸움에 닿지 않는다 — 결이 없는 바탕). 봇은 물러서며 쏘지 않는다(붙어서 치고 틈에 쏜다 — 사람의 캐스터 손보다 가깝게 싸운다).
+/// 싸움에 닿지 않는다 — 결이 없는 바탕). `keep` 줄은 캐스터의 거리(`Kit::keep` — 칸이 있으면 3~6 m에 서서 쏘고, 없으면 붙어 온 적만
+/// 친다), 아닌 줄은 옛 봇(붙어서 치고 틈에 쏜다 — 사람의 캐스터 손보다 가깝게 싸운다).
 /// 돌리기: `SIM_RUNS=40 cargo test --release staff_casts_first_probe -- --ignored --nocapture` (`SIM_P` 성공률, `SIM_ONLY=staff`)
 #[test]
 #[ignore]
@@ -1787,9 +1830,12 @@ fn staff_casts_first_probe() {
         (W::Wand, [Sk::Hex, Sk::Word]),
         (W::Sword, [Sk::Whirl, Sk::Pommel]),
     ];
-    let gears: [(&str, Option<W>, bool); 2] = [
-        ("empty", None, true),
-        ("sub Daggers", Some(W::Daggers), false),
+    // (이름, 보조무기, 빈 손, 캐스터의 거리 `Kit::keep` — RB가 주된 공격인 종류만 다르게 움직인다).
+    let gears: [(&str, Option<W>, bool, bool); 4] = [
+        ("empty", None, true, false),
+        ("sub Daggers", Some(W::Daggers), false, false),
+        ("empty keep", None, true, true),
+        ("sub Dag keep", Some(W::Daggers), false, true),
     ];
     let mut jobs: Vec<(usize, usize, usize)> = Vec::new();
     for (ci, (main, _)) in classes.iter().enumerate() {
@@ -1800,7 +1846,11 @@ fn staff_casts_first_probe() {
             continue;
         }
         for bi in 0..bouts.len() {
-            for gi in 0..gears.len() {
+            for (gi, g) in gears.iter().enumerate() {
+                let main = main.class().is_some_and(|c| c.def().quirks.rb_main);
+                if g.3 && !main {
+                    continue;
+                }
                 jobs.push((ci, bi, gi));
             }
         }
@@ -1808,7 +1858,7 @@ fn staff_casts_first_probe() {
     let run = |&(ci, bi, gi): &(usize, usize, usize)| -> Sum {
         let (_, bout, body) = bouts[bi];
         let (main, pair) = classes[ci];
-        let (_, sub, bare) = gears[gi];
+        let (_, sub, bare, keep) = gears[gi];
         let b = Build {
             weapon: main,
             sub,
@@ -1819,6 +1869,7 @@ fn staff_casts_first_probe() {
                 rank: 3,
                 rb: true,
                 guard: true,
+                keep,
             },
             ..all[body].clone()
         };
@@ -1858,14 +1909,14 @@ fn staff_casts_first_probe() {
     );
     for (bi, (name, ..)) in bouts.iter().enumerate() {
         println!("\n### {name}");
-        println!("weapon | gear        | win  | secs(win) | taken | secs/win | RB   | RB dmg | melee dmg");
+        println!("weapon | gear         | win  | secs(win) | taken | secs/win | RB   | RB dmg | melee dmg");
         for (i, &(ci, b2, gi)) in jobs.iter().enumerate() {
             if b2 != bi {
                 continue;
             }
             let m = out[i].lock().unwrap().take().unwrap();
             println!(
-                "{:<6} | {:<11} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>8.1} | {:>4.1} | {:>5.0}% | {:>8.0}%",
+                "{:<6} | {:<12} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>8.1} | {:>4.1} | {:>5.0}% | {:>8.0}%",
                 format!("{:?}", classes[ci].0),
                 gears[gi].0,
                 m.win * 100.0,
