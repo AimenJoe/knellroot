@@ -15,7 +15,7 @@
 
 ## 무기 강화
 
-무기 강화(0180)는 `forge.rs`(순수 셈 — 무기마다 세 단 `Forged`, 값 `COST` = 숫돌 + 잔불, 거두면 숫돌만 돌아온다)와 무기 표의 `Weapon::forge`(근접 = 타마다 피해, 쇠뇌 = 탄창 먼저·`Stats::shot_dmg`·`mag`): 숫돌은 숨은 물건 `Find::Stone`(지도 `O`, 기록 `<스테이지>.stone.<n>` — 가진 수는 `finds`에서, 쓴 수는 벼린 단에서 센다) 또는 상자의 숫돌(`stage::Loot::Stone` — 기록 이름 `stage::chest_stone_id` = `<스테이지>.stone.chest<n>`: 숫돌로 세고 숨은 물건 · 여정의 셈에는 들지 않는다, 0274 ⑦), 벼린 단은 기록 `forge.<무기 키>`, 단은 **든 무기에만**(`Progress::stats`), 탄창은 `World::mag_of` 한 곳(HUD·장전·회피 장전). 화면은 화로의 가게 탭 줄 `app/shop.rs` `ShopRow`(진열 → 벼리기 → 거두기). 단의 값을 바꾸면 `forged_dps_probe`·보스 모의 `SIM_FORGE=<단>`으로 재고, 쇠뇌가 같은 단 검의 일곱 할 밑인지 시험이 본다.
+무기 강화(0180)는 `forge.rs`(순수 셈 — 무기마다 세 단 `Forged`, 값 `COST` = 숫돌 + 잔불, 거두면 숫돌만 돌아온다)와 무기 표의 `Weapon::forge`(근접 = 타마다 피해, 쇠뇌 = 탄창 먼저·`Stats::shot_dmg`·`mag`): 숫돌은 숨은 물건 `Find::Stone`(지도 `O`, 기록 `<스테이지>.stone.<n>` — 가진 수는 `finds`에서, 쓴 수는 벼린 단에서 센다) 또는 상자의 숫돌(`stage::Loot::Stone` — 기록 이름 `stage::chest_stone_id` = `<스테이지>.stone.chest<n>`: 숫돌로 세고 숨은 물건 · 여정의 셈에는 들지 않는다, 0274 ⑦), 벼린 단은 기록 `forge.<무기 키>`(0286부터 맨손도 — `forge.fists`, 몽크가 정원 · 작업층의 잡몹 대 수 폭 안에 남게), 단은 **든 무기에만**(`Progress::stats`), 탄창은 `World::mag_of` 한 곳(HUD·장전·회피 장전). 화면은 화로의 가게 탭 줄 `app/shop.rs` `ShopRow`(진열 → 벼리기 → 거두기). 단의 값을 바꾸면 `forged_dps_probe`·보스 모의 `SIM_FORGE=<단>`으로 재고, 쇠뇌가 같은 단 검의 일곱 할 밑인지 시험이 본다.
 
 ## 덧옷
 
