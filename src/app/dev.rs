@@ -272,7 +272,7 @@ fn arm_names(arms: impl Iterator<Item = Option<(crate::weapons::Id, bool)>>) -> 
 fn sub_ids() -> Vec<crate::weapons::Id> {
     crate::weapons::IDS
         .into_iter()
-        .filter(|w| w.class().is_some())
+        .filter(|w| w.slings())
         .collect()
 }
 

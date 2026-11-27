@@ -2066,6 +2066,10 @@ pub struct Quirks {
     /// 않는다 — RB는 그대로 종류의 것(`World::shield_throws` 한 곳 — 지팡이는 양손이라 방패와 들지 않는다). 없으면 방패가 RB를 맡는다
     /// (한손검 · 망치 · 낫 · 맨손). 보스 모의의 봇도 이것을 보고 틈에 칸이 있는 한 쏜다(`balance::kit_strike`).
     pub rb_main: bool,
+    /// 주무기만 든다(0286 — 몽크): 보조무기 슬롯을 쓰지 않는다 — 보조무기도 방패도 들지 않고(슬롯이 잠긴다), 이 종류의 무기는 보조무기로
+    /// 메지도 못한다. 빈 손의 결이 늘 켜진다(`World::bare`). 앱의 장비 길(`App::wield` · `set_sub_weapon` · `set_shield`)과 기록 읽기
+    /// (`save::Progress::lock_off_hand`)가 이것을 본다.
+    pub one_slot: bool,
 }
 
 impl Quirks {
@@ -2073,6 +2077,7 @@ impl Quirks {
         keen: false,
         steady_swing: None,
         rb_main: false,
+        one_slot: false,
     };
 }
 
@@ -2452,6 +2457,11 @@ impl Id {
     /// 방패와 드나(0223 → 0281): 한손 계열(한손 종류 · 맨손) — 방패가 막기 · 들이받기를 맡고 쥔 꼴이 방패 트리를 더한다.
     pub fn takes_shield(self) -> bool {
         self.hand() == Hand::One
+    }
+
+    /// 보조무기로 멜 수 있나(0286): 종류가 있고 주무기만 드는 종류가 아니다 — 맨손은 메지 않는다.
+    pub fn slings(self) -> bool {
+        self.class().is_some_and(|c| !c.def().quirks.one_slot)
     }
 
     /// 방패와 들면 RB가 방패 던지기인가(0276 → 0281): 방패와 들고, 종류의 RB가 주된 공격이 아니다(`Quirks::rb_main` — 완드는
