@@ -2001,7 +2001,7 @@ pub enum Bare {
     TwoHands,
     /// 망치 — 기도하는 손: 등잔 한 모금을 삼키는 순간 둘레에 울림 고리(가까운 적에 울림 게이지 + 밀림, 회복은 그대로).
     Prayer,
-    /// 지팡이 — 두 손으로 엮는다: RB 칸 +1(`BARE_STAFF_CHARGES`), 모으는 시간 × `BARE_STAFF_CHARGE`.
+    /// 지팡이 — 두 손으로 엮는다: RB 칸 +`BARE_STAFF_EXTRA`(종류의 칸 위에 — 0282), 모으는 시간 × `BARE_STAFF_CHARGE`.
     Weave,
     /// 쇠뇌 — 장치를 하나 더: 공격 버튼(수류탄 자리)이 덫을 놓는다(`world::Snare` — 밟은 잡몹은 묶이고 문지기는 느려진다).
     Snare,
@@ -2031,7 +2031,8 @@ pub const BARE_SWORD_HEAVY_POISE: f32 = 1.6;
 pub const BARE_SWORD_HEAVY_BOSS: f32 = 1.05;
 pub const BARE_SWORD_HEAVY_REACH: f32 = 1.1;
 pub const BARE_SWORD_LAST_ARC: f32 = 1.5;
-pub const BARE_STAFF_CHARGES: f32 = 4.0;
+/// 두 손으로 엮는 지팡이의 RB 칸 덤(0282: 종류의 칸 `Toss::charges` 위에 하나 — 옛 값은 칸의 수 넷을 그대로 적었다: 칸 셋 + 1).
+pub const BARE_STAFF_EXTRA: f32 = 1.0;
 pub const BARE_STAFF_CHARGE: f32 = 0.6;
 /// 활을 당긴 채 걷기(`cast.walk` 0.5에 곱한다 — 0.85): 보통은 `BOW_DRAW_WALK` 1.2(0.6).
 pub const BARE_BOW_WALK: f32 = 1.7;

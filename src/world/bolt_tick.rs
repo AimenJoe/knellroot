@@ -657,7 +657,7 @@ impl World {
                     self.veins.sipped = true;
                 }
                 let crit = en.exposed > 0.0;
-                en.hp -= wound(
+                let hurt = wound(
                     en,
                     self.stats.dmg
                         + b.def.damage
@@ -672,6 +672,11 @@ impl World {
                     t,
                     ev,
                 );
+                #[cfg(test)]
+                {
+                    self.tally.bolt += hurt.min(en.hp.max(0));
+                }
+                en.hp -= hurt;
                 en.exposed = 0.0;
                 en.struck();
                 en.knock = b.dir * t[P::Knockback] * if en.boss { 0.1 } else { 0.5 };

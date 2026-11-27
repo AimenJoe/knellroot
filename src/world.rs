@@ -973,6 +973,16 @@ pub struct Bolt {
     pub bounce: u8,
 }
 
+/// 준 피해의 출처(시험 · 모의만, 0282 — `World::tally`).
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Tally {
+    /// 날아가는 RB 탄(마법 탄 · 저주탄 · 손도끼 …)이 깎은 체력.
+    pub bolt: i32,
+    /// 손의 타(평타 · 대시 · 강공격 · 반격)가 깎은 체력.
+    pub melee: i32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PState {
     Idle,
@@ -1475,6 +1485,10 @@ pub struct World {
     /// `GREATSWORD_KNOCK`) — 휘청 줄임이 보스전을 얼마나 빠르게 하나 재려고(`balance::class_fight_probe`).
     #[cfg(test)]
     pub flinch_probe: Option<f32>,
+    /// 시험 · 모의만(0282): 방랑자가 준 피해를 출처로 센다 — 날아가는 RB 탄 · 손의 타(평타 · 대시 · 강공격 · 패링 반격). 지팡이가
+    /// 마법을 주로 쓰나(피해가 근접에서 탄으로 옮겨 갔나) 재려고(`balance::staff_casts_first_probe`). 동작에는 닿지 않는다.
+    #[cfg(test)]
+    pub tally: Tally,
     /// 지난 틱의 락온 앞(수평 단위), 락온이 아니면 None — 풀리는 틱에 `hold`로 넘긴다.
     last_lock_fwd: Option<Vec3>,
     /// 풀린 뒤 쥔 스틱의 기준(앞, 경과 초). 스틱을 놓거나 `move.hold after unlock s`가 지나면 끝.
@@ -1702,6 +1716,8 @@ impl World {
             unhurt: false,
             #[cfg(test)]
             flinch_probe: None,
+            #[cfg(test)]
+            tally: Tally::default(),
             last_lock_fwd: None,
             hold: None,
             spill_at: None,
@@ -2141,12 +2157,13 @@ impl World {
         Some(h)
     }
 
-    /// RB 칸의 수(0111 — 두 손으로 엮는 지팡이 0276은 하나 더, 0274 ⑥: 완드의 저주탄은 종류의 칸 `Toss::charges`).
+    /// RB 칸의 수(0111 — 종류의 칸 `Toss::charges`(0274 ⑥ 완드 · 0282 지팡이는 많다), 두 손으로 엮는 지팡이 0276은 그 위에 하나 더).
     pub fn cast_charges(&self) -> f32 {
+        let own = self.rb_toss().map_or(CAST_CHARGES, |r| r.charges);
         if self.bare() == Some(weapons::Bare::Weave) {
-            weapons::BARE_STAFF_CHARGES
+            own + weapons::BARE_STAFF_EXTRA
         } else {
-            self.rb_toss().map_or(CAST_CHARGES, |r| r.charges)
+            own
         }
     }
 

@@ -447,7 +447,12 @@ impl World {
             } else {
                 raw
             };
-            en.hp -= wound(en, raw, crit, self.stats.opened_dmg, knack, t, ev);
+            let hurt = wound(en, raw, crit, self.stats.opened_dmg, knack, t, ev);
+            #[cfg(test)]
+            {
+                self.tally.melee += hurt.min(en.hp.max(0));
+            }
+            en.hp -= hurt;
             if crit {
                 en.exposed = 0.0;
                 ev.push(Event::Crit {

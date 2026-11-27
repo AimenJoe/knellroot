@@ -107,6 +107,10 @@ pub struct Fight {
     pub interrupted: u32,
     /// 0281 손의 셈: 방패로 받은 타 · 들이받기 · RB · 스킬.
     pub uses: Uses,
+    /// 0282 준 피해의 출처(`World::tally`): 날아간 RB 탄 · 손의 타 · 모두(적이 잃은 체력 — 스킬 · 속성 · 그 밖은 나머지).
+    pub dmg_bolt: i32,
+    pub dmg_melee: i32,
+    pub dmg_all: i32,
 }
 
 /// 봇이 쓴 손의 셈(0281 — 모의가 정말 그 손을 썼나 본다).
@@ -579,6 +583,9 @@ fn boss_fight(
         dmg_reflect,
         interrupted,
         uses,
+        dmg_bolt: w.tally.bolt,
+        dmg_melee: w.tally.melee,
+        dmg_all: e.max_hp - e.hp.max(0),
     }
 }
 
@@ -724,6 +731,7 @@ pub fn pack_fight(
         hp_seen = w.player.hp;
     }
     let left: i32 = w.enemies.iter().map(|e| e.hp.max(0)).sum();
+    let all: i32 = w.enemies.iter().map(|e| e.max_hp).sum::<i32>() - left;
     Fight {
         won: w.enemies.iter().all(|e| !e.alive()),
         secs: tick as f32 / 60.0,
@@ -732,6 +740,9 @@ pub fn pack_fight(
         boss_hp_left: left,
         parries,
         uses,
+        dmg_bolt: w.tally.bolt,
+        dmg_melee: w.tally.melee,
+        dmg_all: all,
         ..Fight::default()
     }
 }
@@ -835,6 +846,8 @@ pub struct Sum {
     pub interrupted: f32,
     /// 판마다의 손의 셈 평균(구르기 · 방패로 받은 타 · 들이받기 · RB · 스킬).
     pub uses: [f32; 5],
+    /// 준 피해의 몫(0282): RB 탄 · 손의 타(나머지 = 스킬 · 속성 · 그 밖), 모든 판을 더해서.
+    pub source: (f32, f32),
 }
 
 pub fn summary(kind: Kind, b: &Build, p: f32, runs: u64, t: &Tuning) -> Sum {
@@ -859,6 +872,10 @@ pub fn sum_of(fs: Vec<Fight>) -> Sum {
         (a.0 + f.dmg_plain, a.1 + f.dmg_opened, a.2 + f.dmg_reflect)
     });
     let all = (pl + op + rf).max(1) as f32;
+    let (bolt, melee, dealt) = fs.iter().fold((0, 0, 0), |a, f| {
+        (a.0 + f.dmg_bolt, a.1 + f.dmg_melee, a.2 + f.dmg_all)
+    });
+    let dealt = dealt.max(1) as f32;
     Sum {
         win: wins.len() as f32 / n,
         secs,
@@ -875,6 +892,7 @@ pub fn sum_of(fs: Vec<Fight>) -> Sum {
             avg(&|f| f.uses.casts as f32),
             avg(&|f| f.uses.skills as f32),
         ],
+        source: (bolt as f32 / dealt, melee as f32 / dealt),
     }
 }
 
@@ -1726,6 +1744,138 @@ fn multiclass_shield_probe() {
         }
         if !any {
             println!("  none");
+        }
+    }
+}
+
+/// 지팡이는 마법이 먼저(0282 — 사장 "지팡이를 어떻게 할까" → "완드처럼 바꾼다"): 지팡이를 완드 · 한손검 곁에 두고 문지기 둘 · 정예 무리 ·
+/// 잡몹 스물과 싸운다. 봇은 0281의 손(종류의 스킬 둘 3레벨 · 틈의 RB · 막거나 구르기) 그대로 — RB가 주된 공격인 종류
+/// (`Quirks::rb_main`)는 틈에 칸이 있는 한 쏜다. 줄마다 이긴 몫 · 이긴 판의 초 · 받은 피해 · 이길 때까지의 초 · RB 수와 **준 피해의 몫**
+/// (RB 탄 · 손의 타 · 나머지 = 스킬 · 속성, `World::tally`). 장비는 보조무기를 비운 것(빈 손의 결)과 쌍단검을 멘 것(보조특성이 잔불뿐이라
+/// 싸움에 닿지 않는다 — 결이 없는 바탕). 봇은 물러서며 쏘지 않는다(붙어서 치고 틈에 쏜다 — 사람의 캐스터 손보다 가깝게 싸운다).
+/// 돌리기: `SIM_RUNS=40 cargo test --release staff_casts_first_probe -- --ignored --nocapture` (`SIM_P` 성공률, `SIM_ONLY=staff`)
+#[test]
+#[ignore]
+fn staff_casts_first_probe() {
+    use crate::scenario::Scenario;
+    use crate::skills::Id as Sk;
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs: u64 = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(40);
+    let p: f32 = std::env::var("SIM_P")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.7);
+    let only = std::env::var("SIM_ONLY").ok();
+    let all = builds();
+    #[derive(Clone, Copy, Debug)]
+    enum Bout {
+        Boss(Kind),
+        Pack(Scenario),
+    }
+    let bouts: [(&str, Bout, usize); 4] = [
+        ("bellkeeper (B)", Bout::Boss(Kind::Bellkeeper), 1),
+        ("stag field boss (D)", Bout::Boss(Kind::Stag), 3),
+        ("elite pack (B)", Bout::Pack(Scenario::Elites), 1),
+        ("horde of 20 (B)", Bout::Pack(Scenario::Horde), 1),
+    ];
+    let classes: [(W, [Sk; 2]); 3] = [
+        (W::Staff, [Sk::Snow, Sk::Flare]),
+        (W::Wand, [Sk::Hex, Sk::Word]),
+        (W::Sword, [Sk::Whirl, Sk::Pommel]),
+    ];
+    let gears: [(&str, Option<W>, bool); 2] = [
+        ("empty", None, true),
+        ("sub Daggers", Some(W::Daggers), false),
+    ];
+    let mut jobs: Vec<(usize, usize, usize)> = Vec::new();
+    for (ci, (main, _)) in classes.iter().enumerate() {
+        if only
+            .as_deref()
+            .is_some_and(|o| !format!("{main:?}").eq_ignore_ascii_case(o))
+        {
+            continue;
+        }
+        for bi in 0..bouts.len() {
+            for gi in 0..gears.len() {
+                jobs.push((ci, bi, gi));
+            }
+        }
+    }
+    let run = |&(ci, bi, gi): &(usize, usize, usize)| -> Sum {
+        let (_, bout, body) = bouts[bi];
+        let (main, pair) = classes[ci];
+        let (_, sub, bare) = gears[gi];
+        let b = Build {
+            weapon: main,
+            sub,
+            shield: false,
+            bare,
+            kit: Kit {
+                skills: Some(pair),
+                rank: 3,
+                rb: true,
+                guard: true,
+            },
+            ..all[body].clone()
+        };
+        sum_of(
+            (0..runs)
+                .map(|s| match bout {
+                    Bout::Boss(k) => fight_vs(k, false, &b, p, s + 1, &t),
+                    Bout::Pack(sc) => pack_fight(sc, &b, p, s + 1, &t),
+                })
+                .collect(),
+        )
+    };
+    let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let out: Vec<std::sync::Mutex<Option<Sum>>> =
+        jobs.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|sc| {
+        for _ in 0..threads {
+            sc.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(job) = jobs.get(i) else { break };
+                let m = run(job);
+                *out[i].lock().unwrap() = Some(m);
+            });
+        }
+    });
+    let cost = |m: &Sum| {
+        if m.win > 0.0 {
+            m.secs / m.win
+        } else {
+            f32::INFINITY
+        }
+    };
+    println!(
+        "p = {p}, runs = {runs}, skill rank 3, guard roll = {}",
+        guard_p(p)
+    );
+    for (bi, (name, ..)) in bouts.iter().enumerate() {
+        println!("\n### {name}");
+        println!("weapon | gear        | win  | secs(win) | taken | secs/win | RB   | RB dmg | melee dmg");
+        for (i, &(ci, b2, gi)) in jobs.iter().enumerate() {
+            if b2 != bi {
+                continue;
+            }
+            let m = out[i].lock().unwrap().take().unwrap();
+            println!(
+                "{:<6} | {:<11} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>8.1} | {:>4.1} | {:>5.0}% | {:>8.0}%",
+                format!("{:?}", classes[ci].0),
+                gears[gi].0,
+                m.win * 100.0,
+                m.secs,
+                m.taken,
+                cost(&m),
+                m.uses[3],
+                m.source.0 * 100.0,
+                m.source.1 * 100.0,
+            );
         }
     }
 }

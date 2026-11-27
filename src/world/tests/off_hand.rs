@@ -352,20 +352,22 @@ fn a_long_grip_reaches_farther_and_runs_the_lunge_twice() {
     assert!(long.2 > 0, "the second thrust pierces on to it");
 }
 
-/// 0276 지팡이 "두 손으로 엮는다": RB 칸이 하나 더(넷), 모은 탄을 빨리 모은다.
+/// 0276 지팡이 "두 손으로 엮는다": RB 칸이 종류의 칸보다 하나 더(0282 — 칸이 많아진 지팡이에서도 덤은 하나), 모은 탄을 빨리 모은다.
 #[test]
 fn woven_hands_hold_one_more_charge_and_gather_faster() {
     let t = Tuning::default();
+    let own = Id::Staff.toss().expect("staff toss").charges;
     let mut w = bare_world(Id::Staff);
-    assert_eq!(w.cast_charges(), weapons::BARE_STAFF_CHARGES);
+    assert_eq!(weapons::BARE_STAFF_EXTRA, 1.0);
+    assert_eq!(w.cast_charges(), own + weapons::BARE_STAFF_EXTRA);
     assert!(w.cast_full(&t) < t[P::CastCharge] * 0.7);
     w.player.ranged.mana = 0.0;
-    wait(&mut w, &t, t[P::CastCooldown] * 6.0);
-    assert!((w.player.ranged.mana - weapons::BARE_STAFF_CHARGES).abs() < 1e-3);
+    wait(&mut w, &t, t[P::CastCooldown] * 12.0);
+    assert!((w.player.ranged.mana - (own + weapons::BARE_STAFF_EXTRA)).abs() < 1e-3);
     w.set_open_hand(false);
     wait(&mut w, &t, 0.1);
-    assert!(w.player.ranged.mana <= CAST_CHARGES + 1.0);
-    assert_eq!(w.cast_charges(), CAST_CHARGES);
+    assert!(w.player.ranged.mana <= own + 1.0);
+    assert_eq!(w.cast_charges(), own);
     assert_eq!(w.cast_full(&t), t[P::CastCharge]);
 }
 
