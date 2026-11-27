@@ -193,6 +193,70 @@ fn arm_cycle() -> Vec<(crate::weapons::Id, bool)> {
         .collect()
 }
 
+/// 놀이터의 보조무기 슬롯에 선 것(방패를 들었나 · 멘 보조무기 · "보조무기 비우기") — 게임과 같이 **슬롯은 하나**다(0224):
+/// 방패를 들면 멘 무기와 비우기를 내리고, 무기를 메거나 비우기를 켜면 방패를 내린다. 마지막에 고른 것이 선다 — 개발 창의
+/// 세 줄이 서로 어긋난 채 아레나에서 방패만 말없이 사라지지 않게(사장 2026-11-27 "방패가 없는데..?").
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) struct OffSlot {
+    pub shield: bool,
+    pub sub: Option<crate::weapons::Id>,
+    pub bare: bool,
+}
+
+/// 보조 슬롯에 고른 것.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum OffPick {
+    Shield(bool),
+    Sub(Option<crate::weapons::Id>),
+    Bare(bool),
+}
+
+impl OffSlot {
+    pub(super) fn pick(self, p: OffPick) -> OffSlot {
+        match p {
+            OffPick::Shield(true) => OffSlot {
+                shield: true,
+                sub: None,
+                bare: false,
+            },
+            OffPick::Shield(false) => OffSlot {
+                shield: false,
+                ..self
+            },
+            OffPick::Sub(Some(w)) => OffSlot {
+                shield: false,
+                sub: Some(w),
+                bare: false,
+            },
+            OffPick::Sub(None) => OffSlot { sub: None, ..self },
+            // 비우기를 켜도 멘 무기는 기억한다(끄면 되돌아온다) — 방패는 다시 골라야 선다.
+            OffPick::Bare(true) => OffSlot {
+                shield: false,
+                bare: true,
+                ..self
+            },
+            OffPick::Bare(false) => OffSlot {
+                bare: false,
+                ..self
+            },
+        }
+    }
+
+    /// 슬롯이 비어 있나("주무기 바꾸기"의 차례에 "+ 방패" 칸이 서는 때).
+    pub(super) fn free(self) -> bool {
+        self.sub.is_none() && !self.bare
+    }
+}
+
+/// "주무기 바꾸기"가 도는 차례: 보조 슬롯이 비어 있지 않으면(무기를 멨거나 비우기를 켰으면) "+ 방패" 칸을 건너뛴다 — 무기를
+/// 넘기다가 고른 보조무기 · 비우기가 풀리지 않게.
+fn arm_steps(off: OffSlot) -> Vec<(crate::weapons::Id, bool)> {
+    arm_cycle()
+        .into_iter()
+        .filter(|(_, shield)| !shield || off.free())
+        .collect()
+}
+
 /// 차례의 이름 줄(개발 창 설명 — `ARM_NOTE`의 `{1}` · `ARM_SUB_NOTE`의 `{1}`): 무기 이름을 화살표로.
 fn arm_names(arms: impl Iterator<Item = Option<(crate::weapons::Id, bool)>>) -> String {
     arms.map(|a| match a {
@@ -585,7 +649,7 @@ impl App {
             // 든 무기를 표의 다음 것으로(0223 V3 — 차례는 `arm_cycle`) — 이 창에서 시작하는 아레나와 "기술 끼우기"가 그 무기로 선다. 기록은 그대로.
             DevStart::Arm => {
                 let now = (self.weapon, self.progress.shield.is_some());
-                let cycle = arm_cycle();
+                let cycle = arm_steps(self.dev_off());
                 let at = cycle.iter().position(|c| *c == now).unwrap_or(0);
                 let (w, s) = cycle[(at + 1) % cycle.len()];
                 self.dev_arm(w, s);
@@ -595,18 +659,19 @@ impl App {
             // 아레나에서 든 무기와 같으면 비워진다(`arm_sandbox`). 기록은 그대로.
             DevStart::ArmSub => {
                 let ids = sub_ids();
-                self.dev.sub = match self.dev.sub {
+                let next = match self.dev.sub {
                     None => ids.first().copied(),
                     Some(w) => ids
                         .iter()
                         .position(|i| *i == w)
                         .and_then(|at| ids.get(at + 1).copied()),
                 };
+                self.dev_pick(OffPick::Sub(next));
                 self.snd(crate::sfx::Id::Buy);
             }
             // 놀이터의 보조무기 슬롯을 비운다 · 되돌린다(0276). 기록은 그대로.
             DevStart::ArmBare => {
-                self.dev.bare = !self.dev.bare;
+                self.dev_pick(OffPick::Bare(!self.dev.bare));
                 self.snd(crate::sfx::Id::Buy);
             }
             DevStart::Motion(w) => self.go(Go::Open(Scene::Motions {
@@ -654,7 +719,7 @@ impl App {
         match c {
             DevCmd::Start(e) => self.dev_start(e),
             DevCmd::Arm(w, s) => self.dev_arm(w, s),
-            DevCmd::Sub(w) => self.dev.sub = w,
+            DevCmd::Sub(w) => self.dev_pick(OffPick::Sub(w)),
             DevCmd::Show(e) => {
                 let Some(tab) = DEV_CATS
                     .iter()
@@ -675,7 +740,24 @@ impl App {
     /// 든 무기를 정한다(개발 창 — 기록은 그대로): 방패는 "검과 방패"의 칸에서만.
     fn dev_arm(&mut self, w: crate::weapons::Id, shield: bool) {
         self.weapon = w;
-        self.progress.shield = shield.then_some(crate::shield::Id::Pilgrim);
+        self.dev_pick(OffPick::Shield(shield));
+    }
+
+    /// 놀이터의 보조 슬롯에 지금 선 것.
+    fn dev_off(&self) -> OffSlot {
+        OffSlot {
+            shield: self.progress.shield.is_some(),
+            sub: self.dev.sub,
+            bare: self.dev.bare,
+        }
+    }
+
+    /// 보조 슬롯에 하나를 고른다 — 나머지는 `OffSlot::pick`의 규칙대로 내린다(슬롯은 하나).
+    fn dev_pick(&mut self, p: OffPick) {
+        let off = self.dev_off().pick(p);
+        self.progress.shield = off.shield.then_some(crate::shield::Id::Pilgrim);
+        self.dev.sub = off.sub;
+        self.dev.bare = off.bare;
     }
 
     /// 줄 이름 — 모션 보기 줄은 무기 이름을 채운다.
@@ -706,8 +788,11 @@ impl App {
             DevStart::Arm => fill(
                 &e.note(),
                 &[
-                    weapon_name(self.weapon),
-                    &arm_names(arm_cycle().into_iter().map(Some)),
+                    &arm_names(std::iter::once(Some((
+                        self.weapon,
+                        self.progress.shield.is_some(),
+                    )))),
+                    &arm_names(arm_steps(self.dev_off()).into_iter().map(Some)),
                 ],
             ),
             DevStart::ArmSub => fill(
@@ -883,6 +968,54 @@ mod tests {
             "ArmSub(Bow)",
         ] {
             assert!(DevCmd::parse(n).is_some(), "{n}");
+        }
+    }
+
+    /// 놀이터의 보조 슬롯은 하나다(사장 2026-11-27 "방패가 없는데..?" — 보조무기를 멘 채 "+ 방패"를 고르면 아레나에서 방패가
+    /// 말없이 내려갔다): 방패를 고르면 멘 무기와 비우기가 내려가고, 무기를 메거나 비우기를 켜면 방패가 내려간다. 비우기를 꺼도
+    /// 멘 무기는 되돌아온다. 슬롯이 차 있으면 "주무기 바꾸기"는 "+ 방패" 칸을 건너뛴다.
+    #[test]
+    fn the_dev_off_hand_slot_holds_one_thing_and_the_last_pick_stands() {
+        use crate::weapons::Id as W;
+        let empty = OffSlot {
+            shield: false,
+            sub: None,
+            bare: false,
+        };
+        let with_sub = empty.pick(OffPick::Sub(Some(W::Hammer)));
+        let shielded = with_sub.pick(OffPick::Shield(true));
+        assert_eq!(
+            shielded,
+            OffSlot {
+                shield: true,
+                sub: None,
+                bare: false
+            },
+            "picking the shield drops the slung weapon"
+        );
+        assert!(!shielded.pick(OffPick::Sub(Some(W::Bow))).shield);
+        let bare = shielded.pick(OffPick::Bare(true));
+        assert!(!bare.shield && bare.bare);
+        assert!(empty
+            .pick(OffPick::Bare(true))
+            .pick(OffPick::Shield(true))
+            .free());
+        // 비우기는 멘 무기를 기억한다.
+        let back = with_sub
+            .pick(OffPick::Bare(true))
+            .pick(OffPick::Bare(false));
+        assert_eq!(back, with_sub);
+        // 방패 없는 칸으로 넘어가면 방패만 내린다.
+        assert_eq!(with_sub.pick(OffPick::Shield(false)), with_sub);
+        // 차례: 빈 슬롯이면 "+ 방패" 칸이 서고, 차 있으면 건너뛴다(무기는 빠지지 않는다).
+        let plain = |v: &[(W, bool)]| v.iter().filter(|(_, s)| !s).count();
+        let all = arm_steps(empty);
+        assert_eq!(all, arm_cycle());
+        assert!(all.contains(&(W::Sword, true)) && all.contains(&(W::Wand, true)));
+        for full in [with_sub, bare] {
+            let steps = arm_steps(full);
+            assert!(steps.iter().all(|(_, s)| !s), "{full:?}");
+            assert_eq!(plain(&steps), plain(&all));
         }
     }
 

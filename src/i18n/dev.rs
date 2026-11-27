@@ -163,12 +163,12 @@ pub const SKILLS_MAX_NOTE: Pair = (
 pub const SKILLS_FLIP: Pair = ("고르기 바꾸기(ㄱ·ㄴ)", "flip all picks (A/B)");
 pub const ARM: Pair = ("주무기 바꾸기", "change the main weapon");
 pub const ARM_NOTE: Pair = (
-    "지금: {0}. 주무기를 다음 것으로 바꾼다({1}). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다). 여기서 고른 무기를 장착하고 아레나에 선다. 저장하지 않는다.",
-    "now: {0}. cycle the held weapon ({1}). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved.",
+    "지금: {0}. 주무기를 다음 것으로 바꾼다({1}). 방패와 함께 드는 칸은 보조무기가 없고 보조무기 비우기가 꺼져 있을 때만 나온다(방패를 들면 보조무기는 내린다). 스킬은 무기 종류를 탄다(맨손은 무기 스킬을 못 쓴다). 여기서 고른 무기를 장착하고 아레나에 선다. 저장하지 않는다.",
+    "now: {0}. cycle the held weapon ({1}). The shield steps show only with no off-hand weapon and the empty-slot switch off (a shield drops the off-hand weapon). Skills go by weapon class (bare hands wield none): wear and enter arenas with this one. nothing is saved.",
 );
 pub const ARM_SUB: Pair = ("보조무기 바꾸기", "change the off-hand weapon");
 pub const ARM_SUB_NOTE: Pair = (
-    "지금: {0}. 아레나의 보조무기를 다음 것으로 바꾼다({1}). 주무기와 같으면 비워진다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 교체)을 본다. 저장하지 않는다.",
+    "지금: {0}. 아레나의 보조무기를 다음 것으로 바꾼다({1}). 주무기와 같으면 비워진다. 보조무기를 메면 방패는 내린다. 보조특성과 교체 공격(맞힌 직후·패링 직후의 무기 교체)을 본다. 저장하지 않는다.",
     "now: {0}. cycle the arena's off-hand weapon ({1}); the same as the held weapon means none. For off-hand traits and the swap attack (swap right after a hit or a parry). nothing is saved.",
 );
 pub const ARM_BARE: Pair = ("보조무기 비우기(켬/끔)", "empty the off hand (on/off)");
