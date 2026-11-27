@@ -262,6 +262,9 @@ pub(super) fn cue(e: &Event, cx: &CueCtx) -> Cue {
             .zoom(ZOOM_CRIT),
         Event::FuryFull { .. } => Cue::snd(Id::Fury, 0.0),
         Event::Pull { .. } => Cue::snd(Id::Pull, 0.0),
+        // 0284: 대검의 무거운 평타 = 맞힘 소리 위에 둔한 쿵(벽 쿵의 몸) + 강타의 킥(평타의 킥보다 크게) — 줌은 없다(평타라 늘 당기면
+        // 멀미, 0145).
+        Event::Heft { at } => Cue::snd(Id::Slam, SHAKE_HIT).punch(at, KICK_SMASH_DEG),
     }
 }
 

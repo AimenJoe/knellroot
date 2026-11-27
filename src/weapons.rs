@@ -122,8 +122,25 @@ pub fn clip_rate(anim: &str, s0: f32) -> f32 {
         .map_or(1.0, |(_, _, (c0, _))| if s0 > 1e-4 { c0 / s0 } else { 1.0 })
 }
 
-/// 콤보 한 타.
-#[derive(Clone, Copy, Debug)]
+/// 평타의 동작 시각(0284): 타의 시각 `e`(초 — 몰아치기 · 분노의 배를 이미 곱한 것)에서 동작의 자리. 선딜 `s0`(들어 올림 `windup`까지
+/// 곱한 것)까지는 동작이 만든 판정 시작에 닿게 — 들어 올림이 늘어난 타(`windup` > 1 — 대검)는 빨리 들어 올려 꼭대기에서 머무는
+/// 꼴(ease-out)로, 그 뒤(휘두름 · 거두기)는 들어 올림을 늘이기 전의 빠르기로 돈다(무게는 들어 올림과 거둠에, 휘두름은 그대로 빠르다).
+/// `windup` 1이면 옛 `e × clip_rate` 그대로.
+pub fn clip_at(anim: &str, e: f32, s0: f32, windup: f32) -> f32 {
+    let rate = clip_rate(anim, s0);
+    if windup == 1.0 {
+        return e * rate;
+    }
+    if e < s0 {
+        let u = (e / s0.max(1e-4)).clamp(0.0, 1.0);
+        s0 * rate * (1.0 - (1.0 - u) * (1.0 - u))
+    } else {
+        s0 * rate + (e - s0) * rate * windup
+    }
+}
+
+/// 콤보 한 타. Debug는 0284 앞의 꼴에 바탕이 아닌 들어 올림만 덧붙인다(`weapon_fixture.txt` — 다른 무기의 줄은 그대로).
+#[derive(Clone, Copy)]
 pub struct Hit {
     /// 선딜·활성·후딜 모두에 곱한다(1 = 랩 평타 그대로, 클수록 느리다).
     pub time: f32,
@@ -148,6 +165,33 @@ pub struct Hit {
     pub pull: f32,
     /// 맞은 적에게 쌓는 속성 게이지(0274 ⑥ — 완드의 셋째 타: 저주를 새기는 찌르기 = 균열). 없으면 `NO_DOSE`.
     pub dose: Dose,
+    /// 들어 올림(0284 — 대검, 사장 판정 p-gs "연타하면 그냥 빠른데"): 선딜에만 한 번 더 곱한다(1 = 랩의 선딜 · 활성 비 그대로). 무게는
+    /// 들어 올림과 거둠에 — 휘두름(활성)은 `time` 그대로 빠르다. 동작은 `clip_at`이 들어 올림만 늘인다. 1보다 크면 맞힌 휘두르기마다
+    /// `Event::Heft`(무거운 타의 손맛).
+    pub windup: f32,
+}
+
+impl std::fmt::Debug for Hit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut d = f.debug_struct("Hit");
+        d.field("time", &self.time)
+            .field("reach", &self.reach)
+            .field("arc", &self.arc)
+            .field("lunge", &self.lunge)
+            .field("shape", &self.shape)
+            .field("damage", &self.damage)
+            .field("poise", &self.poise)
+            .field("knock", &self.knock)
+            .field("anim", &self.anim)
+            .field("cancel", &self.cancel)
+            .field("cleave", &self.cleave)
+            .field("pull", &self.pull)
+            .field("dose", &self.dose);
+        if self.windup != 1.0 {
+            d.field("windup", &self.windup);
+        }
+        d.finish()
+    }
 }
 
 /// 강타(공격 꾹, 0030).
@@ -636,6 +680,7 @@ const fn hit(
         cleave: 0,
         pull: 0.0,
         dose: NO_DOSE,
+        windup: 1.0,
     }
 }
 
@@ -1057,32 +1102,43 @@ pub const DAGGER_HALF: f32 = 0.4;
 /// 크게 되받아 · 머리 위에서 내려찍기. 한 타가 넓고(180° 안팎 · 2.3 m) 앞의 셋까지 벤다(`cleave` — 가까운 것부터), 한 적에게는 검과
 /// 비슷하거나 조금 아래(타마다 ×1.3 — 느리다). 자세 피해는 타마다 1.5(검보다 조금 크다), 끝의 내려찍기는 좁고 무겁다.
 pub const GREATSWORD_CLEAVE: u8 = 3;
+/// 대검의 무게(0284 — 사장 판정 p-gs "연타하면 그냥 빠른데..?"): 들어 올림(선딜 × 이만큼 — 검 5틱 → 대검 10틱 남짓), 거둠(후딜의
+/// 이 몫이 지나야 다음 타로 끊는다 — 마구 눌러도 거둠을 건너뛰지 못한다 · 넷째 · 끝 타는 조금 더). 들어 올림이 있는 타가 맞으면
+/// `Event::Heft`(둔한 쿵 · 강타의 킥 · 발밑 먼지 — 히트스톱은 평타 그대로: 한 칸 길게 하면 붙은 떼에 대한 초당 피해가 낫 아래로
+/// 떨어졌다, 0284 결정 노트).
+pub const GREATSWORD_WINDUP: f32 = 1.7;
+pub const GREATSWORD_RECOVER: f32 = 0.4;
 const GREATSWORD_COMBO: [Hit; 5] = [
     Hit {
         cleave: GREATSWORD_CLEAVE,
-        cancel: 0.1,
+        cancel: GREATSWORD_RECOVER,
+        windup: GREATSWORD_WINDUP,
         ..hit(1.3, 1.3, 1.5, 0.8, 10, 1.0, "gs1")
     },
     Hit {
         cleave: GREATSWORD_CLEAVE,
-        cancel: 0.1,
+        cancel: GREATSWORD_RECOVER,
+        windup: GREATSWORD_WINDUP,
         ..hit(1.3, 1.3, 1.5, 0.8, 10, 1.0, "gs2")
     },
     Hit {
         cleave: GREATSWORD_CLEAVE,
-        cancel: 0.1,
+        cancel: GREATSWORD_RECOVER,
+        windup: GREATSWORD_WINDUP,
         ..hit(1.3, 1.3, 1.5, 0.8, 10, 1.0, "gs3")
     },
     Hit {
         cleave: GREATSWORD_CLEAVE,
         knock: 1.4,
-        cancel: 0.15,
+        cancel: GREATSWORD_RECOVER + 0.05,
+        windup: GREATSWORD_WINDUP,
         ..hit(1.4, 1.35, 1.6, 1.0, 20, 2.0, "gs4")
     },
     Hit {
         cleave: GREATSWORD_CLEAVE,
         knock: 1.7,
-        cancel: 0.3,
+        cancel: GREATSWORD_RECOVER + 0.1,
+        windup: GREATSWORD_WINDUP,
         ..hit(1.6, 1.4, 0.6, 1.4, 20, 3.0, "gs5")
     },
 ];
@@ -1855,10 +1911,11 @@ pub const ART_CHANNEL: f32 = 1.5;
 pub const ART_SNEAK: f32 = 1.5;
 /// 급소의 "등 뒤": 적의 앞에서 이 각(°)보다 더 돌아선 자리(뒤쪽 140°의 부채꼴).
 pub const SNEAK_BACK_DEG: f32 = 110.0;
-/// 대검의 분노(0274 ④ — BG3 광전사의 분노 · "몰릴수록 거세다"): 평타가 가장 빠를 때의 배(+20%). 분노 0..1 =
-/// 둘레 `FURY_RADIUS` m의 깨어 있는 적 수 ÷ `FURY_CROWD` + 잃은 체력의 몫(1에서 멈춘다 — `World::fury`). 보스 하나 = 0.25(+5%),
+/// 대검의 분노(0274 ④ — BG3 광전사의 분노 · "몰릴수록 거세다"): 평타가 가장 빠를 때의 배(+20% → 0284: +50% — 들어 올림 · 거둠이
+/// 무거워진 만큼 빈 둘레와 가득의 차이가 손에 느껴지게: 마구 누른 휘두르기 사이 28틱 → 19틱, 검 17틱보다는 늘 느리다). 분노 0..1 =
+/// 둘레 `FURY_RADIUS` m의 깨어 있는 적 수 ÷ `FURY_CROWD` + 잃은 체력의 몫(1에서 멈춘다 — `World::fury`). 보스 하나 = 0.25(+12.5%),
 /// 넷에 에워싸이거나 체력이 바닥이면 가득. 한 휘두르기 동안은 그 처음의 빠르기에 머문다(동작이 흔들리지 않게). 값은 보스 모의로.
-pub const ART_FURY: f32 = 1.2;
+pub const ART_FURY: f32 = 1.5;
 pub const FURY_RADIUS: f32 = 3.5;
 pub const FURY_CROWD: f32 = 4.0;
 /// 분노가 가득 찬 알림(0277 — `World::watch_fury`)을 다시 걸 문턱: 가득(1) 뒤 이 밑으로 내려가야 다음 가득이 또 울린다(적 하나 = 0.25 —
@@ -2511,6 +2568,32 @@ mod tests {
         assert_eq!(text, was, "a weapon or class row changed");
     }
 
+    /// 0284: 평타의 동작 시각 — 들어 올림이 없으면 옛 `e × clip_rate` 그대로, 있으면(대검) 판정 시작 `s0`에 동작이 만든 판정 시작이
+    /// 오고(그 앞은 빨리 들어 올려 꼭대기에서 머문다 — 앞 반에 들어 올림의 4분의 3), 그 뒤는 들어 올림을 늘이기 전의 빠르기.
+    #[test]
+    fn a_wound_up_swing_lingers_at_the_top_then_swings_at_full_speed() {
+        let (c0, _) = SWEEPS.iter().find(|r| r.0 == "gs1").unwrap().2;
+        for e in [0.0, 0.05, 0.2, 0.4] {
+            assert_eq!(clip_at("gs1", e, c0, 1.0), e * clip_rate("gs1", c0));
+        }
+        let s0 = c0 * GREATSWORD_WINDUP;
+        assert!((clip_at("gs1", s0, s0, GREATSWORD_WINDUP) - c0).abs() < 1e-5);
+        assert!(clip_at("gs1", s0 * 0.5, s0, GREATSWORD_WINDUP) >= 0.75 * c0 - 1e-5);
+        let step = clip_at("gs1", s0 + 0.1, s0, GREATSWORD_WINDUP) - c0;
+        assert!(
+            (step - 0.1).abs() < 1e-5,
+            "the sweep itself is not slowed: {step}"
+        );
+        for h in &GREATSWORD_COMBO {
+            assert_eq!(h.windup, GREATSWORD_WINDUP, "{}", h.anim);
+        }
+        assert!(WEAPONS.iter().filter(|w| w.id != Id::Greatsword).all(|w| w
+            .combo
+            .iter()
+            .chain(w.dash.iter())
+            .all(|h| h.windup == 1.0)));
+    }
+
     /// 0272: 종류 표 — 줄의 자리 = `Class::index`, 무기마다 종류 하나(맨손만 없다), 계열·주특성의 배는 종류의 것.
     /// 대표 타입 둘은 서로 다른 타입이고, 주특성의 수는 배에서 나온다(망치 +30% · 지팡이 +50% · 나머지는 배가 없다).
     #[test]
@@ -2644,10 +2727,10 @@ mod tests {
         // 0274 ③: 쌍단검 = 쓰러뜨린 적의 잔불 +10%(손버릇) — 주특성 급소 +50%의 다섯에 하나.
         assert_eq!(Class::Dagger.def().sub.percent(), 10);
         assert_eq!(Class::Dagger.def().art.percent(), 50);
-        // 0274 ④: 대검 = 다 모은 강공격 피해 +3(검의 다 모은 강공격 30의 10% — 힘) · 주특성 분노 +20%의 반.
+        // 0274 ④: 대검 = 다 모은 강공격 피해 +3(검의 다 모은 강공격 30의 10% — 힘) · 주특성 분노(0284: +20% → +50%)의 반 아래.
         assert_eq!(Class::Greatsword.def().sub.percent(), 10);
         assert_eq!(Class::Greatsword.def().sub.mods.charged_dmg, SUB_CHARGED);
-        assert_eq!(Class::Greatsword.def().art.percent(), 20);
+        assert_eq!(Class::Greatsword.def().art.percent(), 50);
         // 0274 ⑤: 낫 = 쓰러뜨릴 때마다 체력 +2(등잔 한 모금 20의 10% — 거두는 손) · 주특성 되살아나는 숨 +50%의 다섯에 하나.
         assert_eq!(Class::Scythe.def().sub.percent(), 10);
         assert_eq!(Class::Scythe.def().sub.mods.kill_heal, SUB_KILL_HEAL);
@@ -3173,16 +3256,20 @@ mod swing_tests {
                     .unwrap();
                 (node, far)
             });
-            let mut swings: Vec<(&str, (f32, f32, f32))> = (0..w.combo.len())
-                .map(|k| (w.combo[k].anim, crate::world::hit_times(&t, w, k as u8)))
+            // (동작, 판정 시간, 들어 올림 — 0284: 대검의 평타는 판정 시작까지만 느린 동작 시계 `clip_at`).
+            let mut swings: Vec<(&str, (f32, f32, f32), f32)> = (0..w.combo.len())
+                .map(|k| {
+                    let h = &w.combo[k];
+                    (h.anim, crate::world::hit_times(&t, w, k as u8), h.windup)
+                })
                 .collect();
             if let Some(d) = w.dash {
-                swings.push((d.anim, crate::world::hit_times(&t, w, DASH)));
+                swings.push((d.anim, crate::world::hit_times(&t, w, DASH), d.windup));
             }
             if let Some(h) = w.heavy {
-                swings.push((h.anim_heavy, crate::world::heavy_times(&t, w)));
+                swings.push((h.anim_heavy, crate::world::heavy_times(&t, w), 1.0));
             }
-            for (anim, (s0, a0, _)) in swings {
+            for (anim, (s0, a0, _), windup) in swings {
                 let ai = m.anim(anim).unwrap_or_else(|| panic!("{anim}"));
                 // 0198: 맨손의 왼 잽은 왼손, 앞차기는 오른발이 친다. 0274 ③: 쌍단검 1타도 왼손의 날이 찌른다.
                 let limb = match anim {
@@ -3190,8 +3277,8 @@ mod swing_tests {
                     "fist_heavy" | "fist_dash" => m.node("mixamorig:RightFoot"),
                     _ => None,
                 };
-                let r = clip_rate(anim, s0);
-                let (s0, a0) = (s0 * r, a0 * r);
+                let c0 = clip_at(anim, s0, s0, windup);
+                let (s0, a0) = (c0, clip_at(anim, s0 + a0, s0, windup) - c0);
                 // 끝점의 몸 둘레 각(도 — 정면 0, 왼쪽 +), 구간을 여덟으로 나눠 풀어 이은 것.
                 let (mut yaws, mut last) = (Vec::new(), None::<f32>);
                 for j in 0..=8 {

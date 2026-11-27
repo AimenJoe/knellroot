@@ -111,17 +111,21 @@ fn fury_speeds_the_combo_with_foes_around_and_wounds_up_to_a_cap() {
             },
             &t,
         );
-        while matches!(w.player.state, PState::Attack { .. }) && n < 120 {
+        // 히트스톱으로 멈춘 틱은 세지 않는다(0284 — 멈춤은 빠르기와 상관없이 같다: 배가 커지자 그 몫이 셈을 흔들었다).
+        let mut guard = 0;
+        while matches!(w.player.state, PState::Attack { .. }) && guard < 240 {
             idle(&mut w);
+            let frozen = w.hitstop > 0.0;
             w.step(&Actions::default(), &t);
-            n += 1;
+            n += usize::from(!frozen);
+            guard += 1;
         }
         n
     };
     let whole = swing_ticks(w.player.max_hp);
     let wounded = swing_ticks(1);
-    // 하나 곁(분노 0.25 — ×1.05)과 체력이 바닥(가득 — ×1.2).
-    let want = (1.05 / ART_FURY) * whole as f32;
+    // 하나 곁(분노 0.25 — ×(1 + 0.25 × 0.45))과 체력이 바닥(가득 — ×`ART_FURY`).
+    let want = ((1.0 + 0.25 * (ART_FURY - 1.0)) / ART_FURY) * whole as f32;
     assert!(
         (wounded as f32 - want).abs() <= 1.5,
         "wounded swings end sooner: {wounded} vs {whole}"
@@ -436,4 +440,95 @@ fn swing_rhythm_probe() {
             }
         }
     }
+}
+
+/// 휘두르기 사이(틱)의 평균 — 앞의 `n`번.
+fn mean_gap(r: &[(u8, usize, usize)], n: usize) -> f32 {
+    let g: Vec<usize> = r.windows(2).take(n).map(|p| p[1].1 - p[0].1).collect();
+    g.iter().sum::<usize>() as f32 / g.len().max(1) as f32
+}
+
+/// 0284(사장 판정 p-gs "연타하면 그냥 빠른데..?"): 마구 눌러도 대검은 무겁다 — 분노 없이 휘두르기 사이가 검의 1.5배 넘고 닿기까지(들어
+/// 올림)가 검의 두 배 가깝다. 분노가 가득이면 그 사이가 4분의 1 넘게 줄지만(보이는 차이) 검보다 빠르지는 않다.
+#[test]
+fn a_mashed_greatsword_swings_heavy_and_fury_quickens_it_but_never_past_a_sword() {
+    let sword = rhythm(W::Sword, 0.0, false, 4.0);
+    let calm = rhythm(W::Greatsword, 0.0, false, 4.0);
+    let full = rhythm(W::Greatsword, 1.0, false, 4.0);
+    let sword_full = rhythm(W::Sword, 1.0, false, 4.0);
+    // 앞의 셋(같은 휩쓸기 셋 · 검은 1 · 2 · 3타).
+    let (s, c, f) = (mean_gap(&sword, 3), mean_gap(&calm, 3), mean_gap(&full, 3));
+    assert!(c >= 1.5 * s, "mashed: greatsword {c} vs sword {s} ticks");
+    assert!(
+        calm[0].2 as f32 >= 1.8 * sword[0].2 as f32,
+        "a visible wind-up: {} vs {} ticks",
+        calm[0].2,
+        sword[0].2
+    );
+    assert!(f <= 0.75 * c, "full fury is felt: {f} vs {c}");
+    assert!(
+        f > mean_gap(&sword_full, 3),
+        "but never faster than a sword: {f} vs {s}"
+    );
+}
+
+/// 0284: 마구 눌러도 대검의 거둠을 표보다 일찍 끊지 못한다 — 마구 누른 휘두르기 사이는 타마다 표의 캔슬 시점(선딜 + 활성 + 후딜 ×
+/// `cancel`)보다 짧지 않다(분노 없이, 틱으로 올림).
+#[test]
+fn mashing_cannot_cut_the_greatsword_recovery_shorter_than_the_table() {
+    let t = Tuning::default();
+    let g = W::Greatsword.def();
+    let r = rhythm(W::Greatsword, 0.0, false, 4.0);
+    for p in r.windows(2).take(g.combo.len()) {
+        let hit = p[0].0;
+        let (s0, a0, r0) = hit_times(&t, g, hit);
+        let cut = s0 + a0 + r0 * g.hit(hit).unwrap().cancel.max(t[P::ComboLink]);
+        let gap = (p[1].1 - p[0].1) as f32 * TICK_DT;
+        assert!(gap + 1e-4 >= cut, "hit {hit}: {gap} s < {cut} s");
+        assert!(g.hit(hit).unwrap().cancel >= weapons::GREATSWORD_RECOVER);
+    }
+}
+
+/// 0284: 들어 올림이 있는 대검의 평타가 맞으면 휘두르기마다 한 번 `Heft`(앞의 셋을 베어도 하나) — 히트스톱은 평타 그대로. 검은 없다.
+#[test]
+fn a_greatsword_sweep_lands_with_heft_once_and_a_sword_does_not() {
+    let t = Tuning::default();
+    let run = |id: W| {
+        let mut w = World::new("test", 30.0);
+        w.set_weapon(id);
+        w.player.facing = std::f32::consts::PI;
+        for k in 0..3 {
+            let a = (k as f32 - 1.0) * 25f32.to_radians();
+            mob_with(&mut w, vec3(a.sin_d() * 1.2, 0.0, -a.cos_d() * 1.2), 500);
+        }
+        idle(&mut w);
+        let mut ev = w.step(
+            &Actions {
+                attack: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        let mut stop = 0.0f32;
+        for _ in 0..40 {
+            idle(&mut w);
+            ev.extend(w.step(&Actions::default(), &t));
+            stop = stop.max(w.hitstop);
+        }
+        let hefts = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Heft { .. }))
+            .count();
+        let hits = ev.iter().filter(|e| matches!(e, Event::Hit { .. })).count();
+        (hefts, hits, stop)
+    };
+    let (gh, ghits, gstop) = run(W::Greatsword);
+    let (sh, shits, sstop) = run(W::Sword);
+    assert_eq!((gh, ghits), (1, 3), "three cut, one heft");
+    assert_eq!(sh, 0);
+    assert!(shits >= 1);
+    assert!(
+        (gstop - sstop).abs() < 1e-4,
+        "the same hitstop: {gstop} vs {sstop}"
+    );
 }

@@ -84,6 +84,12 @@ impl Fx {
         );
     }
 
+    /// 대검의 무거운 평타(0284): 맞은 적의 발밑에서 먼지가 둥글게 밀려난다(땅이 받은 무게 — 번쩍임 · 진액은 함께 나는 `Hit`이 낸다).
+    pub(super) fn ev_heft(&mut self, at: Vec3, w: &World) {
+        let g = vec3(at.x, w.ground_y(at), at.z);
+        self.dust_ring(g, 0.35, 8, 2.6, 0.55, DUST);
+    }
+
     /// 치명타: 더 크고 금빛, 금 알갱이가 사방으로.
     pub(super) fn ev_crit(&mut self, at: Vec3, from_player: &impl Fn(Vec3) -> Vec3) {
         self.sap(at, from_player(at), 6, 5.0, 3.8);

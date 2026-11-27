@@ -468,12 +468,17 @@ pub enum Event {
     Pull {
         at: Vec3,
     },
+    /// 무거운 평타가 맞았다(0284 — 대검의 휩쓸기, 무기 표의 `Hit::windup` > 1): 맞힌 휘두르기마다 한 번, 처음 맞은 적의 발밑 `at`.
+    /// 앱이 둔한 쿵 · 큰 킥 · 발밑 먼지로(평타의 `Hit`은 그대로 함께 난다).
+    Heft {
+        at: Vec3,
+    },
 }
 
 #[cfg(test)]
 impl Event {
     /// 갈래의 수(0278 R12 — 사건 덮개 시험).
-    pub const COUNT: usize = 86;
+    pub const COUNT: usize = 87;
 
     /// 갈래의 번호(0278 R12): 와일드카드 없는 match라 새 갈래는 여기서 컴파일이 깨진다 — 다음 번호 + `samples`에 표본 한 줄 +
     /// `COUNT`. 사건 덮개 시험(소리 `app::play` · 이펙트 `fx`)이 표본을 돈다.
@@ -565,6 +570,7 @@ impl Event {
             Event::Sneak { .. } => 83,
             Event::FuryFull { .. } => 84,
             Event::Pull { .. } => 85,
+            Event::Heft { .. } => 86,
         }
     }
 
@@ -727,6 +733,7 @@ impl Event {
             Event::Sneak { at },
             Event::FuryFull { at },
             Event::Pull { at },
+            Event::Heft { at },
         ]
     }
 
@@ -3354,6 +3361,8 @@ struct Strike {
     pull: f32,
     /// 맞은 적에게 쌓는 속성 게이지(0274 ⑥ 완드 — 저주를 새기는 찌르기 · 쥐었다 터뜨린 저주 = 균열). 없으면 `NO_DOSE`.
     dose: crate::status::Dose,
+    /// 들어 올림이 있는 무거운 평타(0284 — 대검, 무기 표의 `Hit::windup` > 1): 맞히면 `Event::Heft`.
+    heft: bool,
 }
 
 /// 콤보 한 타의 선딜·활성·후딜(0051: 랩 평타 × 무기 표의 `time`).
@@ -3481,9 +3490,10 @@ pub fn on_beat(since: f32, beat: f32) -> bool {
 }
 
 pub fn hit_times(t: &Tuning, w: &weapons::Weapon, hit: u8) -> (f32, f32, f32) {
-    let k = w.hit(hit).map_or(1.0, |h| h.time);
+    let (k, windup) = w.hit(hit).map_or((1.0, 1.0), |h| (h.time, h.windup));
     (
-        t[P::AttackStartup] * k,
+        // 들어 올림(0284 — 대검)은 선딜에만.
+        t[P::AttackStartup] * k * windup,
         t[P::AttackActive] * k,
         t[P::AttackRecovery] * k,
     )

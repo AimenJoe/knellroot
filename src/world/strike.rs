@@ -76,6 +76,7 @@ impl World {
                     cleave: h.cleave,
                     pull: h.pull,
                     dose: h.dose,
+                    heft: h.windup > 1.0,
                 }
             }
             PState::Heavy {
@@ -126,6 +127,7 @@ impl World {
                     } else {
                         (h.dose.0, h.dose.1 * 0.5)
                     },
+                    heft: false,
                 }
             }
             _ => return,
@@ -152,6 +154,12 @@ impl World {
                 } else {
                     HIT_HITSTOP
                 };
+            // 무거운 평타(0284 — 대검): 맞힌 휘두르기마다 한 번, 처음 맞은 자리에 무게(둔한 쿵 · 큰 킥 — `app::cue`).
+            if !heavy_hit && s.heft {
+                if let Some((at, ..)) = first_hit {
+                    ev.push(Event::Heft { at });
+                }
+            }
             // 공격자 확인(KB, Hollow Knight 반동): 맞힌 스윙은 남은 내딛기를 멈춘다 — 빗나감과 맞힘이 손에서 다르게.
             self.player.connected = swing;
             self.strike_cells(t, &s, first_hit, ev);

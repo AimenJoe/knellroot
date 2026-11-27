@@ -710,6 +710,7 @@ impl Fx {
             Event::EnemyDown { at } => self.ev_enemy_down(at),
             Event::Plunge { at } | Event::Aftershock { at } => self.ev_plunge(at, w),
             Event::Slam { at } => self.ev_slam(at, w),
+            Event::Heft { at } => self.ev_heft(at, w),
             Event::Boom { at } => self.ev_boom(at, w),
             Event::Gulp { at } => self.ev_gulp(at),
             Event::EnemyStrike {

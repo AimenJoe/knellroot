@@ -144,10 +144,10 @@ impl Memory {
             // 동작 시계는 타의 판정 시작에 동작이 만든 판정 시작이 오게(0195 — 맨손·대시처럼 남의 동작을 빌린 타).
             PState::Attack { t: e, hit, .. } => {
                 let s0 = crate::world::hit_times(t, wpn, hit).0;
-                let rate = crate::weapons::clip_rate(combo_anim(hit), s0);
+                let windup = wpn.hit(hit).map_or(1.0, |h| h.windup);
                 Pick::of(
                     &[combo_anim(hit), "attack", "attack"],
-                    e * w.swing_rate() * rate,
+                    crate::weapons::clip_at(combo_anim(hit), e * w.swing_rate(), s0, windup),
                 )
             }
             // 강공격(0030): 모으는 동안 칼을 뒤로 끌어 든 자세(없는 모델이면 공격 첫 자세), 떼면 크게 내려친다 — 무기마다(0051).

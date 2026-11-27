@@ -14,11 +14,33 @@ pub(super) struct Row {
     pub anim: &'static str,
     pub window: Option<(f32, f32)>,
     pub rate: f32,
+    /// 들어 올림(0284 — 대검의 평타): 판정 시작까지만 늘인 동작 시계(`weapons::clip_at`). 그 밖은 1.
+    pub windup: f32,
     /// 달리기 공격 줄(0202): 콤보의 타와 같은 동작이어도 따로 한 줄 — 판정 구간·시계는 달리기 공격의 것.
     pub dash: bool,
 }
 
 impl Row {
+    /// 게임 초 → 동작의 자리(0284 — 들어 올림이 늘어난 타는 판정 시작까지만 느리다).
+    pub fn clip_time(&self, game: f32) -> f32 {
+        let s0 = self.window.map_or(0.0, |(s, _)| s);
+        if self.windup == 1.0 {
+            game * self.rate
+        } else {
+            crate::weapons::clip_at(self.anim, game, s0, self.windup)
+        }
+    }
+
+    /// 동작 길이(초) → 게임에서 도는 길이(초).
+    pub fn game_len(&self, clip: f32) -> f32 {
+        let s0 = self.window.map_or(0.0, |(s, _)| s);
+        if self.windup == 1.0 {
+            clip / self.rate
+        } else {
+            s0 + (clip - s0 * self.rate).max(0.0) / (self.rate * self.windup)
+        }
+    }
+
     /// 왼쪽 줄의 이름.
     pub fn label(&self) -> String {
         let name = dv::motion_label(self.anim);
@@ -41,20 +63,21 @@ const SPIN_STEP: f32 = 30.0;
 /// 이 무기로 볼 동작들(차례 = 몸 → 무기 → 막기·피하기 → 맞음 → 기술). 같은 동작은 한 번만. 순수 — 시험.
 pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     let mut out: Vec<Row> = Vec::new();
-    fn put(out: &mut Vec<Row>, anim: &'static str, window: Option<(f32, f32)>) {
+    fn put(out: &mut Vec<Row>, anim: &'static str, window: Option<(f32, f32)>, windup: f32) {
         if !out.iter().any(|r| r.anim == anim && !r.dash) {
             let rate = window.map_or(1.0, |(s, _)| crate::weapons::clip_rate(anim, s));
             out.push(Row {
                 anim,
                 window,
                 rate,
+                windup,
                 dash: false,
             });
         }
     }
     macro_rules! add {
         ($a:expr, $w:expr) => {
-            put(&mut out, $a, $w)
+            put(&mut out, $a, $w, 1.0)
         };
     }
     for a in [
@@ -71,7 +94,7 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
     }
     for (k, h) in w.combo.iter().enumerate() {
         let (s0, a0, _) = crate::world::hit_times(tn, w, k as u8);
-        add!(h.anim, Some((s0, s0 + a0)));
+        put(&mut out, h.anim, Some((s0, s0 + a0)), h.windup);
     }
     if let Some(d) = w.dash {
         let (s0, a0, _) = crate::world::hit_times(tn, w, crate::weapons::DASH);
@@ -79,6 +102,7 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
             anim: d.anim,
             window: Some((s0, s0 + a0)),
             rate: crate::weapons::clip_rate(d.anim, s0),
+            windup: d.windup,
             dash: true,
         });
     }
@@ -281,7 +305,7 @@ impl App {
         let len = self
             .renderer
             .wanderer_anim_len(row.anim)
-            .map(|d| d / row.rate);
+            .map(|d| row.game_len(d));
         let dur = len.unwrap_or(1.0);
         let cycle = dur + HOLD_END;
         let at = (t_ms as f32 / 1000.0) % cycle;
@@ -291,7 +315,7 @@ impl App {
             doll,
             (spin as f32 * SPIN_STEP).to_radians(),
             row.anim,
-            shown * row.rate,
+            row.clip_time(shown),
             true,
         );
         let bar = Rect::new(dx, doll.y + doll.h + u * 4.0, dw, u * 4.0);
@@ -372,7 +396,7 @@ mod tests {
                     .anim(r.anim)
                     .unwrap_or_else(|| panic!("{id:?}: no clip {}", r.anim));
                 if let Some((s, e)) = r.window {
-                    let d = m.anims[ai].duration / r.rate;
+                    let d = r.game_len(m.anims[ai].duration);
                     assert!(
                         0.0 <= s && s < e && e <= d + 1e-3,
                         "{id:?} {}: window {s}..{e} in {d}",
