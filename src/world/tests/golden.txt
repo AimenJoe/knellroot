@@ -89,8 +89,8 @@ rb.Sword.tap 0a93bd3ab03e6916
 rb.Sword.hold 86f5bb0695eb2ce9
 rb.Hammer.tap 1e73b1387b3e2e95
 rb.Hammer.hold ace58af42c1db889
-rb.Staff.tap ae666a6da837e0c0
-rb.Staff.hold d63a4c796dcffa03
+rb.Staff.tap 16907632752f9380
+rb.Staff.hold 5bcd0d0995b8370b
 rb.Crossbow.tap abdbe99e1d401eb7
 rb.Crossbow.hold 39007c35b7e9d1b7
 rb.Fists.tap 76554430d2db3fbf

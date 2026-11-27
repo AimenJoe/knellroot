@@ -26,6 +26,7 @@ mod ranged;
 mod scenario_golden;
 mod scythe;
 mod spear;
+mod staff;
 mod swap_strike;
 mod toss;
 mod touch_aim;

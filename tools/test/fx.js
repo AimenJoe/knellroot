@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,pull,wand,rb,bare,throw] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed,curse · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,wand,shield]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,pull,wand,staff,rb,bare,throw] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed,curse · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,wand,shield]
 // skills(0158 G2): 개발 창 기술 탭 "스킬 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "스킬 장착"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -256,6 +256,24 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
     // 줄에서 물러나 다시 줄 쪽을 본다(RB의 판과 같은 걸음) — 저주탄이 곧게 날아 줄의 앞에 금을 낸다.
     await p.keyboard.press('F6'); await hold(p, 'KeyS', 900); await hold(p, 'KeyW', 120); await p.waitForTimeout(400); await p.keyboard.press('F6'); await p.waitForTimeout(300);
     for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyU'); await burst(p, `wd-rb${k}`, 14); }
+    await p.close();
+  }
+  if (want('staff')) {
+    // 0282 지팡이(마법이 먼저): `Arm(Staff)` → "한 줄로 선 잔재"(`Scenario(Line)`) — 락온 한 장, 그다음 틱마다(F6): 수수한 3연타(밀어내기 —
+    // 끝 타가 가장 멀리 민다) · 쥐었다 둘레로 터뜨리는 강공격(밀어내 자리를 연다), 줄에서 물러나 RB 마법 탄 다섯(칸 다섯을 다 쓴다 — 빨리 찬다)
+    // · 모은 탄 하나(크고 멀리 · 휘청).
+    p = await armed('Staff', { shot: 'sf-arm.png' }); await p.waitForTimeout(1200);
+    await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700); // 한 단계 가까운 쿼터뷰
+    await p.screenshot({ path: path.join(OUT, 'sf-quarter.png') });
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(900); await p.screenshot({ path: path.join(OUT, 'sf-lockon.png') });
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyJ'); await burst(p, `sf-hit${k}`, 12); }
+    await p.keyboard.down('KeyJ'); await burst(p, 'sf-charge', 16); await p.keyboard.up('KeyJ'); await burst(p, 'sf-heavy', 20);
+    // 줄에서 물러나 다시 줄 쪽을 본다(RB의 판과 같은 걸음) — 마법 탄이 땅을 따라 흘러 줄을 꿰뚫는다.
+    await p.keyboard.press('F6'); await p.keyboard.press('KeyL'); await hold(p, 'KeyS', 900); await hold(p, 'KeyW', 120); await p.waitForTimeout(400); await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 5; k++) { await p.keyboard.press('KeyU'); await burst(p, `sf-rb${k}`, 10); }
+    await burst(p, 'sf-refill', 4);
+    await p.keyboard.down('KeyU'); await burst(p, 'sf-rb-charge', 50); await p.keyboard.up('KeyU'); await burst(p, 'sf-rb-charged', 16);
     await p.close();
   }
   if (want('rb')) {

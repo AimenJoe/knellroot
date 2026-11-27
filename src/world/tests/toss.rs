@@ -99,7 +99,8 @@ fn wait(w: &mut World, t: &Tuning, secs: f32) -> Vec<Event> {
     ev
 }
 
-/// 0274 ②b: 한손검의 RB = 던지는 손도끼 — 짧다(7.2 m 안은 맞고 그 밖은 안 닿는다), 마법 탄보다 무겁다(피해 20 · 자세 피해 4배).
+/// 0274 ②b: 한손검의 RB = 던지는 손도끼 — 짧다(7.2 m 안은 맞고 그 밖은 안 닿는다), 마법 탄보다 무겁다(피해 20 · 자세 피해 두 배 넘게 —
+/// 0282에 지팡이의 마법 탄 자세 피해가 1 → 1.5로 올라 옛 "넷 배"는 "두 배 넘게"로).
 #[test]
 fn the_hand_axe_is_short_and_heavy() {
     let t = Tuning::default();
@@ -123,10 +124,7 @@ fn the_hand_axe_is_short_and_heavy() {
     };
     let (near, poise) = hit(5.0);
     assert_eq!(near, 20, "a heavy axe");
-    assert!(
-        poise >= 4.0 * weapons::Id::Staff.bolts().0.poise - 1e-3,
-        "{poise}"
-    );
+    assert!(poise > 2.0 * weapons::Id::Staff.bolts().0.poise, "{poise}");
     assert_eq!(hit(9.0).0, 0, "short: 7.2 m");
 }
 

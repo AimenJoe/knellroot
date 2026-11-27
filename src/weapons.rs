@@ -244,15 +244,15 @@ pub struct Toss {
     /// 한 번에 나가는 수와 이웃한 둘 사이의 각(°) — 좁은 부채꼴(0274 ③ 쌍단검의 투척 단검 셋). 나머지는 하나(0°).
     pub fan: u8,
     pub spread: f32,
-    /// RB 칸의 수와 한 칸이 차는 시간의 배(랩 `cast.cooldown s`에 곱한다 — 0274 ⑥: 저주탄이 주된 공격인 완드는 칸이 많고 빨리 찬다,
-    /// 나머지는 `CAST_CHARGES` · 1). 두 손으로 엮는 지팡이(0276)의 칸 +1은 `World::cast_charges`가 얹는다.
+    /// RB 칸의 수와 한 칸이 차는 시간의 배(랩 `cast.cooldown s`에 곱한다 — 0274 ⑥ · 0282: RB가 주된 공격인 완드(저주탄)와 지팡이(마법 탄)는
+    /// 칸이 많고 빨리 찬다, 나머지는 `CAST_CHARGES` · 1). 두 손으로 엮는 지팡이(0276)의 칸 +1은 `World::cast_charges`가 얹는다.
     pub charges: f32,
     pub refill: f32,
 }
 
 impl Toss {
     /// 종류의 RB 칸이 `..Toss::BASE`로 받는 바탕(0278 R18): 하나씩(부채꼴 없음) · 칸 `CAST_CHARGES` · 차는 배 1 — 부채꼴은 쌍단검,
-    /// 칸 · 차는 배는 완드만 다르다. 탄 둘은 줄마다 적는다(바탕은 마법 탄).
+    /// 칸 · 차는 배는 완드 · 지팡이(0282)만 다르다. 탄 둘은 줄마다 적는다(바탕은 마법 탄).
     pub const BASE: Toss = Toss {
         bolt: MAGIC,
         charged: MAGIC,
@@ -669,11 +669,15 @@ const MAGIC: Bolt = Bolt {
     lame: 0.0,
 };
 
-/// 지팡이(마법사)의 RB — 마법탄 그대로(0274 ②b 전의 지팡이 값): 빠르고 멀리 꿰뚫는다, 모으면 크게.
+/// 지팡이(마법사)의 RB — 마법탄(0274 ②b 전의 지팡이 값 → 0282 지팡이의 **주된 공격**): 빠르고 멀리 땅을 따라 흘러 꿰뚫는다 — 피해 10.
+/// 칸이 `STAFF_CHARGES`이고 한 칸이 빨리 찬다(`STAFF_REFILL` — 완드의 저주탄과 같은 꼴: 쏘는 것이 손의 대부분). 모으면 크고 멀리
+/// 가며 자세 피해 · 잡몹 휘청이 크다 — 피해는 `STAFF_CHARGED`(옛 30: 칸이 빨리 차는 지팡이에서 모은 탄이 곱절 넘게 내면 마구 쏘기보다
+/// 늘 세다 — 완드와 같은 까닭).
 pub const MAGIC_TOSS: Toss = Toss {
     bolt: Bolt {
         speed: 1.3,
         range: 1.2,
+        poise: STAFF_BOLT_POISE,
         pierce: true,
         look: Look::Magic,
         ..MAGIC
@@ -681,17 +685,26 @@ pub const MAGIC_TOSS: Toss = Toss {
     charged: Bolt {
         speed: 1.6,
         range: 1.7,
-        damage: 30,
+        damage: STAFF_CHARGED,
         poise: 3.0,
         pierce: true,
+        stagger: 0.3,
         look: Look::Magic,
         scale: 1.5,
         ..MAGIC
     },
+    charges: STAFF_CHARGES,
+    refill: STAFF_REFILL,
     ..Toss::BASE
 };
+/// 지팡이의 RB 칸 수 · 한 칸이 차는 시간의 배(랩 `cast.cooldown s` 3초에 곱한다) · 모은 탄의 피해(0282).
+pub const STAFF_CHARGES: f32 = 5.0;
+pub const STAFF_REFILL: f32 = 0.38;
+pub const STAFF_CHARGED: i32 = 10;
+pub const STAFF_BOLT_POISE: f32 = 1.5;
 
-/// 한손검(전사)의 RB — 던지는 손도끼: 짧고(7.2 m) 무겁다 — 피해 20 · 자세 피해 4(마법 탄의 넷 배), 맞은 잡몹이 잠깐 휘청.
+/// 한손검(전사)의 RB — 던지는 손도끼: 짧고(7.2 m) 무겁다 — 피해 20 · 자세 피해 4(지팡이 마법 탄 1.5의 두 배 넘게 — 0282 전에는 1의 넷 배),
+/// 맞은 잡몹이 잠깐 휘청.
 /// 모으면 더 큰 도끼(30 · 자세 7). 꿰뚫지 않는다(첫 적에 박힌다).
 pub const AXE_TOSS: Toss = Toss {
     bolt: Bolt {
@@ -963,15 +976,23 @@ const HAMMER_COMBO: [Hit; 3] = [
     },
 ];
 
-/// 순례자 지팡이 — 빠른 4연타(0203 — 올려 베기 → 내려 베기 → 머리 위에서 내려치기), 넷째는 두 손으로 내려쳐 둘레를 친다(느림).
-const STAFF_COMBO: [Hit; 4] = [
-    hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff1"),
-    hit(0.7, 1.15, 0.8, 0.7, 10, 0.6, "staff2"),
-    hit(0.75, 1.2, 0.9, 0.8, 10, 0.8, "staff3"),
+/// 순례자 지팡이(0282 — 마법이 먼저: RB의 마법 탄이 주된 공격, 근접은 밀어내 자리를 여는 손): 수수한 3연타 — 자루로 올려 쳐
+/// 밀고(1타) · 되받아 쳐 밀고(2타) · 머리 위에서 짧게 내려쳐 크게 밀어낸다(3타 — 옛 넷째의 두 손 둘레 내려치기는 걷었다). 피해는
+/// 10 · 10 · 10(옛 10 · 10 · 10 · 20), 타마다 옛 것보다 느리고(×`STAFF_SWING`) 넉백이 크다 — 붙은 적을 떼어 놓고 쏜다.
+pub const STAFF_SWING: f32 = 0.9;
+const STAFF_COMBO: [Hit; 3] = [
     Hit {
-        shape: Shape::Circle,
-        knock: 1.8,
-        ..hit(1.3, 1.25, 1.0, 0.4, 20, 2.0, "staff4")
+        knock: 1.4,
+        ..hit(STAFF_SWING, 1.1, 0.8, 0.6, 10, 0.6, "staff1")
+    },
+    Hit {
+        knock: 1.4,
+        ..hit(STAFF_SWING, 1.1, 0.8, 0.6, 10, 0.6, "staff2")
+    },
+    Hit {
+        knock: 2.0,
+        cancel: 0.1,
+        ..hit(1.0, 1.15, 0.9, 0.6, 10, 1.0, "staff3")
     },
 ];
 
@@ -1198,6 +1219,7 @@ pub const WEAPONS: &[Weapon] = &[
         combo: &STAFF_COMBO,
         // 달려들며 올려 베기(0203 — 1타 동작이라 다음 누름의 2타로 원본 그대로 이어진다): 빠르고 가볍다.
         dash: Some(hit(0.8, 1.3, 0.6, 2.2, 10, 1.0, "staff1")),
+        // 강공격(0282 — 밀어내 자리를 연다): 쥐었다 둘레로 터뜨려 붙은 적을 떼어 낸다 — 피해는 옛 20에서 10.
         heavy: Some(Heavy {
             time: 0.9,
             charge: 0.9,
@@ -1205,7 +1227,7 @@ pub const WEAPONS: &[Weapon] = &[
             arc: 1.0,
             lunge: 0.5,
             shape: Shape::Circle,
-            damage: 20,
+            damage: 10,
             poise: 2.5,
             walk: 1.2,
             anim_charge: "staff_charge",
@@ -1977,8 +1999,9 @@ pub struct Quirks {
     /// 휘두르는 동안(평타 · 모으기 · 강공격) 맞으면 휘청 · 밀림의 배(0274 ④ 대검 — `GREATSWORD_FLINCH` · `GREATSWORD_KNOCK`,
     /// 받는 피해는 그대로 — `wanderer_takes_hit` 한 곳). 없으면 그대로.
     pub steady_swing: Option<(f32, f32)>,
-    /// RB가 이 종류의 주된 공격이다(0281 — 완드의 저주탄): 방패와 들어도 방패는 막고 들이받기만 하고 던지지 않는다 — RB는 그대로
-    /// 종류의 것(`World::shield_throws` 한 곳). 없으면 방패가 RB를 맡는다(한손검 · 망치 · 낫 · 맨손).
+    /// RB가 이 종류의 주된 공격이다(0281 — 완드의 저주탄, 0282 — 지팡이의 마법 탄): 방패와 들어도 방패는 막고 들이받기만 하고 던지지
+    /// 않는다 — RB는 그대로 종류의 것(`World::shield_throws` 한 곳 — 지팡이는 양손이라 방패와 들지 않는다). 없으면 방패가 RB를 맡는다
+    /// (한손검 · 망치 · 낫 · 맨손). 보스 모의의 봇도 이것을 보고 틈에 칸이 있는 한 쏜다(`balance::kit_strike`).
     pub rb_main: bool,
 }
 
@@ -2121,7 +2144,11 @@ pub const CLASSES: &[ClassDef] = &[
         bare: Bare::Weave,
         bare_name: |s| s.bare_staff,
         bare_trait: |s| s.bare_staff_d,
-        quirks: Quirks::NONE,
+        // 0282: 마법 탄이 주된 공격(완드와 같은 성질 — 지팡이는 양손이라 방패와 들지 않는다: 모의의 봇이 칸이 있는 한 쏜다).
+        quirks: Quirks {
+            rb_main: true,
+            ..Quirks::NONE
+        },
     },
     ClassDef {
         class: Class::Crossbow,
@@ -2650,14 +2677,14 @@ mod tests {
             assert_eq!(c.toss.is_some(), c.hand != Hand::Ranged, "{:?}", c.class);
             if let Some(t) = c.toss {
                 assert_eq!(t.bolt.look, t.charged.look, "{:?}", c.class);
-                // 모은 것은 더 세다 — 완드(0274 ⑥)만은 피해가 아니라 꿰뚫음 · 균열 가득으로(칸이 빨리 차는 주된 공격이라 피해를 곱절로 내면
-                // 마구 쏘기보다 늘 세다 — 모의).
+                // 모은 것은 더 세다 — RB가 주된 공격인 종류(`Quirks::rb_main` — 완드 0274 ⑥ · 지팡이 0282)만은 피해가 아니라 꿰뚫음 ·
+                // 자세 피해(완드는 균열 가득)로(칸이 빨리 차는 주된 공격이라 피해를 곱절로 내면 마구 쏘기보다 늘 세다 — 모의).
                 assert!(
                     t.charged.damage > t.bolt.damage
-                        || (c.class == Class::Wand
+                        || (c.quirks.rb_main
                             && t.charged.damage == t.bolt.damage
                             && t.charged.pierce
-                            && t.charged.dose.1 > t.bolt.dose.1),
+                            && t.charged.poise > t.bolt.poise),
                     "{:?}",
                     c.class
                 );
@@ -2783,14 +2810,16 @@ mod tests {
             charged: 3,
             grenade: 0,
         },
+        // 0282: 지팡이는 눈금을 옮긴 뒤 다시 짰다(마법이 먼저 — 3연타 · 강공격 한 눈금 · 모은 탄 한 눈금) — 새 값의 열의 하나.
+        // 눈금을 옮기던 때의 값은 평타 [1, 1, 1, 2] · 강공격 2 · 모은 탄 3이었다.
         Old {
             id: Id::Staff,
-            combo: &[1, 1, 1, 2],
+            combo: &[1, 1, 1],
             dash: 1,
-            heavy: 2,
+            heavy: 1,
             aftershock: 0,
             rb: 1,
-            charged: 3,
+            charged: 1,
             grenade: 0,
         },
         Old {
