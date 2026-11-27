@@ -1025,6 +1025,184 @@ mod tests {
         assert!(same_gap(Id::Drain) >= 0.25 && same_gap(Id::Hit) < same_gap(Id::Drain));
     }
 
+    /// 소리의 잣대(0284 — 귀로 듣지 못하니 수로 견준다): 웰치 평균 스펙트럼(한 틀 2,048 표본 · 해닝 창 · 반씩 겹침)에서 무게 중심(Hz)과
+    /// 대역의 몫(300Hz 아래 · 300~2,000 · 2,000 위), 쇳소리의 울림 `ring` = 첫 40ms 뒤 꼬리의 1kHz 위 에너지 몫 × (1 − 그 대역 스펙트럼의
+    /// 평탄도 — 기하 평균 ÷ 산술 평균: 맑게 우는 음은 0에 가깝고 잡음은 0.3 넘게), 봉우리 포락선(5ms RMS)이 −20dB 밑으로 내려가 다시
+    /// 오르지 않는 때(ms), 크기(받은 표본 그대로의 RMS — 앱은 여기에 `synth_gain`을 곱한다)와 300Hz 1차 고역 통과를 지난 몫(작은 스피커).
+    #[derive(Clone, Copy, Debug)]
+    pub(super) struct Feel {
+        pub secs: f32,
+        pub centroid: f32,
+        pub low: f32,
+        pub mid: f32,
+        pub high: f32,
+        pub ring: f32,
+        pub decay_ms: f32,
+        pub rms: f32,
+        pub above_300: f32,
+    }
+
+    /// 표본(−1..1)의 한 틀 파워 스펙트럼(빈 0..n/2) — 단순 DFT(회전 곱으로 비틀기를 잇는다).
+    fn power(x: &[f32]) -> Vec<f64> {
+        let n = x.len();
+        let w: Vec<f64> = (0..n)
+            .map(|i| {
+                let h = 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / n as f64).cos_d();
+                x[i] as f64 * h
+            })
+            .collect();
+        (0..=n / 2)
+            .map(|k| {
+                let (s, c) = (std::f64::consts::TAU * k as f64 / n as f64).sin_cos_d();
+                let (mut re, mut im, mut cr, mut ci) = (0.0, 0.0, 1.0f64, 0.0f64);
+                for &v in &w {
+                    re += v * cr;
+                    im -= v * ci;
+                    let nr = cr * c - ci * s;
+                    ci = cr * s + ci * c;
+                    cr = nr;
+                }
+                re * re + im * im
+            })
+            .collect()
+    }
+
+    /// 틀을 겹쳐 평균한 스펙트럼(웰치).
+    fn welch(x: &[f32]) -> Vec<f64> {
+        const N: usize = 2048;
+        let mut padded = x.to_vec();
+        if padded.len() < N {
+            padded.resize(N, 0.0);
+        }
+        let mut acc = vec![0.0; N / 2 + 1];
+        let mut frames = 0;
+        let mut at = 0;
+        while at + N <= padded.len() {
+            for (a, p) in acc.iter_mut().zip(power(&padded[at..at + N])) {
+                *a += p;
+            }
+            frames += 1;
+            at += N / 2;
+        }
+        acc.iter().map(|a| a / frames.max(1) as f64).collect()
+    }
+
+    pub(super) fn feel_of(s: &[f32]) -> Feel {
+        let peak = s.iter().fold(0.0f32, |m, v| m.max(v.abs())).max(1e-9);
+        let x: Vec<f32> = s.iter().map(|v| v / peak).collect();
+        let hz = |k: usize| k as f64 * SR as f64 / 2048.0;
+        let spec = welch(&x);
+        let all: f64 = spec.iter().sum::<f64>().max(1e-12);
+        let band = |lo: f64, hi: f64| {
+            spec.iter()
+                .enumerate()
+                .filter(|(k, _)| hz(*k) >= lo && hz(*k) < hi)
+                .map(|(_, p)| p)
+                .sum::<f64>()
+                / all
+        };
+        let centroid = spec
+            .iter()
+            .enumerate()
+            .map(|(k, p)| hz(k) * p)
+            .sum::<f64>()
+            / all;
+        let e = |v: &[f32]| v.iter().map(|a| (*a as f64).powi(2)).sum::<f64>();
+        let cut = len(0.04).min(x.len());
+        let tail = e(&x[cut..]) / e(&x).max(1e-12);
+        let tail_spec = welch(&x[cut..]);
+        let bins: Vec<f64> = tail_spec
+            .iter()
+            .enumerate()
+            .filter(|(k, _)| hz(*k) >= 1000.0 && hz(*k) < 8000.0)
+            .map(|(_, p)| p.max(1e-18))
+            .collect();
+        let geo = (bins.iter().map(|p| libm::log(*p)).sum::<f64>() / bins.len() as f64).exp_d();
+        let ari = bins.iter().sum::<f64>() / bins.len() as f64;
+        let tail_hi = bins.iter().sum::<f64>() / tail_spec.iter().sum::<f64>().max(1e-12);
+        let ring = tail * tail_hi * (1.0 - geo / ari);
+        // 300Hz 1차 고역 통과(0175와 같은 잣대).
+        let rc = 1.0 / (std::f32::consts::TAU * 300.0);
+        let kk = rc / (rc + 1.0 / SR as f32);
+        let (mut y, mut prev, mut hi) = (0.0f32, 0.0f32, 0.0f64);
+        for &v in &x {
+            y = kk * (y + v - prev);
+            prev = v;
+            hi += (y as f64).powi(2);
+        }
+        let win = len(0.005);
+        let env: Vec<f32> = x
+            .chunks(win)
+            .map(|c| (e(c) / c.len() as f64).sqrt() as f32)
+            .collect();
+        let top = env.iter().fold(0.0f32, |m, v| m.max(*v));
+        let last_loud = env.iter().rposition(|v| *v >= top * 0.1).unwrap_or(0);
+        Feel {
+            secs: x.len() as f32 / SR as f32,
+            centroid: centroid as f32,
+            low: band(0.0, 300.0) as f32,
+            mid: band(300.0, 2000.0) as f32,
+            high: band(2000.0, 30000.0) as f32,
+            ring: ring as f32,
+            decay_ms: (last_loud + 1) as f32 * 5.0,
+            rms: (e(s) / s.len() as f64).sqrt() as f32,
+            above_300: (hi / e(&x).max(1e-12)) as f32,
+        }
+    }
+
+    pub(super) fn synth_f32(id: Id) -> Vec<f32> {
+        synth(id).iter().map(|&v| v as f32 / 32767.0).collect()
+    }
+
+    /// 파일 소리(16비트 모노 44.1kHz)의 표본.
+    pub(super) fn file_f32(bytes: &[u8]) -> Vec<f32> {
+        let at = bytes.windows(4).position(|w| w == b"data").unwrap() + 8;
+        bytes[at..]
+            .chunks_exact(2)
+            .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32767.0)
+            .collect()
+    }
+
+    /// 0284 재는 도구: 급소 · 패링(= 튕김 · 받아냄) · 방패 막기(= 맞힘 둘째 층) · 껍질 · 맞힘(파일 + 둘째 층) · 다 모임의 잣대와, 급소가 나는
+    /// 틱에 함께 나는 소리(맞힘 파일 0.6 + 둘째 층 0.5)에 견준 크기. 돌리기: `cargo test vital_cue_probe -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn vital_cue_probe() {
+        let hit = file_f32(include_bytes!("../assets/sfx/enemy_hit_0.wav"));
+        let thw = synth_f32(Id::Thwack);
+        // 같은 틱의 평타 맞힘: 파일(크기 0.6) + 둘째 층(0.5) — 앱이 내는 그대로 더한다.
+        let n = hit.len().max(thw.len());
+        let plain: Vec<f32> = (0..n)
+            .map(|i| {
+                hit.get(i).copied().unwrap_or(0.0) * 0.6
+                    + thw.get(i).copied().unwrap_or(0.0) * synth_gain(Id::Thwack)
+            })
+            .collect();
+        let row = |name: &str, s: &[f32], gain: f32| {
+            let f = feel_of(s);
+            println!(
+                "{name:<14} | {:>5.0} ms | {:>6.0} Hz | {:>4.2} {:>4.2} {:>4.2} | ring {:>5.3} | decay {:>4.0} ms | rms×gain {:>5.3} | >300Hz {:>4.2}",
+                f.secs * 1000.0,
+                f.centroid,
+                f.low,
+                f.mid,
+                f.high,
+                f.ring,
+                f.decay_ms,
+                f.rms * gain,
+                f.above_300
+            );
+        };
+        println!("sound          | length  | centroid  | <300 mid >2k | metal ring | -20 dB      | loudness       | small speaker");
+        row("Sneak", &synth_f32(Id::Sneak), synth_gain(Id::Sneak));
+        row("Parry/Deflect", &synth_f32(Id::Parry), synth_gain(Id::Parry));
+        row("Guard(Thwack)", &thw, synth_gain(Id::Thwack));
+        row("Shell", &synth_f32(Id::Shell), synth_gain(Id::Shell));
+        row("Charged", &synth_f32(Id::Charged), synth_gain(Id::Charged));
+        row("Hit file", &hit, 0.6);
+        row("Hit+Thwack", &plain, 1.0);
+    }
+
     #[test]
     fn the_ambience_loops_without_a_seam() {
         let s = ambience();

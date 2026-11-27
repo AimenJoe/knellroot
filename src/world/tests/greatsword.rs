@@ -364,3 +364,76 @@ fn fury_full_rings_once_per_crossing() {
     }
     assert_eq!(fulls(&mut s, 0.5), 0);
 }
+
+/// 0284 손의 박자를 재는 판: 빈 마당(둘레의 적 없음 — 분노는 잃은 체력으로만 `fury`에 맞춘다, 1은 체력 1의 0.99)에서 `secs`초 동안
+/// 평타를 마구 누르거나(`beat` 거짓 — 틱마다 새 누름) 박자에 맞춰 누른다(앞 휘두르기의 박자 `beat.period`가 찬 틱). 기력은 늘 가득
+/// (기력이 마구 누름을 막는 것은 따로 — 여기서는 손의 박자만). 휘두르기마다 (타 번호, 시작한 틱, 닿기까지의 틱 = 판정이 열린 틱 −
+/// 시작한 틱)을 돌려준다.
+pub(super) fn rhythm(id: W, fury: f32, beat: bool, secs: f32) -> Vec<(u8, usize, usize)> {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(id);
+    let max = w.player.max_hp;
+    w.player.hp = ((max as f32 * (1.0 - fury)).round() as i32).clamp(1, max);
+    let mut out: Vec<(u8, usize, usize)> = Vec::new();
+    let mut seen = w.player.swings;
+    let mut open: Option<usize> = None;
+    for k in 0..(secs / TICK_DT).round() as usize {
+        w.player.stamina = w.stats.max_stamina();
+        let press = if beat {
+            let period = w.player.beat.period;
+            period <= 0.0 || w.player.beat.since_swing >= period - TICK_DT * 0.5
+        } else {
+            true
+        };
+        w.step(
+            &Actions {
+                attack: press,
+                ..Default::default()
+            },
+            &t,
+        );
+        if w.player.swings != seen {
+            seen = w.player.swings;
+            if let PState::Attack { hit, .. } = w.player.state {
+                out.push((hit, k, 0));
+                open = Some(out.len() - 1);
+            }
+        }
+        if let (Some(i), PState::Attack { t: e, hit, .. }) = (open, w.player.state) {
+            let s0 = hit_times(&w.tuned(&t), w.player.weapon.def(), hit).0;
+            if e >= s0 - 1e-6 {
+                out[i].2 = k - out[i].1;
+                open = None;
+            }
+        }
+    }
+    out
+}
+
+/// 0284 재는 도구(사장 판정 p-gs "연타하면 그냥 빠른데..?"): 검 · 망치 · 대검의 휘두르기 사이 · 닿기까지(틱, 60틱 = 1초) — 마구 누름과
+/// 박자, 분노 0 · 0.5 · 1. 돌리기: `cargo test swing_rhythm_probe -- --ignored --nocapture`
+#[test]
+#[ignore]
+fn swing_rhythm_probe() {
+    println!("weapon     | fury | hand | swing-to-swing ticks (by hit)      | first 5 swings | contact ticks (by hit)");
+    for id in [W::Sword, W::Hammer, W::Greatsword] {
+        for fury in [0.0, 0.5, 1.0] {
+            for beat in [false, true] {
+                let r = rhythm(id, fury, beat, 6.0);
+                let n = id.def().combo.len();
+                let gaps: Vec<usize> = r.windows(2).take(n).map(|p| p[1].1 - p[0].1).collect();
+                let five = r.get(5).map_or(0, |x| x.1) - r.first().map_or(0, |x| x.1);
+                let contact: Vec<usize> = r.iter().take(n).map(|x| x.2).collect();
+                println!(
+                    "{:<10} | {fury:.1}  | {} | {:<34} | {:>14} | {:?}",
+                    format!("{id:?}"),
+                    if beat { "beat" } else { "mash" },
+                    format!("{gaps:?}"),
+                    five,
+                    contact
+                );
+            }
+        }
+    }
+}

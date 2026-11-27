@@ -192,6 +192,18 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
     await p.keyboard.down('KeyJ'); await burst(p, 'daggers-charge', 12); await p.keyboard.up('KeyJ'); await burst(p, 'daggers-lunge', 16);
     await p.keyboard.press('Space'); await burst(p, 'daggers-dodge', 6); await p.keyboard.press('KeyJ'); await burst(p, 'daggers-dash', 12);
     await p.close();
+    // 0284: 급소가 드는 타(사장 "은빛 번쩍은 별로 티가 안 남") — 새 판(새 기록 = 보조무기 슬롯이 빈 손, 쌍단검의 결 "그림자 걸음":
+    // 구른 뒤 첫 휘두르기는 자리와 상관없이 급소)에서 줄 쪽으로 굴러 들어가 친다 — 쿼터뷰 한 번, 락온을 걸고 한 번.
+    p = await armed('Daggers'); await p.waitForTimeout(1200);
+    await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700);
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    await p.keyboard.down('KeyW'); await p.keyboard.down('KeyD'); await p.keyboard.press('Space'); await burst(p, 'daggers-vq-dodge', 8);
+    await p.keyboard.up('KeyW'); await p.keyboard.up('KeyD'); await p.keyboard.press('KeyJ'); await burst(p, 'daggers-vital-quarter', 14);
+    await p.keyboard.press('F6'); await hold(p, 'KeyS', 900); await p.keyboard.press('KeyL'); await p.waitForTimeout(900);
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    await p.keyboard.down('KeyW'); await p.keyboard.press('Space'); await burst(p, 'daggers-vl-dodge', 8); await p.keyboard.up('KeyW');
+    await p.keyboard.press('KeyJ'); await burst(p, 'daggers-vital-lock', 14);
+    await p.close();
   }
   if (want('greatsword')) {
     // 0274 ④ 대검: `Arm(Greatsword)` → "한 줄로 선 잔재"(`Scenario(Line)`) — 쿼터뷰 · 락온 한 장씩, 그다음

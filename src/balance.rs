@@ -1930,3 +1930,134 @@ fn staff_casts_first_probe() {
         }
     }
 }
+
+/// 대검의 무게(0284 — 사장 판정 p-gs "연타하면 그냥 빠른데..?"): 대검을 검 · 망치 · 창 · 낫 곁에 두고 문지기 둘 · 정예 무리 · 잡몹 스물과
+/// 싸운다, 성공률 0.7 · 0.5. 봇은 0281의 손(종류의 스킬 둘 3레벨 · 틈의 RB · 막거나 구르기) — 틈에는 평타를 틱마다 누른다(마구 누름 —
+/// 박자에 맞추지 않는다). 장비는 보조무기를 비운 것(빈 손의 결 — 대검은 남김없이 휘두른다)과 쌍단검을 멘 것(결이 없는 바탕). 줄마다
+/// 이긴 몫 · 이긴 판의 초 · 받은 피해 · 이길 때까지의 초 · 손의 타가 준 피해의 몫.
+/// 돌리기: `SIM_RUNS=40 cargo test --release greatsword_weight_probe -- --ignored --nocapture` (`SIM_ONLY=greatsword`)
+#[test]
+#[ignore]
+fn greatsword_weight_probe() {
+    use crate::scenario::Scenario;
+    use crate::skills::Id as Sk;
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs: u64 = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(40);
+    let only = std::env::var("SIM_ONLY").ok();
+    let all = builds();
+    #[derive(Clone, Copy, Debug)]
+    enum Bout {
+        Boss(Kind),
+        Pack(Scenario),
+    }
+    let bouts: [(&str, Bout, usize); 4] = [
+        ("bellkeeper (B)", Bout::Boss(Kind::Bellkeeper), 1),
+        ("stag field boss (D)", Bout::Boss(Kind::Stag), 3),
+        ("elite pack (B)", Bout::Pack(Scenario::Elites), 1),
+        ("horde of 20 (B)", Bout::Pack(Scenario::Horde), 1),
+    ];
+    let classes: [(W, [Sk; 2]); 5] = [
+        (W::Greatsword, [Sk::Whirl, Sk::Sunder]),
+        (W::Sword, [Sk::Whirl, Sk::Pommel]),
+        (W::Hammer, [Sk::Quake, Sk::Toll]),
+        (W::Spear, [Sk::Skewer, Sk::Pole]),
+        (W::Scythe, [Sk::Reap, Sk::Boomerang]),
+    ];
+    let gears: [(&str, Option<W>, bool); 2] = [
+        ("empty", None, true),
+        ("sub Daggers", Some(W::Daggers), false),
+    ];
+    let ps = [0.7f32, 0.5];
+    let mut jobs: Vec<(usize, usize, usize, usize)> = Vec::new();
+    for (ci, (main, _)) in classes.iter().enumerate() {
+        if only
+            .as_deref()
+            .is_some_and(|o| !format!("{main:?}").eq_ignore_ascii_case(o))
+        {
+            continue;
+        }
+        for pi in 0..ps.len() {
+            for bi in 0..bouts.len() {
+                for gi in 0..gears.len() {
+                    jobs.push((pi, bi, ci, gi));
+                }
+            }
+        }
+    }
+    let run = |&(pi, bi, ci, gi): &(usize, usize, usize, usize)| -> Sum {
+        let (_, bout, body) = bouts[bi];
+        let (main, pair) = classes[ci];
+        let (_, sub, bare) = gears[gi];
+        let p = ps[pi];
+        let b = Build {
+            weapon: main,
+            sub,
+            shield: false,
+            bare,
+            kit: Kit {
+                skills: Some(pair),
+                rank: 3,
+                rb: true,
+                guard: true,
+                keep: false,
+            },
+            ..all[body].clone()
+        };
+        sum_of(
+            (0..runs)
+                .map(|s| match bout {
+                    Bout::Boss(k) => fight_vs(k, false, &b, p, s + 1, &t),
+                    Bout::Pack(sc) => pack_fight(sc, &b, p, s + 1, &t),
+                })
+                .collect(),
+        )
+    };
+    let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let out: Vec<std::sync::Mutex<Option<Sum>>> =
+        jobs.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|sc| {
+        for _ in 0..threads {
+            sc.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(job) = jobs.get(i) else { break };
+                let m = run(job);
+                *out[i].lock().unwrap() = Some(m);
+            });
+        }
+    });
+    let cost = |m: &Sum| {
+        if m.win > 0.0 {
+            m.secs / m.win
+        } else {
+            f32::INFINITY
+        }
+    };
+    println!("runs = {runs}, skill rank 3, mashing bot");
+    for (pi, p) in ps.iter().enumerate() {
+        for (bi, (name, ..)) in bouts.iter().enumerate() {
+            println!("\n### p = {p} · {name}");
+            println!("weapon     | gear        | win  | secs(win) | taken | secs/win | melee dmg");
+            for (i, &(p2, b2, ci, gi)) in jobs.iter().enumerate() {
+                if p2 != pi || b2 != bi {
+                    continue;
+                }
+                let m = out[i].lock().unwrap().take().unwrap();
+                println!(
+                    "{:<10} | {:<11} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>8.1} | {:>8.0}%",
+                    format!("{:?}", classes[ci].0),
+                    gears[gi].0,
+                    m.win * 100.0,
+                    m.secs,
+                    m.taken,
+                    cost(&m),
+                    m.source.1 * 100.0,
+                );
+            }
+        }
+    }
+}
