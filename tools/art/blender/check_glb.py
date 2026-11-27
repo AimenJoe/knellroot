@@ -82,7 +82,7 @@ EXPECT = {
                  "gs1": 0.56, "gs2": 0.56, "gs3": 0.56, "gs4": 0.6, "gs5": 0.69, "gs_dash": 0.47, "gs_charge": 0.3, "gs_heavy": 0.81,
                  "sk_sunder": 0.7, "sk_sear": 0.53, "ult_tempest": 0.67,
                  # 0274 ⑤ 낫: 걸어 당기며 베기 · 걸어 당기기 · 생기 거두기(휘돌이와 같은 한 바퀴) · 깨어나는 숲(땅을 짚는다).
-                 "scythe3": 0.56, "scythe_charge": 0.3, "scythe_heavy": 0.58, "sk_reap": 0.48, "sk_harvest": 0.67, "ult_grove": 1.49,
+                 "staff_cast": 0.4, "scythe1": 0.43, "scythe2": 0.43, "scythe3": 0.56, "scythe_charge": 0.3, "scythe_heavy": 0.58, "sk_reap": 0.48, "sk_withdraw": 0.66, "sk_plunge": 0.9, "sk_boomerang": 0.53, "sk_word": 0.5, "sk_harvest": 0.67, "ult_grove": 1.49,
                  # 0274 ⑥ 완드: 저주 새기기 · 시드는 그늘(손을 내미는 시전) · 치른 값(들어 올렸다 내리꽂고 머문다).
                  "sk_hex": 0.52, "sk_blight": 0.55, "ult_price": 1.5},
     "root_husk": {"idle": 1.6, "walk": 1.0, "attack": 1.3, "hurt": 0.3},

@@ -134,7 +134,7 @@ mod clip_facing {
         /// 활을 겨누는 동작(0272 — 화살비): 겨누는 줄(오른손 → 활을 든 왼손)이 정면 — 몸은 옆으로 선다.
         Aim,
     }
-    const FACES: [(&str, Face); 45] = [
+    const FACES: [(&str, Face); 49] = [
         ("sk_whirl", Face::Spin),
         ("sk_cut", Face::Tip),
         ("sk_gather", Face::Hips),
@@ -187,6 +187,11 @@ mod clip_facing {
         ("sk_hex", Face::Hips),
         ("sk_blight", Face::Hips),
         ("ult_price", Face::Hips),
+        // 0283 빈 노드 넷의 제 동작.
+        ("sk_withdraw", Face::Tip),
+        ("sk_plunge", Face::Hips),
+        ("sk_boomerang", Face::Tip),
+        ("sk_word", Face::Hips),
     ];
 
     fn deg(a: f32) -> f32 {

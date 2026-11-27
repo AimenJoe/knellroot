@@ -303,6 +303,7 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("staff4", ("평타 4", "hit 4")),
     ("staff_charge", ("강공격 차지", "heavy charge")),
     ("staff_release", ("강공격", "heavy")),
+    ("staff_cast", ("마법 탄 시전", "cast a bolt")),
     ("cast_charge", ("마법 차지", "magic charge")),
     ("cast", ("마법", "magic")),
     ("xbow_charge", ("쇠뇌 차지", "crossbow charge")),
@@ -431,6 +432,11 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("sk_sear", ("스킬: 불씨 휩쓸기", "skill: cinder sweep")),
     ("ult_tempest", ("궁극기: 칼바람", "ult: bladestorm")),
     // 0274 ⑤ — 낫
+    ("scythe1", ("낫: 1타 걸어 베기", "sickle: hook 1")),
+    (
+        "scythe2",
+        ("낫: 2타 되받아 걸기", "sickle: backhand hook 2"),
+    ),
     (
         "scythe3",
         ("낫: 3타 걸어 당기며 베기", "sickle: hook and drag 3"),
@@ -442,6 +448,17 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("sk_hex", ("스킬: 저주 새기기", "skill: etch a curse")),
     ("sk_blight", ("스킬: 시드는 그늘", "skill: withering shade")),
     ("ult_price", ("궁극기: 치른 값", "ult: the price paid")),
+    // 0283 — 빈 노드 넷의 제 동작
+    (
+        "sk_withdraw",
+        ("스킬: 찌르고 물러서기", "skill: keep at bay"),
+    ),
+    ("sk_plunge", ("스킬: 불씨 내리꽂기", "skill: cinder plunge")),
+    (
+        "sk_boomerang",
+        ("스킬: 돌아오는 낫", "skill: returning sickle"),
+    ),
+    ("sk_word", ("스킬: 끊는 말", "skill: severing word")),
 ];
 
 /// 동작 이름의 화면 이름(표에 없으면 동작 이름 그대로 — 모델의 동작 이름은 오른쪽 칸에 따로 보인다).

@@ -95,6 +95,9 @@ pub(super) fn rows(w: &Weapon, tn: &Tuning) -> Vec<Row> {
         Rb::Toss => {
             add!("cast_charge", None);
             add!("cast", None);
+            if w.id.class() == Some(crate::weapons::Class::Staff) {
+                add!("staff_cast", None); // 0283: 지팡이의 제 시전
+            }
         }
         // 당기는 리듬(활 — `Id::draws`)은 활쏘기 원본의 제 동작.
         Rb::Shot { .. } if w.id.draws() => {

@@ -87,6 +87,12 @@ impl Memory {
         let toss = !shot && w.rb_bolts().0.thrown();
         // 땅 내려찍기(0274 ④ — 대검의 RB): 두 손으로 머리 위에서 내려찍는 동작(평타 끝 타 `gs5`)의 닿는 자리가 탄이 나가는 때에.
         let slam = !shot && w.rb_bolts().0.look == crate::weapons::Look::Quake;
+        // 지팡이의 마법 탄(0283 — 0282부터 주된 공격): 지팡이 머리를 과녁 쪽으로 내미는 제 시전(`staff_cast`, 없는 모델이면 손을 내미는 시전).
+        let cast: &[&'static str] = if wpn.id.class() == Some(crate::weapons::Class::Staff) {
+            &["staff_cast", "cast", "parry", "attack"]
+        } else {
+            &["cast", "parry", "attack"]
+        };
         // 서 있는 동안(0153): 숨 고리 + 조용할 때 가끔 몸짓. 조용함 = 락온이 아니고 가까이 깨어 있는 적이 없다.
         // 월드 시계로 지난 초(멈춤 창·히트스톱 동안 0) — 서 있는 몸짓·걸음 시계·섞기가 같이 쓴다.
         let wdt = (w.time - self.idle_at).clamp(0.0, 0.1);
@@ -194,7 +200,7 @@ impl Memory {
                 &["sk_throw", "throw", "cast"],
                 e * TOSS_RELEASE / t[crate::tuning::P::CastStartup].max(1e-3),
             ),
-            PState::Cast { t: e, .. } => Pick::of(&["cast", "parry", "attack"], e),
+            PState::Cast { t: e, .. } => Pick::of(cast, e),
             // 원거리 강공격 모으기(0056): 쇠뇌는 어깨에 대고 시위를 당긴 채, 마법은 두 손을 모아 빛을 키우는 자세를 쥔다.
             // 활(0274 ②b — 당기는 길이를 고른다): 당기는 동작(0.3초)을 끝까지 당기는 시간(`cast.charge s`)에 맞춰 늘인다.
             PState::CastCharge { t: e } if bow => Pick::of(

@@ -24,6 +24,7 @@ import wanderer as W  # noqa: E402
 
 # 0247: v3 몸(Meshy 7.1 — 그림 A) + v2 동작을 뼈 이름으로 옮겨 담은 것(`meshy_rig.py --retarget`)
 RIG = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v3_rig_anim.glb")
+MOVES = os.path.join(C.REPO, "tools", "art", "sources", "meshy", "raccoon_v3_moves.glb")  # 0283: Meshy API로 받은 동작
 NAME = "wanderer"
 HEIGHT = 1.4  # 옛 방랑자와 같은 키(귀 끝까지)
 OUT_FPS = 100  # 옛 동작처럼 — 길이(0.43·0.25 …)가 프레임에 딱 떨어진다. 키는 줄이므로 크기는 늘지 않는다
@@ -59,7 +60,9 @@ LEAN_CAP = {"attack": (30.0, 30.0), "attack2": (30.0, 30.0),
             "charge": (30.0, 30.0), "heavy": (30.0, 30.0),
             # 0256(사장 2026-11-19 "뒤로 뛰기, 점프는 너무 숙여져 있고"): 뛰어넘기(Jump_Over_Obstacle)·뒤로 뛰기(Back_Jump)는
             # 몸이 앞으로 엎어질 듯 숙였다 — 공중에서도 몸은 거의 서 있게.
-            "jump": (18.0, 20.0), "dodge_back": (18.0, 20.0)}
+            "jump": (18.0, 20.0), "dodge_back": (18.0, 20.0),
+            # 0283: 찌르고 물러서기 원본(Text to Motion)은 낮게 엎드려 찔러 두건이 얼굴을 덮었다 — 검 1타와 같은 상한.
+            "sk_withdraw": (30.0, 30.0)}
 # 판정 구간(초 — 시작, 길이): 게임의 `world::hit_times`·`heavy_times`(랩 평타·강타 시간 × 무기 표의 `time`)와 같은 값.
 # 콤보·돌기 동작의 가운데를 잘라 와서 판정 순간에 몸이 옆·뒤를 보던 것(지팡이 둘째·셋째 타는 엉덩이가 뒤)을, 이 구간 동안 몸 전체를 돌려
 # 주먹(= 칼)이 정면을 지나게 맞춘다(`face_hit` — 시작·끝은 원본 방향 그대로, 사이를 매끄럽게). 판정·초승달은 늘 정면 부채꼴이다.
@@ -103,6 +106,11 @@ SKILL_FACE = {
     # 0274 ⑥ 완드: 저주 새기기 · 시드는 그늘(손을 내미는 시전 — 몸이 정면) · 치른 값(완드를 들어 올렸다 내리꽂는다 — 몸이 정면).
     "sk_hex": ((0.22, 0.0, 0.30), "hips"), "sk_blight": ((0.25, 0.0, 0.30), "hips"),
     "ult_price": ((0.30, 0.30, 0.90), "hips"),
+    # 0283: 빈 노드 넷의 제 동작(Meshy API로 받음 — 예전엔 꿰뚫기 · 파문 · 던지기 · 불길의 것을 빌렸다).
+    "sk_withdraw": ((0.14, 0.22, 0.30), "tip"), "sk_plunge": ((0.25, 0.30, 0.35), "hips"),
+    "sk_boomerang": ((0.18, 0.10, 0.25), "tip"), "sk_word": ((0.20, 0.0, 0.30), "hips"),
+    # 0283: 지팡이의 시전 — 탄이 나가는 순간(`anim::CAST_RELEASE`) 지팡이 머리가 정면(기술은 아니지만 같은 장치).
+    "staff_cast": ((0.075, 0.0, 0.325), "tip"),
     "throw": ((0.2, 0.0, 0.3), "hips"),  # 0204: 수류탄이 손을 떠나는 순간 몸이 정면(원본 M16은 몸 왼쪽으로 휘둘러 던진다)
     "parry": ((0.08, 0.22, 0.0), "hold"),  # 기술은 아니지만 같은 장치 — 막는 동안 몸이 정면(원본 M15는 들며 옆으로 비튼다)
     "block": ((0.0, 0.2, 0.0), "hold"),  # 방패 막기(0223) — 내내 정면
@@ -128,7 +136,7 @@ CHAIN = {"heavy": "charge", "hammer_slam": "hammer_charge", "staff_release": "st
          "spear_lunge": "spear_charge", "dagger_lunge": "dagger_charge", "gs_heavy": "gs_charge", "scythe_heavy": "scythe_charge"}
 # 떠 있는 동안 엉덩이를 올리지 않는 동작(0196): 게임이 몸을 `air`만큼 올린다 — 원본의 뛰어오름(엉덩이 +0.2)을 그대로 두면 두 번 뜬다.
 # 엉덩이 높이를 서기의 높이 위로 올리지 않는다(웅크림은 남는다).
-FLAT = {"jump", "land"}
+FLAT = {"jump", "land", "sk_plunge"}  # 0283: 불씨 내리꽂기 원본(Text to Motion)은 뛰어올라 꽂는다 — 스킬은 뛰지 않는다
 # 겨누기(0196, 쇠뇌 — 원본은 활쏘기 Archery_Shot): 활을 든 왼팔이 몸 왼쪽을 가리킨다 → 몸을 돌려 오른손 → 왼손(겨누는 줄)이 정면을 보게,
 # 쇠뇌는 그 줄을 따라 눕힌다(날 = 오른손 → 왼손, 위 = 하늘). (이름, 들어가는 몫): 그 몫 동안 서기 방향에서 겨누는 방향으로.
 AIM = {"bow_draw": 0.7, "bow_shoot": 0.0}  # 0204: 쇠뇌는 활쏘기 대신 두 손을 앞으로 내민 시전 자세(`XBOW_FWD`) — 활쏘기는 몸이 옆으로 섰다(사장)
@@ -152,7 +160,7 @@ TWO_HAND_NEAR, TWO_HAND_FAR = 0.30, 0.55
 # 창(0272 2단계 — `spear_pass`): 앞으로 겨누는 동작 · 자루가 팔과 함께 도는 동작 · 겨눌 때 촉을 숙이는 몫 · 세워 들 때 앞으로 기우는 몫 ·
 # 팔 끝 쪽(엉덩이 → 칼끝 어림)이 몸 앞과 이루는 cos가 −이 값 아래면 몸 앞, +이 값 위면 팔 끝을 다 따른다(사이는 매끄럽게).
 SPEAR_POINT = {"spear1", "spear2", "spear3", "spear_dash", "spear_charge", "spear_lunge", "sk_skewer", "sk_pin", "ult_gale",
-               "sk_stitch"}
+               "sk_stitch", "sk_withdraw"}
 SPEAR_SWEEP = {"sk_pole"}
 SPEAR_DIP = 0.12
 SPEAR_DIP_AT = {"sk_pin": 0.7}  # 내리꽂는 동작은 더 숙인다
@@ -178,12 +186,13 @@ HIT_WINDOWS = {
     "gs1": (0.104, 0.13), "gs2": (0.104, 0.13), "gs3": (0.104, 0.13), "gs4": (0.112, 0.14), "gs5": (0.128, 0.16),
     "gs_dash": (0.088, 0.11), "gs_heavy": (0.084, 0.168),
     # 0274 ⑤ 낫: 셋째 타 걸어 당기며 베기 — 랩 시간에 표의 배 1.3. 앞의 두 타 · 대시 · 강공격은 검의 동작을 같은 배로 빌린다.
+    "scythe1": (0.08, 0.10), "scythe2": (0.08, 0.10),  # 0283 — 검 1 · 2타와 같은 구간, 빌리던 때 그대로
     "scythe3": (0.104, 0.13), "scythe_heavy": (0.06, 0.12),
 }
 # 판정 순간에 무엇을 정면에 두나(0198): 기본은 칼끝(오른손), 왼 잽은 왼손(오른손은 막는 자리 — 원본은 옆으로 선 권투 자세라 엉덩이가
 # −80°를 본다), 발차기는 몸(엉덩이).
 # 수(도)면 칼끝(오른손) 쪽에 그만큼 더 돌린다(0274 ⑤ — 낫은 날이 손에서 옆으로 휘어 가장 먼 날끝이 손의 쪽보다 옆에 선다).
-HIT_FACE = {"fist1": "lhand", "fist_heavy": "hips", "fist_dash": "hips", "dagger1": "lhand", "scythe3": 15.0,
+HIT_FACE = {"fist1": "lhand", "fist_heavy": "hips", "fist_dash": "hips", "dagger1": "lhand", "scythe3": 15.0, "scythe2": -40.0,
             "scythe_heavy": 15.0}
 
 # (게임 이름, 원본, 앵커[(게임 초, 원본 프레임)] 또는 ("loop", 시작, 끝, 길이) 또는 ("hit", 시작, 봉우리 찾기 (a, b), 끝, 길이, 게임의 순간)).
@@ -269,6 +278,9 @@ CLIPS = [
     ("staff4", "Attack", ("anchors", [(0.0, 8), (0.10, 21), (0.23, 26), (0.56, 40)])),
     # 0206(사장 "charged 시리즈 — 모으기 모션이 겹치거나 없는 거에"): 느린 M09 한 바퀴 대신 Charged_Axe_Chop — 모으며 일어나 머리
     # 위로 들어(74 → 93) 쥐고, 떼면 내려찍는다(103~107, 5 m/s).
+    # 0283: 지팡이의 마법 탄(RB — 0282부터 주된 공격) = 지팡이 머리를 과녁 쪽으로 내밀어 쏘는 제 시전(Meshy Text to Motion `T_staff_cast`).
+    # 탄이 나가는 순간(`anim::CAST_RELEASE` 0.075초)에 내민 끝(14), 길이는 손을 내미는 시전 `cast`와 같다(0.4초). 예전엔 모두가 쓰는 `cast`를 빌렸다.
+    ("staff_cast", "T_staff_cast", ("anchors", [(0.0, 2), (0.075, 13), (0.25, 20), (0.4, 30)])),
     ("staff_charge", "Charged_Axe_Chop", ("anchors", [(0.0, 74), (0.3, 93)])),
     ("staff_release", "Charged_Axe_Chop", ("anchors", [(0.0, 93), (0.05, 103), (0.16, 108), (0.52, 124)])),
     # 0206: 검 달리기 공격 = Charged_Upward_Slash 달려들며 아래에서 머리 위까지 올려 베기(21~27) — 예전엔 1타를 빌렸다.
@@ -333,9 +345,11 @@ CLIPS = [
     # 21~25 거둠)의 찌름 구간을 창의 판정 구간(`HIT_WINDOWS`)에 맞춘다. 1타 = 선 자세에서 찔러 당긴 자리(13)까지, 2타 = 당긴
     # 자리에서 다시, 3타 = 크게 내디뎌(6에서) 길게, 달리며 찌르기 = 달려든 기세로(10에서), 모으기 = 당긴 채 버팀(8 → 13),
     # 강타 = 당긴 자리에서 내달려 꿰뚫음. 창은 `spear` 뼈의 규칙으로 앞을 겨눈다(`spear_pass`).
-    ("spear1", "Thrust_Slash", ("anchors", [(0.0, 8), (0.092, 17), (0.207, 19), (0.38, 15), (0.495, 13)])),
-    ("spear2", "Thrust_Slash", ("anchors", [(0.0, 13), (0.092, 18), (0.207, 19), (0.38, 15), (0.495, 13)])),
-    ("spear3", "Thrust_Slash", ("anchors", [(0.0, 6), (0.108, 17), (0.18, 19), (0.243, 21), (0.58, 25)])),
+    # 0283: 찌르기 셋은 제 동작 — Meshy Text to Motion "두 손 창 찌르기 셋"(`T_spear`, 옆으로 선 창 자세에서 내질렀다 당기기). 예전엔
+    # 검 3타의 원본 Thrust_Slash를 셋으로 나눠 빌렸다.
+    ("spear1", "T_spear", ("hit", 20, (23, 26), 36, 0.495, 0.1495)),
+    ("spear2", "T_spear", ("hit", 44, (46, 50), 58, 0.495, 0.1495)),
+    ("spear3", "T_spear", ("hit", 58, (62, 66), 80, 0.58, 0.1755)),
     ("spear_dash", "Thrust_Slash", ("anchors", [(0.0, 10), (0.08, 18), (0.18, 19), (0.43, 25)])),
     ("spear_charge", "Thrust_Slash", ("anchors", [(0.0, 8), (0.3, 13)])),
     ("spear_lunge", "Thrust_Slash", ("anchors", [(0.0, 13), (0.069, 18), (0.207, 19), (0.30, 21), (0.67, 25)])),
@@ -359,7 +373,8 @@ CLIPS = [
     # 지나간다(게임이 몸을 2.7 m 옮긴다). 길이 = 판정 구간 + 후딜(무기 표의 배 × 랩 시간).
     ("dagger1", "Left_Jab_from_Guard", ("anchors", [(0.0, 5), (0.064, 9), (0.144, 12), (0.344, 26)])),
     ("dagger2", "Right_Jab_from_Guard", ("anchors", [(0.0, 7), (0.064, 11), (0.144, 14), (0.344, 26)])),
-    ("dagger3", "Double_Combo_Attack", ("anchors", [(0.0, 4), (0.068, 13), (0.1105, 15), (0.153, 17), (0.3655, 23)])),
+    # 0283: 셋째 = 두 손의 날로 오른쪽에서 가로 베기(Meshy Text to Motion `T_daggers` — 예전엔 검 1타 Double_Combo_Attack을 빌렸다).
+    ("dagger3", "T_daggers", ("hit", 9, (13, 18), 27, 0.3655, 0.1105)),
     ("dagger4", "Right_Uppercut_from_Guard", ("anchors", [(0.0, 4), (0.084, 12), (0.189, 16), (0.4515, 24)])),
     ("dagger_dash", "Thrust_Slash", ("anchors", [(0.0, 10), (0.064, 18), (0.144, 19), (0.344, 25)])),
     ("dagger_charge", "Thrust_Slash", ("anchors", [(0.0, 8), (0.3, 13)])),
@@ -373,10 +388,13 @@ CLIPS = [
     # Double_Combo_Attack), 3타 = 다시 오른쪽에서(Weapon_Combo의 셋째 휘두르기), 4타 = 크게 되받아 휩쓸기(Charged_Slash — 검 강타의 큰 휩쓸기),
     # 5타 = 두 손으로 머리 위에서 내려찍기(Attack), 달려들며 올려 베기(Charged_Upward_Slash — 검 대시), 모으기 · 강공격 = 도끼를 모아 들었다
     # 내려찍기(Charged_Axe_Chop — 두 손). 길이 = 판정 구간 + 후딜(무기 표의 배 × 랩 시간), 닿는 순간 = 판정 구간 가운데.
-    ("gs1", "M11", ("hit", 10, (18, 30), 36, 0.559, 0.169)),
-    ("gs2", "Double_Combo_Attack", ("hit", 23, (26, 31), 36, 0.559, 0.169)),
-    ("gs3", "Weapon_Combo", ("hit", 44, (48, 56), 60, 0.559, 0.169)),
-    ("gs4", "Charged_Slash", ("hit", 22, (25, 30), 51, 0.602, 0.182)),
+    # 0283: 1~4타는 제 동작 — Meshy Text to Motion "두 손 대검 콤보"(`T_greatsword`: 오른쪽 → 왼쪽 휩쓸기 · 되감기 · 다시 휩쓸기 · 되감기).
+    # 원본은 되받아 휩쓸기를 따로 치지 않고 감아 돌아온다 — 그 되감기(왼쪽 → 오른쪽)를 2 · 4타의 판정 구간에 맞춰 줄인다.
+    # (예전: 1타 M11 · 2타 검 2타 Double_Combo_Attack · 3타 Weapon_Combo · 4타 검 강타 Charged_Slash)
+    ("gs1", "T_greatsword", ("hit", 12, (21, 27), 36, 0.559, 0.169)),
+    ("gs2", "T_greatsword", ("anchors", [(0.0, 33), (0.104, 36), (0.234, 52), (0.559, 60)])),  # 되감기는 느려 판정 구간에 더 담는다
+    ("gs3", "T_greatsword", ("hit", 63, (81, 87), 93, 0.559, 0.169)),
+    ("gs4", "T_greatsword", ("anchors", [(0.0, 90), (0.112, 93), (0.252, 108), (0.602, 116)])),
     ("gs5", "Attack", ("hit", 8, (18, 28), 40, 0.688, 0.208)),
     ("gs_dash", "Charged_Upward_Slash", ("hit", 6, (19, 27), 36, 0.473, 0.143)),
     ("gs_charge", "Charged_Axe_Chop", ("anchors", [(0.0, 74), (0.3, 93)])),
@@ -389,6 +407,10 @@ CLIPS = [
     # 0274 ⑤ 낫(있는 원본에서 — 0 크레딧): 셋째 타 = 멀리 뻗어 걸고 몸으로 당긴다(M13 — 끌어모으기 · 장치 당기기의 원본, 닿는 순간 = 당기는
     # 손의 봉우리), 걸어 당기기 = 같은 원본을 스킬 구간에, 생기 거두기 = 휘돌이(Skill_03)와 같은 한 바퀴, 깨어나는 숲 = 웅크려 빈 손으로
     # 땅을 짚었다 일어선다(줍기 원본 Collect_Object — 멈춤 동안 웅크리고, 시동 끝에 손이 땅에 닿는다).
+    # 0283: 앞의 두 타는 제 동작 — Meshy Text to Motion "오른손 낫으로 걸어 베기 둘"(`T_sickle`: 오른쪽에서 몸 쪽으로 걸어 당기는 휩쓸기 ·
+    # 손을 높이 든 되받아 걸기). 예전엔 검 1 · 2타(`attack` · `attack2`)를 빌렸다. 길이 · 판정 구간은 검의 것 그대로(무기 표의 배 1.0).
+    ("scythe1", "T_sickle", ("hit", 4, (8, 12), 18, 0.43, 0.13)),
+    ("scythe2", "T_sickle", ("hit", 27, (29, 33), 40, 0.43, 0.13)),  # 24에서 들면 되감는 몸이 등을 보였다
     ("scythe3", "M13", ("hit", 24, (40, 56), 76, 0.559, 0.169)),
     # 모으기 = 같은 원본에서 멀리 뻗어 건 채 버틴다(7 → 24), 강공격 = 거기서 몸으로 크게 끌어온다(셋째 타와 같은 당김을 강공격의 판정 구간에).
     # 검의 모아 베기(Charged_Slash)를 빌리면 휜 날의 끝이 큰 휩쓸기 동안 손보다 훨씬 빨리 돌아 정면을 지나는 때가 흔들렸다.
@@ -402,6 +424,17 @@ CLIPS = [
     ("sk_hex", "mage_soell_cast_8", ("anchors", [(0.0, 4), (0.22, 16), (0.52, 29)])),
     ("sk_blight", "mage_soell_cast_8", ("anchors", [(0.0, 0), (0.25, 14), (0.55, 31)])),
     ("ult_price", "Charged_Axe_Chop", ("anchors", [(0.0, 74), (0.30, 93), (0.60, 103), (0.95, 124), (1.50, 124)])),
+    # 0283 빈 노드 넷의 제 동작(Meshy API — `raccoon_v3_moves.glb`, `T_*` = Text to Motion, 나머지는 라이브러리 이름). 길이 · 구간은 빌려 쓰던
+    # 동작과 같다(스킬 표의 `Clip::seg`), 구간의 경계 = 판정의 순간 = 원본의 손 속도 봉우리 · 뻗은 끝.
+    # 찌르고 물러서기: 두 손으로 내지르고(6 → 13) 뻗은 채 머물다(물러서는 0.22초 — 게임이 몸을 뒤로 옮긴다) 거둔다.
+    ("sk_withdraw", "T_withdraw", ("anchors", [(0.0, 6), (0.14, 13), (0.36, 22), (0.66, 56)])),
+    # 불씨 내리꽂기: 두 손으로 들어 올려 내리꽂고(20 — 손 속도 봉우리) 꽂은 채 웅크려 불길이 번지는 동안 머물다 뽑아 일어선다. 원본은
+    # 뛰어올라 꽂는다 — `FLAT`이 엉덩이를 서기 높이 위로 못 올라가게 깎는다.
+    ("sk_plunge", "T_plunge", ("anchors", [(0.0, 2), (0.25, 20), (0.55, 40), (0.90, 70)])),
+    # 돌아오는 낫: 옆으로 휘둘러 던지고(14 — 놓는 순간) 날아가는 날을 보다가 받으려 손을 든다(40 — 낫은 스킬이 끝난 뒤 돌아온다).
+    ("sk_boomerang", "T_boomerang", ("anchors", [(0.0, 2), (0.18, 14), (0.28, 20), (0.53, 40)])),
+    # 끊는 말: 한 팔을 곧게 앞으로 뻗어 가리키고(21) 그 자리에 잠깐 머문 뒤 거둔다(손을 내미는 시전보다 짧고 딱딱하다).
+    ("sk_word", "mage_soell_cast_7", ("anchors", [(0.0, 9), (0.20, 21), (0.36, 33), (0.50, 45)])),
 ]
 LOOPS = {"idle", "walk", "run", "walk_back"}
 
@@ -500,6 +533,21 @@ def load_rig():
     for a in bpy.data.actions:  # 가져오면 "<이름>_<뼈대 이름>"
         if a.name.endswith("_" + arm.name):
             a.name = a.name[: -len(arm.name) - 1]
+    # 0283: Meshy API로 새로 받은 동작(`meshy_moves.py` — 같은 v3 뼈대에 옮겨 담은 것, 뼈대만): 동작만 가져오고 뼈대는 버린다.
+    # 동작의 키는 뼈 이름 + 뼈의 쉬는 자리 기준이라 두 파일의 쉬는 자세가 같아야 한다 — 다르면 멈춘다.
+    before, acts0 = set(bpy.data.objects), set(bpy.data.actions)
+    bpy.ops.import_scene.gltf(filepath=MOVES)
+    new = [o for o in bpy.data.objects if o not in before]
+    other = next(o for o in new if o.type == "ARMATURE")
+    for b in other.data.bones:
+        if b.name in arm.data.bones:
+            d = max(abs(x - y) for r0, r1 in zip(b.matrix_local, arm.data.bones[b.name].matrix_local) for x, y in zip(r0, r1))
+            assert d < 1e-4, f"{MOVES}: {b.name} rest differs by {d}"
+    for a in bpy.data.actions:
+        if a not in acts0 and a.name.endswith("_" + other.name):
+            a.name = a.name[: -len(other.name) - 1]
+    for o in new:
+        bpy.data.objects.remove(o)
     for pb in arm.pose.bones:
         pb.rotation_mode = "QUATERNION"
     return arm, body
@@ -2010,6 +2058,9 @@ def build(models_dir=C.MODELS_DIR, preview_dir=C.PREVIEW_DIR, sheet_dir=None):
         if os.environ.get("KR_SHEET_SCYTHE"):  # 낫만(0274 ⑤ — 휜 날의 걸어 당기기를 본다)
             for o in old["weapons"] + [old["shield"], old["bow"], old["spear"], old["dagger_l"]]:
                 o.hide_render = o.name != "w_scythe"
+        if os.environ.get("KR_SHEET_STAFF"):  # 지팡이만(0283 — 지팡이의 시전을 본다)
+            for o in old["weapons"] + [old["shield"], old["bow"], old["spear"], old["dagger_l"]]:
+                o.hide_render = o.name != "w_staff"
         if os.environ.get("KR_SHEET_WAND"):  # 완드만(0274 ⑥ — 잿빛 돌의 짧은 막대를 본다)
             for o in old["weapons"] + [old["shield"], old["bow"], old["spear"], old["dagger_l"]]:
                 o.hide_render = o.name != "w_wand"

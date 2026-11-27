@@ -1268,9 +1268,10 @@ pub const SKILLS: [Skill; N] = [
             poise: 1.0,
         },
     },
-    // ---- 0280: 빈 노드 넷(창 · 대검 · 낫 · 완드 트리의 둘째 줄) — 있는 모양에 새 수, 동작은 같은 구간 길이의 있는 전용 동작을 빌린다 ----
+    // ---- 0280: 빈 노드 넷(창 · 대검 · 낫 · 완드 트리의 둘째 줄) — 있는 모양에 새 수. 동작은 0283부터 제 것(Meshy API로 받음 —
+    // 예전엔 같은 구간 길이의 있는 전용 동작을 빌렸다, `anim`은 모델에 없을 때 넘어가는 것) ----
     // 찌르고 물러서기(창 · 날카로움 — 오른쪽 둘째 줄): 앞을 길고 좁게(3.4 m · 40°) 한 번 찔러 출혈을 한 번에 쌓고, 창끝을 겨눈 채 0.22초에
-    // 3 m 물러선다(빠지며 베기의 꼴 `Form::Slip` — 닿는 거리를 지킨다). 무적은 없다. 동작은 꿰뚫기의 것(내지른 채 머문다 — 같은 구간 길이).
+    // 3 m 물러선다(빠지며 베기의 꼴 `Form::Slip` — 닿는 거리를 지킨다). 무적은 없다. 동작 `sk_withdraw`(0283 — 두 손으로 낮게 내질러 뻗은 채 머문다).
     // 한 걸음 더(ㄱ 4.5 m) · 벌어진 상처(ㄴ — 찔린 적이 2초 피해 +25%, 문지기는 아니다) · 최종 효과 = 쓰러뜨리면 쿨타임의 반.
     Skill {
         id: Id::Withdraw,
@@ -1287,7 +1288,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "spear3",
         clip: Clip {
-            name: "sk_skewer",
+            name: "sk_withdraw",
             seg: [0.14, 0.22, 0.30],
         },
         row: 1,
@@ -1305,7 +1306,7 @@ pub const SKILLS: [Skill; N] = [
         cap: Cap::Refund { part: 0.5 },
     },
     // 불씨 내리꽂기(대검 · 잔불 — 오른쪽 둘째 줄): 달군 날을 두 손으로 땅에 내리꽂아 둘레(5 m)로 0.3초에 번지는 불길(파문의 꼴
-    // `Form::Wave`) — 지나는 적마다 20 · 잔불 가득. 밀어내지 않는다(분노는 둘레의 떼로 찬다). 동작은 파문의 것(땅을 내리찍는 같은 구간).
+    // `Form::Wave`) — 지나는 적마다 20 · 잔불 가득. 밀어내지 않는다(분노는 둘레의 떼로 찬다). 동작 `sk_plunge`(0283 — 두 손으로 들어 내리꽂고 꽂은 채 웅크린다).
     // 넓은 불길(ㄱ — 둘레 ×1.3) · 타는 땅(ㄴ — 내리꽂은 둘레에 불티 3초) · 최종 효과 = 불길이 0.5초 휘청(문지기는 아니다).
     Skill {
         id: Id::Plunge,
@@ -1320,7 +1321,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "gs5",
         clip: Clip {
-            name: "sk_ripple",
+            name: "sk_plunge",
             seg: [0.25, 0.30, 0.35],
         },
         row: 1,
@@ -1332,7 +1333,7 @@ pub const SKILLS: [Skill; N] = [
         cap: Cap::Lift { stagger: 0.5 },
     },
     // 돌아오는 낫(낫 · 참격 — 가운데 둘째 줄): 휜 날을 돌려 던진다(던지기의 꼴 `Form::Throw`) — 7 m를 넓게(반 폭 1.3 m — 던지기 0.9) 조금
-    // 느리게(초속 18 m — 22) 돌며 가는 길 · 오는 길에 적마다 10. 동작은 던지기의 것(같은 구간). 끌어오는 날(ㄱ — 돌아오는 길에 맞은 적을
+    // 느리게(초속 18 m — 22) 돌며 가는 길 · 오는 길에 적마다 10. 동작 `sk_boomerang`(0283 — 옆으로 휘둘러 던지고 받으려 손을 든다). 끌어오는 날(ㄱ — 돌아오는 길에 맞은 적을
     // 2.5 m 끌어온다, 문지기는 아니다: 드루이드의 끌기) · 넓게 도는 날(ㄴ — 반 폭 ×1.5) · 최종 효과 = 돌아오는 길 피해 ×1.5 · 자세 ×2.
     Skill {
         id: Id::Boomerang,
@@ -1349,7 +1350,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "throw",
         clip: Clip {
-            name: "sk_throw",
+            name: "sk_boomerang",
             seg: [0.18, 0.10, 0.25],
         },
         row: 1,
@@ -1364,7 +1365,7 @@ pub const SKILLS: [Skill; N] = [
         },
     },
     // 끊는 말(완드 · 마법 — 가운데 둘째 줄): 뜻 모를 말 한마디를 앞(4 m · 70°)에 던진다(막아치기의 꼴 `Form::Bash`) — 공격을 준비하던 잡몹은
-    // 끊기고 자세 피해 ×2, 닿은 적은 밀려난다. 보스는 끊기지 않고 자세만(보스 규칙 그대로). 동작은 불길의 것(손을 내미는 시전 — 같은 구간).
+    // 끊기고 자세 피해 ×2, 닿은 적은 밀려난다. 보스는 끊기지 않고 자세만(보스 규칙 그대로). 동작 `sk_word`(0283 — 한 팔을 곧게 뻗어 가리킨다).
     // 넓게 퍼지는 말(ㄱ 120°) · 갈라진 틈(ㄴ — 끊긴 적 2초 피해 +20%) · 최종 효과 = 끊긴 적은 자세가 곧바로 무너진다.
     Skill {
         id: Id::Word,
@@ -1381,7 +1382,7 @@ pub const SKILLS: [Skill; N] = [
         },
         anim: "cast",
         clip: Clip {
-            name: "sk_flare",
+            name: "sk_word",
             seg: [0.20, 0.0, 0.30],
         },
         row: 1,
@@ -1495,7 +1496,7 @@ mod tests {
             assert!((s.clip.seg[2] - s.recover).abs() < 1e-6, "{id:?} recover");
         }
         // 0280: 전용 동작은 빌릴 수 있다 — 같은 동작을 쓰는 스킬은 구간의 길이도 같아야 한다(경계 = 판정의 순간이 그대로 맞게).
-        // 빌린 쪽은 0280의 넷뿐(새 동작을 만들면 제 이름으로 옮긴다).
+        // 0280의 넷이 빌렸던 것은 0283에 제 동작(`sk_withdraw` · `sk_plunge` · `sk_boomerang` · `sk_word`)으로 옮겼다 — 지금은 빌린 것이 없다.
         let clips: Vec<Clip> = IDS.iter().map(|i| i.def().clip).collect();
         let mut shared = 0;
         for (i, c) in clips.iter().enumerate() {
@@ -1506,7 +1507,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(shared, 4, "only the four 0280 skills borrow a clip");
+        assert_eq!(shared, 0, "no skill borrows another skill's clip (0283)");
         let keys: Vec<_> = IDS.iter().map(|i| i.key()).collect();
         for (i, k) in keys.iter().enumerate() {
             assert!(!keys[i + 1..].contains(k), "{k} twice");
