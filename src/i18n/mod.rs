@@ -501,6 +501,8 @@ pub struct Strings {
     pub sk_plate_grip_d: &'static str,
     pub sk_plate_shield_d: &'static str,
     pub sk_plate_main: &'static str,
+    /// 0281: 방패 트리가 주무기와 함께 켜졌을 때(스킬 탭의 트리 설명).
+    pub sk_plate_worn_shield: &'static str,
     pub sk_plate_sub: &'static str,
     pub act_raise: &'static str,
     pub act_open: &'static str,
@@ -867,6 +869,9 @@ pub struct Strings {
     pub menu_shield: &'static str,
     pub shield_none: &'static str,
     pub shield_idle: &'static str,
+    /// 0281: 장비 탭에서 방패를 고를 때 — 지금 주무기와 함께면 무엇을 하나(던지는 주무기 · 막고 들이받기만 하는 주무기, {0} = 그 RB).
+    pub shield_with_throw: &'static str,
+    pub shield_with_guard: &'static str,
     /// 피해 타입(0223 V2): 이름 넷 · 기술 탭의 풀이 넷 · 도감의 한 줄 둘({0} = 타입 이름들).
     pub ail_ember: &'static str,
     pub ail_root: &'static str,
@@ -894,7 +899,6 @@ pub struct Strings {
     pub toast_unfit: &'static str,
     pub hands_any: &'static str,
     pub hands_shield: &'static str,
-    pub hands_no_shield: &'static str,
     pub sk_hands: &'static str,
     /// 아이템(0223 V4): 등급 이름 · 이름 꼴({0} 등급 {1} 바탕) · 옵션 이름 열셋 · 옵션 줄의 꼴 · 얻음 알림 · 가방에 있는 것 표지.
     pub rarity_sturdy: &'static str,
@@ -1670,6 +1674,7 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.sk_plate_grip_d,
         s.sk_plate_shield_d,
         s.sk_plate_main,
+        s.sk_plate_worn_shield,
         s.sk_plate_sub,
         s.act_raise,
         s.act_open,
@@ -2027,6 +2032,8 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.menu_shield,
         s.shield_none,
         s.shield_idle,
+        s.shield_with_throw,
+        s.shield_with_guard,
         s.ail_ember,
         s.ail_root,
         s.ail_knell,
@@ -2051,7 +2058,6 @@ pub fn all(s: &Strings) -> Vec<&'static str> {
         s.toast_unfit,
         s.hands_any,
         s.hands_shield,
-        s.hands_no_shield,
         s.sk_hands,
         s.rarity_sturdy,
         s.rarity_rare,

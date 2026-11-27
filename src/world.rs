@@ -1978,16 +1978,21 @@ impl World {
         }
     }
 
-    /// 지금 막을 수 있나(0223): 방패를 들었고 든 무기가 한손이다 — 던진 방패가 날고 있는 동안(0276)은 막지 못한다
+    /// 지금 막을 수 있나(0223): 방패가 쓰인다(`shield_guards`) — 던진 방패가 날고 있는 동안(0276)은 막지 못한다
     /// (누르는 순간의 패링은 그대로 — 패링 판정 시간을 건드리지 않는다).
     pub fn can_block(&self) -> bool {
-        self.shield_throws() && !self.shield_out()
+        self.shield_guards() && !self.shield_out()
     }
 
-    /// 방패가 RB와 쥐고 막기를 맡나(0223 · 0276): 방패를 들었고 든 무기가 한손이다(두 손 무기면 방패는 쉰다). 날아가 있어도 참이다
-    /// — 그동안 RB는 막히고 평타가 방패를 불러들인다.
+    /// 방패가 쓰이나(0223 · 0276): 방패를 들었고 든 무기가 한손이다(두 손 무기면 방패는 쉰다) — 길게 눌러 막기 · 놓아 들이받기.
+    pub fn shield_guards(&self) -> bool {
+        self.player.shield.is_some() && self.player.weapon.takes_shield()
+    }
+
+    /// 방패가 RB를 맡나(0276 → 0281): 방패가 쓰이고, 든 종류의 RB가 주된 공격이 아니다(`Quirks::rb_main` — 완드는 방패를 들어도
+    /// RB가 저주탄 그대로: 방패는 막고 들이받을 뿐 날지 않는다). 날아가 있어도 참이다 — 그동안 RB는 막히고 평타가 방패를 불러들인다.
     pub fn shield_throws(&self) -> bool {
-        self.player.shield.is_some() && self.player.weapon.hand() == weapons::Hand::One
+        self.player.shield.is_some() && self.player.weapon.throws_shield()
     }
 
     /// 방랑자가 놓거나 던진 것을 모두 치운다(0278 고침 — 쉬기 · 쓰러져 다시 서기가 부른다): 날고 있는 탄(던진 창 · 방패도 — 날고 있는

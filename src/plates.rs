@@ -67,21 +67,30 @@ pub struct Seat {
 }
 
 impl Plate {
-    /// 쥔 꼴의 판(0272 — 판 줄의 금빛 점·탭을 열 때의 판): 종류의 판 또는 방패 판, 맨손은 무기 판이 없다.
+    /// 쥔 꼴의 첫 판(0272 → 0281 — 스킬 탭을 열 때의 판): 종류의 판(방패와 함께여도 — 무기 트리가 먼저), 맨손과 방패는 방패 판,
+    /// 맨손은 무기 판이 없다. 쥔 꼴이 켜는 판을 다 보려면 `holds`(방패와 함께면 둘).
     pub fn held(g: Grip) -> Option<Plate> {
         match g {
             Grip::Bare => None,
-            Grip::Class(c) => Some(Plate::Class(c)),
-            Grip::Shield => Some(Plate::Shield),
+            Grip::Class(c) | Grip::Shield(Some(c)) => Some(Plate::Class(c)),
+            Grip::Shield(None) => Some(Plate::Shield),
         }
     }
 
-    /// 이 판을 켜는 쥔 꼴(`held`의 거꾸로 — 공통 판은 쥔 것을 묻지 않는다).
+    /// 쥔 꼴 `g`가 이 판의 스킬을 쓰나(0281 — 판 줄의 금빛 점): 판의 꼴의 비트가 쥔 꼴의 비트에 드나(`skills::grip_bit` 한 곳 —
+    /// 한손 무기와 방패면 그 종류의 판과 방패 판 둘). 공통 판은 쥔 것을 묻지 않는다(거짓).
+    pub fn holds(self, g: Grip) -> bool {
+        self.grip()
+            .is_some_and(|p| crate::skills::grip_bit(p) & crate::skills::grip_bit(g) != 0)
+    }
+
+    /// 이 판의 스킬을 다는 쥔 꼴(`held`의 거꾸로 — 공통 판은 쥔 것을 묻지 않는다): 방패 판은 맨손과 방패(`Shield(None)` — 방패의
+    /// 비트만), 종류의 판은 그 종류만.
     pub fn grip(self) -> Option<Grip> {
         match self {
             Plate::Body => None,
             Plate::Class(c) => Some(Grip::Class(c)),
-            Plate::Shield => Some(Grip::Shield),
+            Plate::Shield => Some(Grip::Shield(None)),
         }
     }
 
@@ -356,11 +365,33 @@ mod tests {
         assert_eq!(Plate::held(W::Fists.grip(false)), None, "bare hands");
         assert_eq!(Plate::held(W::Fists.grip(true)), Some(Plate::Shield));
         assert_eq!(Plate::held(W::Sword.grip(false)), Some(SWORD));
-        assert_eq!(Plate::held(W::Sword.grip(true)), Some(Plate::Shield));
-        // 0274: 망치도 한손 — 방패와 함께면 방패 판(한손검과 같다).
-        assert_eq!(Plate::held(W::Hammer.grip(true)), Some(Plate::Shield));
-        assert_eq!(Plate::held(W::Hammer.grip(false)), Some(HAMMER));
+        // 0281: 한손 무기와 방패 — 탭은 무기 트리에서 열고, 금빛 점은 무기 트리와 방패 트리 둘에.
+        for (w, p) in [
+            (W::Sword, SWORD),
+            (W::Hammer, HAMMER),
+            (W::Scythe, SCYTHE),
+            (W::Wand, WAND),
+        ] {
+            assert_eq!(Plate::held(w.grip(true)), Some(p), "{w:?}");
+            assert_eq!(Plate::held(w.grip(false)), Some(p), "{w:?}");
+            let lit: Vec<Plate> = PLATES
+                .into_iter()
+                .filter(|q| q.holds(w.grip(true)))
+                .collect();
+            assert_eq!(lit, [p, Plate::Shield], "{w:?} with a shield");
+            let lit: Vec<Plate> = PLATES
+                .into_iter()
+                .filter(|q| q.holds(w.grip(false)))
+                .collect();
+            assert_eq!(lit, [p], "{w:?} alone");
+        }
+        assert!(Plate::Shield.holds(W::Fists.grip(true)));
+        assert!(!PLATES.into_iter().any(|q| q.holds(W::Fists.grip(false))));
         assert_eq!(Plate::held(W::Spear.grip(true)), Some(SPEAR), "two hands");
+        assert!(
+            !Plate::Shield.holds(W::Spear.grip(true)),
+            "the shield rests"
+        );
         // 0274 ③: 쌍단검은 두 손이 다 찬다 — 방패와 들지 않는다(방패를 메어도 단검 트리).
         assert_eq!(
             Plate::held(W::Daggers.grip(true)),
@@ -373,9 +404,6 @@ mod tests {
             Some(GREATSWORD),
             "two hands on the hilt"
         );
-        // 0274 ⑤: 낫은 한손 — 방패와 함께면 방패 판(드루이드의 판은 빈 손 또는 보조무기와).
-        assert_eq!(Plate::held(W::Scythe.grip(true)), Some(Plate::Shield));
-        assert_eq!(Plate::held(W::Scythe.grip(false)), Some(SCYTHE));
         assert_eq!(Plate::held(W::Crossbow.grip(false)), Some(CROSSBOW));
         assert_eq!(Plate::held(W::Bow.grip(false)), Some(BOW));
     }
@@ -580,7 +608,7 @@ mod tests {
             STAFF.attribute().map(|a| a(s)),
             "a curse is still magic"
         );
-        // 한 손에 들지만 방패와 들지 않는다 — 방패를 들어도 완드 판.
+        // 0281: 한손 — 방패를 들어도 완드 판이 먼저(방패 판과 함께).
         assert_eq!(Plate::held(crate::weapons::Id::Wand.grip(true)), Some(WAND));
     }
 
@@ -933,5 +961,26 @@ mod tests {
         for p in PLATES {
             assert_eq!(PLATES[p.index()], p);
         }
+    }
+
+    /// 0281: 방패를 들면 무기 트리와 방패 트리를 함께 쓰고 완드가 한손이 되었어도, **트리마다 선 노드는 그 전과 같다** — 판마다의
+    /// 칸(노드 · 줄 · 열)을 고정 파일 `plate_fixture.txt`와 견준다(바뀐 것은 쥔 꼴이 무엇을 쓰나뿐, 트리가 아니다).
+    /// 일부러 트리를 바꿨으면 `PLATE_FIXTURE_WRITE=1 cargo test every_tree_holds_the_same_nodes`.
+    #[test]
+    fn every_tree_holds_the_same_nodes_as_its_fixture() {
+        const FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/plate_fixture.txt");
+        let mut text = String::new();
+        for p in PLATES {
+            text += &format!("{p:?}\n");
+            for s in p.seats() {
+                text += &format!("  {:?} row {} {:?}\n", s.entry, s.row, s.col);
+            }
+        }
+        if std::env::var("PLATE_FIXTURE_WRITE").is_ok() {
+            std::fs::write(FILE, &text).expect("write plate_fixture.txt");
+            return;
+        }
+        let was = std::fs::read_to_string(FILE).expect("plate_fixture.txt");
+        assert_eq!(text, was, "a tree gained or lost a node");
     }
 }

@@ -562,8 +562,8 @@ pub(super) fn wear_skill(worn: [sk::Id; 2], slot: usize, id: sk::Id) -> [sk::Id;
     out
 }
 
-/// 그 스킬을 쓰는 무기 종류의 이름들(" · "로 이은 글 — 어느 무기나 되면 그 말, 0272). 한손 종류는 방패로 갈린다: 방패를 들어도
-/// 되면 이름만, 방패 없이만 되면 "한손검(방패 없이)", 방패와 함께만 되면 "방패(한손 무기와 함께)".
+/// 그 스킬을 쓰는 무기 종류의 이름들(" · "로 이은 글 — 어느 무기나 되면 그 말, 0272). 0281부터 한손 종류는 방패를 들어도 제 트리의
+/// 스킬을 쓰니 "방패 없이"가 없다. 방패 트리의 스킬은 "방패(한손 무기와 함께)" — 한손 종류가 다 이름에 들었으면 따로 적지 않는다.
 pub(super) fn hands_text(id: sk::Id) -> String {
     use crate::weapons::{Hand, CLASSES};
     let s = s();
@@ -571,26 +571,16 @@ pub(super) fn hands_text(id: sk::Id) -> String {
     if h == sk::ANY {
         return s.hands_any.to_string();
     }
-    let shield = h & sk::SHIELD != 0;
-    let mut one = false;
-    let mut names: Vec<String> = Vec::new();
-    for c in CLASSES.iter().filter(|c| h & sk::class_bit(c.class) != 0) {
-        let name = tr(c.name);
-        if c.hand == Hand::One {
-            one = true;
-            if !shield {
-                names.push(fill(s.hands_no_shield, &[name]));
-                continue;
-            }
-        }
-        names.push(name.to_string());
-    }
-    // 방패 비트는 "한손 무기와 방패"다 — 한손 종류가 다 이름에 들지 않았으면(0274: 망치도 한손) 방패 줄을 따로 적는다.
+    let mut names: Vec<String> = CLASSES
+        .iter()
+        .filter(|c| h & sk::class_bit(c.class) != 0)
+        .map(|c| tr(c.name).to_string())
+        .collect();
     let all_one = CLASSES
         .iter()
         .filter(|c| c.hand == Hand::One)
         .all(|c| h & sk::class_bit(c.class) != 0);
-    if shield && !(one && all_one) {
+    if h & sk::SHIELD != 0 && !all_one {
         names.push(s.hands_shield.to_string());
     }
     names.join(" · ")
@@ -1323,12 +1313,16 @@ impl App {
         !self.dev_board_on() && b.spent() > 0 && self.world.embers() >= b.respec_cost()
     }
 
-    /// 든 무기·보조무기의 판(0270 C2 → 0272): 쥔 꼴의 판(`Plate::held`) — 스킬을 끼우는 셈(`kits`·`World::grip`)과 같은 꼴.
-    /// 맨손은 무기 판이 없다(공통 판에서 연다 — 한손검의 판을 빌려 쓰지 않는다). 판 줄의 금빛 표지와 판을 고르는 차례가 쓴다.
-    pub(super) fn held_plates(&self) -> (Option<Plate>, Option<Plate>) {
+    /// 든 무기·보조무기의 판(0270 C2 → 0272 → 0281): 주무기의 쥔 꼴이 쓰는 판(`Plate::holds` — 한손 무기와 방패면 그 종류의 판과
+    /// 방패 판 둘, 차례는 무기 트리가 먼저 = 탭이 여는 판)과 보조무기의 판(`Plate::held`) — 스킬을 끼우는 셈(`kits`·`World::grip`)과
+    /// 같은 꼴. 맨손은 무기 판이 없다(공통 판에서 연다 — 한손검의 판을 빌려 쓰지 않는다). 판 줄의 금빛 표지와 판을 고르는 차례가 쓴다.
+    pub(super) fn held_plates(&self) -> (Vec<Plate>, Option<Plate>) {
         let kits = self.kits();
         (
-            Plate::held(kits.main.0),
+            PLATES
+                .into_iter()
+                .filter(|p| p.holds(kits.main.0))
+                .collect(),
             kits.sub.and_then(|(g, _)| Plate::held(g)),
         )
     }
@@ -1344,7 +1338,7 @@ impl App {
 
     /// 기술 탭을 열 때(0270 C2): 든 무기의 판과 그 판에서 설 칸(`first_focus_on`).
     pub(super) fn open_plate(&mut self, edit: bool) {
-        let p = self.held_plates().0.unwrap_or(Plate::Body);
+        let p = self.held_plates().0.first().copied().unwrap_or(Plate::Body);
         self.set_plate(p);
         // 판 줄은 처음부터 — 그 판이 보이게(손으로 굴려 둔 창을 이어 가지 않는다, 0275).
         self.tab.plate_strip = ui::Strip::default();
@@ -1362,7 +1356,7 @@ impl App {
         };
         if !self.tab.skill_plate.has(e) {
             let (main, sub) = self.held_plates();
-            let prefer: Vec<Plate> = [main, sub].into_iter().flatten().collect();
+            let prefer: Vec<Plate> = main.into_iter().chain(sub).collect();
             self.set_plate(plates::home(e, &prefer));
         }
     }
@@ -1860,7 +1854,7 @@ impl App {
             }
             let dot = (u * 2.2).max(2.0);
             let (dx, dy) = (r.x + r.w - dot * 1.6, r.y + dot * 1.4);
-            if main == Some(p) {
+            if main.contains(&p) {
                 draw_circle(dx, dy, dot, AMBER);
             } else if sub == Some(p) {
                 draw_circle_lines(dx, dy, dot, 1.0, AMBER);
@@ -2381,8 +2375,17 @@ impl App {
                 ink: INK,
             }];
             let (main, sub) = self.held_plates();
-            for (on, t) in [(main, s.sk_plate_main), (sub, s.sk_plate_sub)] {
-                if on == Some(plate) {
+            // 0281: 방패 판이 켜졌으면 "장착한 방패의 트리"(무기 트리와 함께 쓴다).
+            let main_t = if plate == Plate::Shield {
+                s.sk_plate_worn_shield
+            } else {
+                s.sk_plate_main
+            };
+            for (on, t) in [
+                (main.contains(&plate), main_t),
+                (sub == Some(plate), s.sk_plate_sub),
+            ] {
+                if on {
                     v.push(Block::Gap(5.0));
                     v.push(Block::Text {
                         lines: wrap(t, width, K_BODY),
@@ -2727,7 +2730,7 @@ mod tests {
 
     const SWORD: Plate = Plate::Class(Class::Sword);
 
-    /// 0272: "쓰는 무기" 줄은 종류의 이름으로 — 한손 종류는 방패로 갈린다(방패 없이만 되면 그렇게, 방패와 함께만 되면 방패),
+    /// 0272: "쓰는 무기" 줄은 종류의 이름으로 — 방패 트리의 것은 방패(0281부터 "방패 없이"는 없다),
     /// 쇠뇌와 활은 따로, 모든 종류와 방패에 다 되면 "어느 무기나". 판의 이름도 종류 표에서 온다.
     #[test]
     fn the_hands_line_names_weapon_classes_and_the_plates_are_named_by_class() {
@@ -2739,10 +2742,8 @@ mod tests {
             hands_text(Id::Cut),
             format!("{} · {}", s.class_dagger, s.class_greatsword)
         );
-        assert_eq!(
-            hands_text(Id::Pommel),
-            fill(s.hands_no_shield, &[s.class_sword])
-        );
+        // 0281: 한손검과 방패도 한손검 트리를 쓴다 — "방패 없이"가 없다.
+        assert_eq!(hands_text(Id::Pommel), s.class_sword);
         assert_eq!(hands_text(Id::Bash), s.hands_shield);
         // 0274 ⑤: 낫은 한손이지만 휘돌지 않는다 — 한손 종류가 다 들지 않아 방패 줄이 따로 선다(방패를 들면 낫으로도 방패 판의 휘돌이).
         assert_eq!(
@@ -2752,21 +2753,18 @@ mod tests {
                 s.class_sword, s.class_hammer, s.class_greatsword, s.hands_shield
             )
         );
-        // 0274 ⑥: 종 치기는 완드(흑마법사)도 — 양손 종류라 방패 없이 그대로.
+        // 0274 ⑥: 종 치기는 완드(흑마법사)도.
         assert_eq!(
             hands_text(Id::Toll),
             format!("{} · {} · {}", s.class_hammer, s.class_wand, s.hands_shield)
         );
         assert_eq!(hands_text(Id::Snare), s.class_bow);
-        // 0274 ⑤: 뿌리 솟기는 낫(드루이드)도 — 한손 종류라 "방패 없이".
+        // 0274 ⑤: 뿌리 솟기는 낫(드루이드)도.
         assert_eq!(
             hands_text(Id::Roots),
             format!(
                 "{} · {} · {} · {}",
-                s.class_staff,
-                s.class_bow,
-                s.class_spear,
-                fill(s.hands_no_shield, &[s.class_scythe])
+                s.class_staff, s.class_bow, s.class_spear, s.class_scythe
             )
         );
         assert_eq!(hands_text(Id::Fuse), s.class_crossbow);

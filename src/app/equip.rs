@@ -1459,10 +1459,18 @@ impl App {
                 lines.extend(self.pane_wrap(w, &b, AMBER));
             }
         }
-        // 방패(0223)는 한손 무기일 때만 쓰인다 — 지금 든 무기가 두 손을 쓰면 알린다.
-        if matches!(focus, Cand::Shield(_)) && self.weapon.hand() != weapons::Hand::One {
+        // 방패(0223)는 한손 무기일 때만 쓰인다 — 지금 든 무기가 두 손을 쓰면 알린다. 한손 무기면 그 무기와 무엇을 하나(0281 —
+        // 두 트리 · 던지기, 또는 RB가 주된 공격인 종류는 막고 들이받기만: `Id::throws_shield` 한 곳).
+        if matches!(focus, Cand::Shield(_)) {
+            let line = if !self.weapon.takes_shield() {
+                s.shield_idle.to_string()
+            } else if self.weapon.throws_shield() {
+                s.shield_with_throw.to_string()
+            } else {
+                fill(s.shield_with_guard, &[rb_name(self.weapon.bolts().0.look)])
+            };
             lines.push(Ln::Gap);
-            lines.extend(self.pane_wrap(w, s.shield_idle, AMBER));
+            lines.extend(self.pane_wrap(w, &line, AMBER));
         }
         let flavor = match focus {
             Cand::Charm(id) => Some(tr(charms::def(id).flavor)),

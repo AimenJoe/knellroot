@@ -1,4 +1,4 @@
-//! 무기의 특색(0225): 한손 무기는 방패로 갈린다(방패 기술 · 결투 기술), 망치는 물리력(타입 없는 스킬의 피해·자세 피해),
+//! 무기의 특색(0225): 한손 무기는 방패로 갈린다(0281부터 방패와 함께면 무기 트리와 방패 트리 둘 다), 망치는 물리력(타입 없는 스킬의 피해·자세 피해),
 //! 지팡이는 마법력(스킬이 쌓는 타입 게이지).
 use super::*;
 use crate::skills::{Id as Sk, Loadout, Pick, Slot};
@@ -17,18 +17,23 @@ fn worn(w: &mut World, a: Sk, b: Sk) {
     });
 }
 
-/// 한손검: 방패를 들면 방패 기술(막아치기)이 살고 한손검 기술(자루 치기 — 0274 ③부터 가로지르기는 쌍단검의 것)이 빈 칸이 된다 —
-/// 방패를 내리면 거꾸로. 배운 단은 그대로 남는다.
+/// 0281(멀티클래스 — 사장 2026-11-27): 한손 무기에 방패를 들면 그 무기의 트리 **와** 방패 트리의 스킬을 함께 쓴다 — 무기 트리의
+/// 스킬(자루 치기)과 방패 트리의 스킬(막아치기)을 한 쌍으로 장착하면 둘 다 산다. 방패를 내리면 방패 트리의 것만 빈 슬롯. 배운 레벨은
+/// 그대로 남는다. 두 손 무기(창 · 쌍단검)를 들면 방패는 쉰다 — 쥔 꼴은 그 무기의 것.
 #[test]
-fn a_shield_turns_the_sword_from_duelling_arts_to_shield_arts() {
+fn a_shield_loadout_wears_a_weapon_tree_skill_and_a_shield_tree_skill_together() {
     let mut w = World::new("test", 30.0);
     assert_eq!(w.player.weapon, W::Sword);
     worn(&mut w, Sk::Bash, Sk::Pommel);
     assert_eq!(w.grip(), Grip::Class(Class::Sword));
-    assert_eq!(w.player.skill.rank, [0, 1], "no shield: the duel art only");
+    assert_eq!(
+        w.player.skill.rank,
+        [0, 1],
+        "no shield: the sword's own only"
+    );
     w.set_shield(Some(crate::shield::Id::Pilgrim));
-    assert_eq!(w.grip(), Grip::Shield);
-    assert_eq!(w.player.skill.rank, [1, 0], "with a shield: the shield art");
+    assert_eq!(w.grip(), Grip::Shield(Some(Class::Sword)));
+    assert_eq!(w.player.skill.rank, [1, 1], "with a shield: both trees");
     assert_eq!(w.player.skill.known, [1, 1], "what was learned stays");
     w.set_shield(None);
     assert_eq!(w.player.skill.rank, [0, 1]);
@@ -37,12 +42,21 @@ fn a_shield_turns_the_sword_from_duelling_arts_to_shield_arts() {
     assert_eq!(w.player.skill.rank, [1, 1]);
     w.set_shield(Some(crate::shield::Id::Pilgrim));
     assert_eq!(w.player.skill.rank, [1, 1]);
-    // 0274: 망치도 한손 — 방패와 함께면 방패 판의 기술(한손검과 같다).
-    w.set_weapon(W::Hammer);
-    assert_eq!(w.grip(), Grip::Shield);
+    // 망치 · 낫 · 완드도 한손 — 방패와 함께면 제 트리의 것과 방패 트리의 것.
+    for (arm, own) in [
+        (W::Hammer, Sk::Quake),
+        (W::Scythe, Sk::Reap),
+        (W::Wand, Sk::Hex),
+    ] {
+        w.set_weapon(arm);
+        worn(&mut w, own, Sk::Ram);
+        assert_eq!(w.grip(), Grip::Shield(arm.class()), "{arm:?}");
+        assert_eq!(w.player.skill.rank, [1, 1], "{arm:?}: both trees");
+    }
     // 두 손 무기(창 · 쌍단검)를 들면 방패는 쉰다 — 쥔 꼴은 그 무기의 것.
     w.set_weapon(W::Spear);
     assert_eq!(w.grip(), Grip::Class(Class::Spear));
+    assert_eq!(w.player.skill.rank, [0, 0], "neither fits the spear");
     w.set_weapon(W::Daggers);
     assert_eq!(w.grip(), Grip::Class(Class::Dagger));
     assert!(!w.can_block(), "no hand left for the shield");
@@ -153,7 +167,7 @@ fn bare_hands_hold_no_weapon_plate() {
     assert_eq!(w.player.skill.known, [1, 1], "what was learned stays");
     assert!(w.keen(), "a free hand all the same");
     w.set_shield(Some(crate::shield::Id::Pilgrim));
-    assert_eq!(w.grip(), Grip::Shield);
+    assert_eq!(w.grip(), Grip::Shield(None));
     assert_eq!(w.player.skill.rank, [1, 1], "shield arts with a shield");
     assert!(!w.keen());
     w.set_shield(None);

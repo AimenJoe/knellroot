@@ -1977,12 +1977,16 @@ pub struct Quirks {
     /// 휘두르는 동안(평타 · 모으기 · 강공격) 맞으면 휘청 · 밀림의 배(0274 ④ 대검 — `GREATSWORD_FLINCH` · `GREATSWORD_KNOCK`,
     /// 받는 피해는 그대로 — `wanderer_takes_hit` 한 곳). 없으면 그대로.
     pub steady_swing: Option<(f32, f32)>,
+    /// RB가 이 종류의 주된 공격이다(0281 — 완드의 저주탄): 방패와 들어도 방패는 막고 들이받기만 하고 던지지 않는다 — RB는 그대로
+    /// 종류의 것(`World::shield_throws` 한 곳). 없으면 방패가 RB를 맡는다(한손검 · 망치 · 낫 · 맨손).
+    pub rb_main: bool,
 }
 
 impl Quirks {
     pub const NONE: Quirks = Quirks {
         keen: false,
         steady_swing: None,
+        rb_main: false,
     };
 }
 
@@ -2267,14 +2271,14 @@ pub const CLASSES: &[ClassDef] = &[
         bare_trait: |s| s.bare_scythe_d,
         quirks: Quirks::NONE,
     },
-    // 완드(0274 ⑥ — 흑마법사의 결, 계약 — 방랑자도 모르는 계약): 한 손에 드는 짧은 막대지만 **방패와 들지 않는다**(계열 `Two`):
-    // 다른 손은 저주의 꼴을 그리는 손이다 — 방패를 들면 방패가 RB를 맡아(`World::shield_throws`) 주된 공격인 저주탄을 잃고 쥔 꼴도 방패
-    // 트리가 되어 흑마법사가 사라진다(D&D 흑마법사는 방패를 익히지 않는다). 마법(물리 속성 — 지팡이와 같다: 갈리는 것은 속성 짝 ·
+    // 완드(0274 ⑥ — 흑마법사의 결, 계약 — 방랑자도 모르는 계약): 한 손에 드는 짧은 막대 — **0281부터 한손**(방패와 든다, 사장
+    // 2026-11-27 "완드도 사실 방패 가능하긴 해야할것 같은데"): 방패를 들어도 완드 트리는 그대로이고(방패 트리와 함께), RB는 주된 공격인
+    // 저주탄 그대로다(`Quirks::rb_main` — 방패는 막고 들이받을 뿐 던지지 않는다). 마법(물리 속성 — 지팡이와 같다: 갈리는 것은 속성 짝 ·
     // 곧은 저주탄 · 주특성) · 균열과 울림(저주로 약하게 하고 죽음의 울림을 부른다) · 주특성 치른 값 · 보조특성 입에 붙은 말 ·
     // RB 저주탄 · 빈 손 계약의 표.
     ClassDef {
         class: Class::Wand,
-        hand: Hand::Two,
+        hand: Hand::One,
         name: |s| s.class_wand,
         attribute: |s| s.attr_magic,
         pair: [Kind::Rift, Kind::Knell],
@@ -2293,7 +2297,10 @@ pub const CLASSES: &[ClassDef] = &[
         bare: Bare::PactMark,
         bare_name: |s| s.bare_wand,
         bare_trait: |s| s.bare_wand_d,
-        quirks: Quirks::NONE,
+        quirks: Quirks {
+            rb_main: true,
+            ..Quirks::NONE
+        },
     },
 ];
 
@@ -2316,16 +2323,18 @@ impl Class {
     }
 }
 
-/// 손에 쥔 꼴(0225 → 0272): 스킬과 판이 "지금 무엇을 쥐었나"를 묻는 한 곳. 종류는 `Id::class` 하나에서 오고, 이 꼴은 거기에
-/// **방패를 들었나**만 더한다 — 한손 계열과 방패 = 방패 판의 기술(`Shield`), 그 밖에는 그 종류의 판(`Class`), 맨손 = 무기 판 없음(`Bare`).
+/// 손에 쥔 꼴(0225 → 0272 → 0281): 스킬과 판이 "지금 무엇을 쥐었나"를 묻는 한 곳. 종류는 `Id::class` 하나에서 오고, 이 꼴은 거기에
+/// **방패를 들었나**만 더한다 — 한손 계열과 방패 = 그 종류의 판 **과** 방패 판(`Shield(종류)` — 0281 멀티클래스: 둘 다 쓴다),
+/// 그 밖에는 그 종류의 판(`Class`), 맨손 = 무기 판 없음(`Bare`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grip {
     /// 맨손, 방패 없이 — 무기 판이 없다(공통 판만).
     Bare,
-    /// 그 종류의 무기(한손 종류는 방패 없이).
+    /// 그 종류의 무기(방패 없이, 또는 방패와 들지 않는 종류).
     Class(Class),
-    /// 한손 계열(한손 종류 · 맨손)과 방패 — 방패 판.
-    Shield,
+    /// 한손 계열(한손 종류 · 맨손)과 방패 — 방패 판 + 든 종류의 판(맨손이면 `None` — 방패 판만). 판의 쪽에서 본 방패 판의 꼴은
+    /// `Shield(None)`이다(`plates::Plate::grip`).
+    Shield(Option<Class>),
 }
 
 impl Id {
@@ -2339,14 +2348,25 @@ impl Id {
         self.class().map_or(Hand::One, |c| c.def().hand)
     }
 
-    /// 손에 쥔 꼴(0225 → 0272): 한손 계열은 왼손의 방패로 갈린다 — 방패와 함께면 방패 판(`Shield`), 아니면 제 종류의 판.
-    /// 스킬이 이것으로 쓸 수 있나를 가른다(`skills::Skill::fits`), 판 줄의 금빛 점도 이것(`plates::Plate::held`).
+    /// 손에 쥔 꼴(0225 → 0272 → 0281): 한손 계열은 왼손의 방패로 갈린다 — 방패와 함께면 제 종류의 판과 방패 판(`Shield(종류)`),
+    /// 아니면 제 종류의 판. 스킬이 이것으로 쓸 수 있나를 가른다(`skills::Skill::fits`), 판 줄의 금빛 점도 이것(`plates::Plate::holds`).
     pub fn grip(self, shield: bool) -> Grip {
         match self.class() {
-            _ if shield && self.hand() == Hand::One => Grip::Shield,
+            c if shield && self.takes_shield() => Grip::Shield(c),
             Some(c) => Grip::Class(c),
             None => Grip::Bare,
         }
+    }
+
+    /// 방패와 드나(0223 → 0281): 한손 계열(한손 종류 · 맨손) — 방패가 막기 · 들이받기를 맡고 쥔 꼴이 방패 트리를 더한다.
+    pub fn takes_shield(self) -> bool {
+        self.hand() == Hand::One
+    }
+
+    /// 방패와 들면 RB가 방패 던지기인가(0276 → 0281): 방패와 들고, 종류의 RB가 주된 공격이 아니다(`Quirks::rb_main` — 완드는
+    /// 저주탄 그대로). 월드(`World::shield_throws`)와 장비 탭의 글이 같이 읽는다.
+    pub fn throws_shield(self) -> bool {
+        self.takes_shield() && !self.class().is_some_and(|c| c.def().quirks.rb_main)
     }
 
     /// 무기의 주특성이 스킬에 얹는 배(0225 — 사장 "망치는 물리력을, 지팡이는 마법력에 대한 특색" → 0272 종류의 것).
@@ -2494,19 +2514,22 @@ mod tests {
         assert_eq!(Class::Hammer.def().art.percent(), 30);
         assert_eq!(Class::Staff.def().art.percent(), 50);
         assert_eq!(Class::Bow.def().art.percent(), 0);
-        // 쥔 꼴: 한손 계열만 방패로 갈린다.
+        // 쥔 꼴: 한손 계열만 방패로 갈린다 — 0281부터 방패와 함께면 제 종류의 판과 방패 판(멀티클래스).
         assert_eq!(Id::Sword.grip(false), Grip::Class(Class::Sword));
-        assert_eq!(Id::Sword.grip(true), Grip::Shield);
-        // 0274: 망치도 한손 — 방패와 함께면 방패 트리.
-        assert_eq!(Id::Hammer.grip(true), Grip::Shield);
+        assert_eq!(Id::Sword.grip(true), Grip::Shield(Some(Class::Sword)));
+        // 0274: 망치도 한손.
+        assert_eq!(Id::Hammer.grip(true), Grip::Shield(Some(Class::Hammer)));
         assert_eq!(Id::Hammer.grip(false), Grip::Class(Class::Hammer));
-        // 0274 ⑤: 낫도 한손 — 방패와 함께면 방패 트리, 빈 손이면 낫 트리.
+        // 0274 ⑤: 낫도 한손.
         assert_eq!(Id::Scythe.hand(), Hand::One);
-        assert_eq!(Id::Scythe.grip(true), Grip::Shield);
+        assert_eq!(Id::Scythe.grip(true), Grip::Shield(Some(Class::Scythe)));
         assert_eq!(Id::Scythe.grip(false), Grip::Class(Class::Scythe));
         assert_eq!(Id::Scythe.art().sap(), ART_SAP);
+        // 0281: 완드도 한손.
+        assert_eq!(Id::Wand.hand(), Hand::One);
+        assert_eq!(Id::Wand.grip(true), Grip::Shield(Some(Class::Wand)));
         assert_eq!(Id::Fists.grip(false), Grip::Bare);
-        assert_eq!(Id::Fists.grip(true), Grip::Shield);
+        assert_eq!(Id::Fists.grip(true), Grip::Shield(None));
         assert_eq!(Id::Staff.grip(true), Grip::Class(Class::Staff));
         assert_eq!(Id::Bow.grip(true), Grip::Class(Class::Bow));
     }

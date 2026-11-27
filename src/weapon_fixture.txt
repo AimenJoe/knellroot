@@ -120,7 +120,7 @@ art Art { force: 1.0, channel: 1.0, sneak: 1.0, fury: 1.0, sap: 1.5, hex: 1.0 }
 sub SubTrait { mods: Mods { hp: 0, flask: 0, heal: 0, dmg: 0, taken: 0, atk_speed: 1.0, dodge_cost: 1.0, parry: 0.0, kill_stamina: 0.0, ember: 1.0, stamina_max: 0.0, stamina_regen: 1.0, poise: 1.0, heavy_dmg: 0, charged_dmg: 0, kill_heal: 2, toss_dmg: 0, light_dmg: 0, opened_dmg: 0, knock: 1.0, flinch: 1.0, shot_dmg: 0, mag: 0, skill_cd: 1.0, ail: 1.0 }, stowed_reload: false }
 toss Some(Toss { bolt: Bolt { speed: 1.0, range: 0.75, damage: 10, poise: 1.5, pierce: false, stagger: 0.0, look: 12, scale: 1.15, dose: (Root, 0.5), lame: 0.0 }, charged: Bolt { speed: 1.0, range: 0.85, damage: 20, poise: 3.0, pierce: false, stagger: 0.0, look: 12, scale: 1.6, dose: (Root, 1.0), lame: 0.0 }, fan: 1, spread: 0.0, charges: 3.0, refill: 1.0 })
 bare GroundHand
-Wand Two [Rift, Knell] Price
+Wand One [Rift, Knell] Price
 art Art { force: 1.0, channel: 1.0, sneak: 1.0, fury: 1.0, sap: 1.0, hex: 1.5 }
 sub SubTrait { mods: Mods { hp: 0, flask: 0, heal: 0, dmg: 0, taken: 0, atk_speed: 1.0, dodge_cost: 1.0, parry: 0.0, kill_stamina: 0.0, ember: 1.0, stamina_max: 0.0, stamina_regen: 1.0, poise: 1.0, heavy_dmg: 0, charged_dmg: 0, kill_heal: 0, toss_dmg: 2, light_dmg: 0, opened_dmg: 0, knock: 1.0, flinch: 1.0, shot_dmg: 0, mag: 0, skill_cd: 1.0, ail: 1.0 }, stowed_reload: false }
 toss Some(Toss { bolt: Bolt { speed: 1.5, range: 0.85, damage: 10, poise: 0.5, pierce: false, stagger: 0.0, look: 13, scale: 0.9, dose: (Rift, 0.34), lame: 0.0 }, charged: Bolt { speed: 1.6, range: 0.95, damage: 10, poise: 1.5, pierce: true, stagger: 0.3, look: 13, scale: 1.4, dose: (Rift, 1.0), lame: 0.0 }, fan: 1, spread: 0.0, charges: 5.0, refill: 0.38 })

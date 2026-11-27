@@ -1,0 +1,118 @@
+Body
+Class(Sword)
+  Skill(Whirl) row 0 Mid
+  Skill(Gather) row 0 Mid
+  Skill(Brace) row 0 Right
+  Skill(Echo) row 1 Mid
+  Skill(Pommel) row 0 Left
+  Skill(Shove) row 1 Left
+  Skill(Rally) row 1 Right
+  Vein(Shock) row 2 Left
+  Vein(Drain) row 2 Right
+  Ult(Flurry) row 2 Mid
+Class(Hammer)
+  Skill(Whirl) row 0 Mid
+  Skill(Gather) row 0 Mid
+  Skill(Quake) row 1 Left
+  Skill(Brace) row 0 Mid
+  Skill(Throw) row 1 Mid
+  Skill(Toll) row 0 Right
+  Skill(Swat) row 0 Left
+  Skill(Ripple) row 1 Right
+  Vein(Shock) row 2 Left
+  Vein(Knell) row 2 Right
+  Ult(Upend) row 2 Mid
+Class(Staff)
+  Skill(Gather) row 0 Left
+  Skill(Brace) row 0 Mid
+  Skill(Echo) row 1 Mid
+  Skill(Embers) row 1 Right
+  Skill(Roots) row 1 Mid
+  Skill(Snow) row 1 Left
+  Skill(Flare) row 0 Right
+  Vein(Frost) row 2 Left
+  Vein(Ember) row 2 Right
+  Ult(Blizzard) row 2 Mid
+Class(Crossbow)
+  Skill(Gather) row 0 Mid
+  Skill(Echo) row 1 Mid
+  Skill(Embers) row 1 Left
+  Skill(Flare) row 0 Left
+  Skill(Fuse) row 0 Right
+  Skill(Mine) row 1 Right
+  Vein(Ember) row 2 Left
+  Vein(Shock) row 2 Right
+  Ult(Line) row 2 Mid
+Class(Bow)
+  Skill(Gather) row 0 Right
+  Skill(Echo) row 1 Mid
+  Skill(Roots) row 1 Left
+  Skill(Snow) row 1 Right
+  Skill(Snare) row 0 Left
+  Vein(Root) row 2 Left
+  Vein(Frost) row 2 Right
+  Ult(Rain) row 2 Mid
+Class(Spear)
+  Skill(Gather) row 0 Mid
+  Skill(Brace) row 0 Mid
+  Skill(Roots) row 1 Left
+  Skill(Stitch) row 0 Right
+  Skill(Skewer) row 0 Mid
+  Skill(Pole) row 1 Mid
+  Skill(Pin) row 0 Left
+  Skill(Withdraw) row 1 Right
+  Vein(Root) row 2 Left
+  Vein(Sharp) row 2 Right
+  Ult(Gale) row 2 Mid
+Class(Dagger)
+  Skill(Cut) row 0 Right
+  Skill(Gather) row 0 Mid
+  Skill(Throw) row 1 Right
+  Skill(Swallow) row 1 Left
+  Skill(Stitch) row 0 Left
+  Skill(Slip) row 1 Mid
+  Vein(Sharp) row 2 Left
+  Vein(Rift) row 2 Right
+  Ult(Ambush) row 2 Mid
+Class(Greatsword)
+  Skill(Whirl) row 0 Mid
+  Skill(Cut) row 0 Left
+  Skill(Gather) row 0 Mid
+  Skill(Brace) row 0 Mid
+  Skill(Sunder) row 1 Left
+  Skill(Sear) row 0 Right
+  Skill(Plunge) row 1 Right
+  Vein(Rift) row 2 Left
+  Vein(Ember) row 2 Right
+  Ult(Tempest) row 2 Mid
+Class(Scythe)
+  Skill(Gather) row 0 Mid
+  Skill(Brace) row 0 Right
+  Skill(Roots) row 1 Left
+  Skill(Reap) row 0 Left
+  Skill(Harvest) row 1 Right
+  Skill(Boomerang) row 1 Mid
+  Vein(Root) row 2 Left
+  Vein(Drain) row 2 Right
+  Ult(Grove) row 2 Mid
+Class(Wand)
+  Skill(Gather) row 0 Mid
+  Skill(Echo) row 1 Right
+  Skill(Toll) row 0 Right
+  Skill(Hex) row 0 Left
+  Skill(Blight) row 1 Left
+  Skill(Word) row 1 Mid
+  Vein(Rift) row 2 Left
+  Vein(Knell) row 2 Right
+  Ult(Price) row 2 Mid
+Shield
+  Skill(Whirl) row 0 Mid
+  Skill(Gather) row 0 Mid
+  Skill(Brace) row 0 Left
+  Skill(Echo) row 1 Right
+  Skill(Bash) row 1 Right
+  Skill(Ram) row 1 Left
+  Skill(Toll) row 0 Right
+  Vein(Drain) row 2 Left
+  Vein(Knell) row 2 Right
+  Ult(Bell) row 2 Mid

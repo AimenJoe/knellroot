@@ -2334,7 +2334,10 @@ fn needle_stitch_thrusts_a_narrow_line_three_times_and_makes_it_bleed() {
 fn shield_rush_charges_through_shoving_and_draining() {
     let (mut w, t) = world();
     wear(&mut w, Sk::Ram, 1, Pick::A);
-    assert_eq!(w.grip(), crate::weapons::Grip::Shield);
+    assert_eq!(
+        w.grip(),
+        crate::weapons::Grip::Shield(Some(crate::weapons::Class::Sword))
+    );
     w.spawn_mob(vec3(0.3, 0.0, -2.0));
     still(&mut w);
     let p0 = w.player.pos;
@@ -3162,13 +3165,13 @@ fn pommel_strike_cuts_off_a_winding_foe_and_stuns_but_not_a_boss() {
     let (w, cut, _) = run(true);
     assert_eq!(cut, 0, "a boss keeps its swing");
     assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
-    // 방패를 들면 한손검의 전투 기술은 쉰다(방패 트리 — 0272 그대로).
+    // 0281: 방패를 들어도 한손검의 스킬은 그대로 산다(무기 트리와 방패 트리를 함께 — 멀티클래스).
     let (mut w, _) = world();
     wear(&mut w, Sk::Pommel, 1, Pick::A);
     w.set_shield(Some(crate::shield::Id::Pilgrim));
     assert_eq!(
-        w.player.skill.rank[0], 0,
-        "a sword-and-board grip has no pommel"
+        w.player.skill.rank[0], 1,
+        "a sword-and-board grip keeps the pommel"
     );
 }
 

@@ -21,17 +21,17 @@ fn gauge(en: &crate::enemy::Enemy, k: Kind) -> f32 {
     en.ail.gauge[k.slot().unwrap()]
 }
 
-/// 표: 한 손에 들지만 방패와 들지 않는다(계열 `Two` — 방패를 들어도 완드 판 · 방패는 RB를 맡지 않는다) · 짧은 3연타(타마다 10 — 검의 끝 타
+/// 표: 한 손에 들고 0281부터 방패와 든다(계열 `One` — 방패를 들어도 완드 판이 먼저 · 방패는 RB를 맡지 않는다) · 짧은 3연타(타마다 10 — 검의 끝 타
 /// 20이 없다, 닿는 거리는 검보다 짧다) · 셋째 찌르기와 강공격만 균열을 싣는다 · 주특성 갚지 않은 빚만 · RB = 저주탄(곧게 · 던지는 것이
 /// 아니다 · 내려 꽂히지 않는다 · 균열) — 칸이 다섯이고 빨리 찬다.
 #[test]
 fn the_wand_is_short_and_its_third_jab_and_charge_etch_a_crack() {
     let s = W::Sword.def();
     let k = W::Wand.def();
-    assert_eq!(W::Wand.hand(), weapons::Hand::Two);
+    assert_eq!(W::Wand.hand(), weapons::Hand::One);
     assert_eq!(
         W::Wand.grip(true),
-        weapons::Grip::Class(weapons::Class::Wand)
+        weapons::Grip::Shield(Some(weapons::Class::Wand))
     );
     let mut w = World::new("test", 30.0);
     w.set_weapon(W::Wand);
@@ -335,5 +335,88 @@ fn wand_probe() {
                 super::daggers::foe_dps(id, false, 4.0, beat),
             );
         }
+    }
+}
+
+/// 0281(멀티클래스 — 사장 2026-11-27 "완드도 사실 방패 가능하긴 해야할것 같은데"): 완드는 방패와 든다 — 쥔 꼴은 완드 트리와 방패
+/// 트리 둘, RB는 **그대로 저주탄**(칸을 쓴다 · 방패는 날지 않는다 — `Quirks::rb_main`), 방패는 길게 눌러 막고 놓으면 들이받는다.
+#[test]
+fn the_wand_takes_a_shield_that_guards_and_bashes_but_its_rb_stays_the_curse_bolt() {
+    let t = Tuning::default();
+    let mut w = World::new("test", 40.0);
+    w.set_weapon(W::Wand);
+    let alone_icon = crate::touch::rb_icon(&w);
+    w.set_shield(Some(crate::shield::Id::Pilgrim));
+    assert_eq!(
+        w.grip(),
+        weapons::Grip::Shield(Some(weapons::Class::Wand)),
+        "both trees"
+    );
+    assert!(w.shield_guards() && w.can_block());
+    assert!(!w.shield_throws(), "the curse stays the ranged attack");
+    assert_eq!(w.rb_toss().map(|r| r.bolt.look), Some(Look::Curse));
+    assert_eq!(w.rb_bolts().0.look, Look::Curse);
+    assert_eq!(crate::touch::rb_icon(&w), alone_icon, "the RB icon too");
+    assert_eq!(w.bare(), None, "no empty-hand way with a shield");
+    let foe = mob_with(&mut w, vec3(0.0, 0.0, -6.0), 900);
+    idle(&mut w);
+    let mana = w.player.ranged.mana;
+    let mut ev = w.step(
+        &Actions {
+            cast: true,
+            ..Default::default()
+        },
+        &t,
+    );
+    ev.extend(wait(&mut w, &t, 0.8));
+    assert!(!w.shield_out(), "the shield never leaves the arm");
+    assert!(w.player.ranged.mana < mana, "a curse charge was spent");
+    assert!(
+        !ev.iter().any(|e| matches!(e, Event::ShieldBounce { .. })),
+        "no shield in the air"
+    );
+    assert!(w.enemies[foe].hp < 900, "the curse bolt struck");
+    // 길게 누르면 막고, 놓으면 모인 만큼 들이받는다.
+    let hold = Actions {
+        parry: true,
+        parry_held: true,
+        ..Default::default()
+    };
+    w.step(&hold, &t);
+    let hold = Actions {
+        parry_held: true,
+        ..Default::default()
+    };
+    for _ in 0..60 {
+        w.step(&hold, &t);
+    }
+    assert!(w.guarding(), "the wand's shield guards");
+    w.step(&Actions::default(), &t);
+    assert!(
+        matches!(w.player.state, PState::Rush { .. }),
+        "and bashes on release: {:?}",
+        w.player.state
+    );
+}
+
+/// 0281: 한손검 · 망치 · 낫(과 맨손)은 방패와 들면 그 전처럼 RB가 방패 던지기다 — 바뀐 것은 무기 트리를 함께 쓰는 것뿐.
+#[test]
+fn a_sword_hammer_or_scythe_with_a_shield_still_throws_it() {
+    for arm in [W::Sword, W::Hammer, W::Scythe, W::Fists] {
+        let mut w = World::new("test", 40.0);
+        w.set_weapon(arm);
+        w.set_shield(Some(crate::shield::Id::Pilgrim));
+        assert!(w.shield_throws() && w.can_block(), "{arm:?}");
+        assert_eq!(
+            w.rb_toss().map(|r| r.bolt.look),
+            Some(Look::Shield),
+            "{arm:?}"
+        );
+        assert_eq!(
+            crate::touch::rb_icon(&w),
+            crate::touch::Kind::ShieldToss,
+            "{arm:?}"
+        );
+        assert_eq!(w.grip(), weapons::Grip::Shield(arm.class()), "{arm:?}");
     }
 }

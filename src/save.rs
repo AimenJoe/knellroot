@@ -1495,6 +1495,56 @@ weapons=sword,bow
         );
     }
 
+    /// 0281: 한손검과 방패로 방패 트리의 스킬 둘을 장착한 옛 기록은 그대로 읽히고 슬롯도 그대로다(기록 키는 바뀌지 않았다) — 그 둘은
+    /// 한손검과 방패로 여전히 쓰이고(방패 트리), 0281부터는 한손검 트리의 스킬과 섞어 끼울 수도 있다.
+    #[test]
+    fn an_old_sword_and_shield_record_keeps_its_shield_tree_slots() {
+        use crate::skills::{Id as Sk, Loadout, Pick, Slot, Ult};
+        use crate::weapons::Id;
+        let old = Progress::from_record(Record::parse(
+            "v=1
+migrated.sword=1
+migrated.ult=1
+migrated.v04=1
+migrated.v06=1
+weapon=sword
+weapons=sword
+shields=pilgrim
+shield.worn=pilgrim
+skill.1=bash
+skill.2=ram
+",
+        ));
+        assert_eq!(old.weapon, Some(Id::Sword));
+        assert_eq!(old.shield, Some(crate::shield::Id::Pilgrim));
+        assert_eq!(old.skills.0, [Sk::Bash, Sk::Ram], "the slots stay");
+        let back = Progress::from_record(Record::parse(&old.to_record().to_text()));
+        assert_eq!(back.skills.0, old.skills.0);
+        assert_eq!(back.shield, old.shield);
+        let mut w = crate::world::World::new("test", 30.0);
+        w.set_weapon(Id::Sword);
+        w.set_shield(back.shield);
+        let wear = |w: &mut crate::world::World, ids: [Sk; 2]| {
+            w.set_skills(Loadout {
+                slots: ids.map(|id| Slot {
+                    id,
+                    rank: 1,
+                    pick: Pick::A,
+                }),
+                ult: 1,
+                great: Ult::Bell,
+            });
+        };
+        wear(&mut w, back.skills.0);
+        assert_eq!(w.player.skill.rank, [1, 1], "both shield skills still fit");
+        wear(&mut w, [Sk::Bash, Sk::Pommel]);
+        assert_eq!(
+            w.player.skill.rank,
+            [1, 1],
+            "a sword skill beside a shield skill"
+        );
+    }
+
     /// 0122: 판 수·주민을 처음 본 판·바뀐 주민은 기록에 남고, 키가 없는 옛 기록은 0·빈 것(NPC-07).
     #[test]
     fn residents_and_runs_round_trip_and_old_records_start_empty() {

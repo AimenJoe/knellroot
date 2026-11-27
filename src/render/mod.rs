@@ -67,7 +67,7 @@ pub(crate) fn hide_unheld(
             }
         }
     }
-    let one = weapon.hand() == crate::weapons::Hand::One;
+    let one = weapon.takes_shield();
     for d in crate::shield::TABLE.iter() {
         if !(one && shield == Some(d.id)) {
             if let Some(n) = model.node(d.node) {

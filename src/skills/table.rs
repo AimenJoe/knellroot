@@ -241,8 +241,8 @@ pub const SKILLS: [Skill; N] = [
         },
         row: 0,
         // 0274 ④: 대검도 휘돈다(광전사의 휩쓸기 — 대검 판의 가운데 열). 0274 ⑤: 낫은 한손이지만 휘돌지 않는다(드루이드의 판에 서지
-        // 않게 묶음에서 뺀다 — 낫의 둘레 베기는 생기 거두기).
-        hands: (ONE & !SCYTHE) | GREATSWORD,
+        // 않게 묶음에서 뺀다 — 낫의 둘레 베기는 생기 거두기). 0281: 완드도 한손이 되었지만 휘돌지 않는다(그 전처럼 완드 판에 서지 않게).
+        hands: (ONE & !SCYTHE & !WAND) | GREATSWORD,
         kind: Kind::Physical,
         build: 0.0,
         branch: Branch::Beat,
@@ -1525,15 +1525,15 @@ mod tests {
 
     /// 0158 마: 고르기와 맺음의 표 — 스킬마다 둘(서로 다르다)과 하나, 값은 결정문의 것. 길이가 달라지는 고르기를 골라도 1초 안에 끝난다.
     /// 0223 V3 → 0225 → 0272: 스킬마다 쓸 수 있는 쥔 꼴이 있다 — 무기 판마다(종류 다섯 + 방패) 고를 것이 넉넉하고(넷 이상),
-    /// 첫 줄의 스킬은 판마다 둘 이상(0270 C3 — 그 판을 든 새 판의 첫 스킬이 막히지 않게). 한손검은 방패로 갈린다: 방패 판의 기술
-    /// (방패와 함께만)과 한손검만의 기술(방패 없이만)이 둘 이상씩. 망치만의 것·지팡이 쪽의 것도 있다. 맨손은 무기 판의 기술을 쓰지 못한다.
+    /// 첫 줄의 스킬은 판마다 둘 이상(0270 C3 — 그 판을 든 새 판의 첫 스킬이 막히지 않게). 한손검 판과 방패 판에는 서로에게 없는 기술이
+    /// 둘 이상씩(0281부터 한손검과 방패는 둘 다 쓴다). 망치만의 것·지팡이 쪽의 것도 있다. 맨손은 무기 판의 기술을 쓰지 못한다.
     #[test]
     fn every_grip_has_skills_to_choose_and_the_first_row_fits_the_first_sword() {
         use crate::weapons::CLASSES;
         let grips: Vec<Grip> = CLASSES
             .iter()
             .map(|c| Grip::Class(c.class))
-            .chain([Grip::Shield])
+            .chain([Grip::Shield(None)])
             .collect();
         for &g in &grips {
             let n = SKILLS.iter().filter(|s| s.fits(g)).count();
@@ -1556,7 +1556,7 @@ mod tests {
             let first = SKILLS.iter().filter(|s| s.row == 0 && s.fits(g)).count();
             assert!(first >= 2, "{g:?}: {first} first-row skills");
         }
-        // 한손으로는 방패가 있어야만 되는 것(방패 판의 기술)·방패가 없어야만 되는 것(한손검만의 기술).
+        // 한손으로는 방패가 있어야만 되는 것(방패 판의 기술)·한손검만의 기술. 0281: 한손검과 방패는 둘 다 쓴다(멀티클래스).
         let split = |with: Grip, without: Grip| {
             SKILLS
                 .iter()
@@ -1564,8 +1564,11 @@ mod tests {
                 .count()
         };
         let sword = Grip::Class(Class::Sword);
-        assert!(split(Grip::Shield, sword) >= 2, "shield arts");
-        assert!(split(sword, Grip::Shield) >= 2, "the sword's own");
+        let shield = Grip::Shield(None);
+        let both = Grip::Shield(Some(Class::Sword));
+        assert!(split(shield, sword) >= 2, "shield arts");
+        assert!(split(sword, shield) >= 2, "the sword's own");
+        assert_eq!(split(sword, both) + split(shield, both), 0, "both trees");
         assert!(SKILLS.iter().any(|s| s.hands == HAMMER), "the hammer's own");
         assert!(SKILLS.iter().any(|s| s.hands == SHIELD));
         // 0272: 쇠뇌와 활은 서로 다른 종류다 — 저마다 제 것만의 스킬이 있다.

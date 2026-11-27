@@ -187,7 +187,7 @@ fn arm_cycle() -> Vec<(crate::weapons::Id, bool)> {
     crate::weapons::IDS
         .into_iter()
         .flat_map(|w| {
-            let shield = w.class().is_some() && w.hand() == crate::weapons::Hand::One;
+            let shield = w.class().is_some() && w.takes_shield();
             std::iter::once((w, false)).chain(shield.then_some((w, true)))
         })
         .collect()
