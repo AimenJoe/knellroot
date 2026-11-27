@@ -1509,25 +1509,26 @@ pub const SKILLS: [Skill; N] = [
             poise: 2.0,
         },
     },
-    // 쓸어 차기(가운데 둘째 줄 — 타격): 몸을 낮춰 둘레(2.4 m)를 한 바퀴 쓸어 차 1.2 m 밀어낸다(장대 휩쓸기의 꼴 `Form::Ring` — 창보다
-    // 가깝고 덜 민다). 몽크의 둘레 답(맨손은 한 적씩 친다). 걸으며 찬다(ㄱ) · 한 바퀴 더(ㄴ) · 최종 효과 = 쓸린 적이 0.8초 휘청.
+    // 쓸어 차기(가운데 둘째 줄 — 타격): 몸을 낮춰 둘레(2.6 m)를 두 바퀴 쓸어 차고 마지막 바퀴에 1.2 m 밀어낸다(휘돌이의 꼴 `Form::Ring` —
+    // 휘돌이보다 가깝고 쿨타임이 길다: 처음 안은 장대 휩쓸기처럼 한 바퀴였는데 보스 모의의 잡몹 스물에서 몽크의 둘레 답이 모자라 두 바퀴로,
+    // 0286 "모의"). 몽크의 둘레 답(맨손은 한 적씩 친다). 걸으며 찬다(ㄱ) · 한 바퀴 더(ㄴ) · 최종 효과 = 마지막 바퀴에 쓸린 적이 0.8초 휘청.
     Skill {
         id: Id::Sweep,
         cooldown: 9.0,
-        startup: 0.20,
-        recover: 0.35,
+        startup: 0.15,
+        recover: 0.30,
         damage: HP_UNIT,
-        poise: 3.0,
+        poise: 2.0,
         form: Form::Ring {
-            radius: 2.4,
-            hits: 1,
-            gap: 0.2,
+            radius: 2.6,
+            hits: 2,
+            gap: 0.22,
             push: 1.2,
         },
         anim: "fist_heavy",
         clip: Clip {
-            name: "sk_pole",
-            seg: [0.20, 0.0, 0.35],
+            name: "sk_whirl",
+            seg: [0.15, 0.22, 0.30],
         },
         row: 1,
         hands: MONK,

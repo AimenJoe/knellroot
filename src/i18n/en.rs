@@ -749,7 +749,7 @@ pub const EN: Strings = Strings {
     pick_kick_b_d: "After the last kick you leap back to where you began",
     cap_kick: "The last landing shakes the ground around and deals double poise damage",
     skill_sweep: "Leg Sweep",
-    skill_sweep_d: "Drop low and sweep a full circle (2.4 m), pushing foes back. Room to breathe when surrounded.",
+    skill_sweep_d: "Drop low and sweep around twice (2.6 m), pushing foes back on the last turn. Room to breathe when surrounded.",
     pick_sweep_a: "Walking Sweep",
     pick_sweep_a_d: "Walk while sweeping",
     pick_sweep_b: "Second Turn",

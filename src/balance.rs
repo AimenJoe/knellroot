@@ -116,6 +116,14 @@ fn caster_stance(w: &World, b: &Build, gap: f32, opening: bool, a: &mut Actions)
     }
 }
 
+/// 틈에 붙어 서는 거리(몸 사이 m): 1.3 m — 첫 평타가 그보다 짧게 닿는 무기(0286 — 맨손 1.26 m · 쌍단검 1.44 m, 몸 사이로는 0.86 ·
+/// 1.04 m)는 그 닿는 거리 안까지 붙는다. 0285까지의 봇은 모든 무기가 1.3 m에 서서 짧은 손은 내딛기(`lunge`)로만 닿았다 — 사람은
+/// 제 무기의 거리까지 붙는다.
+fn close_gap(w: &World, t: &Tuning) -> f32 {
+    let reach = w.player.weapon.def().hit(0).map_or(1.0, |h| h.reach);
+    (t[crate::tuning::P::AttackRange] * reach - PLAYER_RADIUS - 0.1).min(1.3)
+}
+
 /// 스킬을 쓰는 거리(몸 사이 m).
 const SKILL_GAP: f32 = 2.2;
 
@@ -494,7 +502,7 @@ fn boss_fight(
         }
         // 틈이면 붙어서 친다(기력이 남았을 때 — 패링 몫은 남긴다).
         let opening = !defending && tele_left > 0.55;
-        if opening && gap > 1.3 {
+        if opening && gap > close_gap(&w, t) {
             a.move_dir = vec2(0.0, 1.0);
         }
         // 구르는 손(0276 — 그림자 걸음을 재려고): 틈마다 처음 한 번은 보스 쪽으로 굴러 들어가 친다(구른 뒤 첫 타). 기력은 회피 몫까지 남긴다.
@@ -735,7 +743,7 @@ pub fn pack_fight(
             a.parry = true;
         }
         let opening = !defending;
-        if opening && gap > 1.3 {
+        if opening && gap > close_gap(&w, t) {
             a.move_dir = vec2(0.0, 1.0);
         }
         if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy {
@@ -2057,6 +2065,262 @@ fn greatsword_weight_probe() {
                     cost(&m),
                     m.source.1 * 100.0,
                 );
+            }
+        }
+    }
+}
+
+/// 몽크(0286 — 사장 "맨손 일땐, 몽크도 넣어줘. 대신 몽크는 보조무기를 들수 없어." · 밸런스는 "방패 장착이나 미장착이나 밸런스가 맞아야"):
+/// 몽크(맨손 — 보조무기 슬롯이 잠겨 늘 빈 손, 손바닥 치기와 할퀴기 또는 쓸어 차기 3레벨)를 한손검(빈 손 · 가장 좋은 보조무기 · 방패) · 쌍단검(빈 손 ·
+/// 한손검을 멘 것) · 망치(빈 손 · 방패) 곁에 두고 문지기 둘 · 정예 무리 · 잡몹 스물과 싸운다 — 성공률 0.7 · 0.5, 이른 몸(B 첫 도착)과
+/// 늦은 몸(E 작업층 도달). 봇은 0281의 손(종류의 스킬 둘 3레벨 · 틈의 RB · 막거나 구르기, 틈에는 평타를 틱마다 누른다 — 박자에 맞추지
+/// 않는다). 줄마다 이긴 몫 · 이긴 판의 초 · 받은 피해 · 이길 때까지의 초, 끝에 몽크가 그 싸움의 종류마다 가장 좋은 줄들 사이에서 몇째인지.
+/// 돌리기: `SIM_RUNS=40 cargo test --release monk_probe -- --ignored --nocapture` (`SIM_ONLY=fists` 같은 무기 이름)
+#[test]
+#[ignore]
+fn monk_probe() {
+    use crate::scenario::Scenario;
+    use crate::skills::Id as Sk;
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs: u64 = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(40);
+    let only = std::env::var("SIM_ONLY").ok();
+    let all = builds();
+    #[derive(Clone, Copy, Debug)]
+    enum Bout {
+        Boss(Kind),
+        Pack(Scenario),
+    }
+    let bouts: [(&str, Bout); 4] = [
+        ("bellkeeper", Bout::Boss(Kind::Bellkeeper)),
+        ("stag field boss", Bout::Boss(Kind::Stag)),
+        ("elite pack", Bout::Pack(Scenario::Elites)),
+        ("horde of 20", Bout::Pack(Scenario::Horde)),
+    ];
+    // (이름, 주무기, 스킬 둘, 보조무기, 방패, 빈 손)
+    type Gear = (&'static str, W, [Sk; 2], Option<W>, bool, bool);
+    let gears: [Gear; 11] = [
+        (
+            "monk p+r",
+            W::Fists,
+            [Sk::Palm, Sk::Rake],
+            None,
+            false,
+            true,
+        ),
+        (
+            "monk p+s",
+            W::Fists,
+            [Sk::Palm, Sk::Sweep],
+            None,
+            false,
+            true,
+        ),
+        (
+            "sword empty",
+            W::Sword,
+            [Sk::Whirl, Sk::Pommel],
+            None,
+            false,
+            true,
+        ),
+        (
+            "sword+hammer",
+            W::Sword,
+            [Sk::Whirl, Sk::Pommel],
+            Some(W::Hammer),
+            false,
+            false,
+        ),
+        (
+            "sword+dagger",
+            W::Sword,
+            [Sk::Whirl, Sk::Pommel],
+            Some(W::Daggers),
+            false,
+            false,
+        ),
+        (
+            "sword+spear",
+            W::Sword,
+            [Sk::Whirl, Sk::Pommel],
+            Some(W::Spear),
+            false,
+            false,
+        ),
+        (
+            "sword+shield",
+            W::Sword,
+            [Sk::Whirl, Sk::Pommel],
+            None,
+            true,
+            false,
+        ),
+        (
+            "dagger empty",
+            W::Daggers,
+            [Sk::Stitch, Sk::Slip],
+            None,
+            false,
+            true,
+        ),
+        (
+            "dagger+sword",
+            W::Daggers,
+            [Sk::Stitch, Sk::Slip],
+            Some(W::Sword),
+            false,
+            false,
+        ),
+        (
+            "hammer empty",
+            W::Hammer,
+            [Sk::Quake, Sk::Toll],
+            None,
+            false,
+            true,
+        ),
+        (
+            "hammer+shield",
+            W::Hammer,
+            [Sk::Quake, Sk::Toll],
+            None,
+            true,
+            false,
+        ),
+    ];
+    let bodies = [("B early", 1usize), ("E late", 4usize)];
+    let ps = [0.7f32, 0.5];
+    let mut jobs: Vec<(usize, usize, usize, usize)> = Vec::new();
+    for (gi, g) in gears.iter().enumerate() {
+        if only
+            .as_deref()
+            .is_some_and(|o| !format!("{:?}", g.1).eq_ignore_ascii_case(o))
+        {
+            continue;
+        }
+        for pi in 0..ps.len() {
+            for bi in 0..bodies.len() {
+                for oi in 0..bouts.len() {
+                    jobs.push((pi, bi, oi, gi));
+                }
+            }
+        }
+    }
+    let run = |&(pi, bi, oi, gi): &(usize, usize, usize, usize)| -> Sum {
+        let (_, main, pair, sub, shield, bare) = gears[gi];
+        let b = Build {
+            weapon: main,
+            sub,
+            shield,
+            bare,
+            kit: Kit {
+                skills: Some(pair),
+                rank: 3,
+                rb: true,
+                guard: true,
+                keep: false,
+            },
+            ..all[bodies[bi].1].clone()
+        };
+        let p = ps[pi];
+        sum_of(
+            (0..runs)
+                .map(|s| match bouts[oi].1 {
+                    Bout::Boss(k) => fight_vs(k, false, &b, p, s + 1, &t),
+                    Bout::Pack(sc) => pack_fight(sc, &b, p, s + 1, &t),
+                })
+                .collect(),
+        )
+    };
+    let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let out: Vec<std::sync::Mutex<Option<Sum>>> =
+        jobs.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|sc| {
+        for _ in 0..threads {
+            sc.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(job) = jobs.get(i) else { break };
+                let m = run(job);
+                *out[i].lock().unwrap() = Some(m);
+            });
+        }
+    });
+    let sums: Vec<Sum> = out
+        .into_iter()
+        .map(|m| m.into_inner().unwrap().unwrap())
+        .collect();
+    let cost = |m: &Sum| {
+        if m.win > 0.0 {
+            m.secs / m.win
+        } else {
+            f32::INFINITY
+        }
+    };
+    println!("runs = {runs}, skill rank 3, mashing bot, guard roll on");
+    for (pi, p) in ps.iter().enumerate() {
+        for (bi, (body, _)) in bodies.iter().enumerate() {
+            for (oi, (bout, _)) in bouts.iter().enumerate() {
+                println!("\n### p = {p} · {body} · {bout}");
+                println!("gear          | win  | secs(win) | taken | secs/win");
+                let mine: Vec<usize> = (0..jobs.len())
+                    .filter(|&i| jobs[i].0 == pi && jobs[i].1 == bi && jobs[i].2 == oi)
+                    .collect();
+                for &i in &mine {
+                    let m = &sums[i];
+                    println!(
+                        "{:<13} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>8.1}",
+                        gears[jobs[i].3].0,
+                        m.win * 100.0,
+                        m.secs,
+                        m.taken,
+                        cost(m)
+                    );
+                }
+                // 종류마다 가장 좋은 줄(이길 때까지의 초)과 몽크의 자리.
+                let best = |w: W| {
+                    mine.iter()
+                        .copied()
+                        .filter(|&i| gears[jobs[i].3].1 == w)
+                        .min_by(|&x, &y| cost(&sums[x]).total_cmp(&cost(&sums[y])))
+                };
+                let rows: Vec<(W, usize)> = [W::Fists, W::Sword, W::Daggers, W::Hammer]
+                    .into_iter()
+                    .filter_map(|w| best(w).map(|i| (w, i)))
+                    .collect();
+                if let Some(&(_, monk)) = rows.iter().find(|(w, _)| *w == W::Fists) {
+                    let m = &sums[monk];
+                    let others: Vec<&Sum> = rows
+                        .iter()
+                        .filter(|(w, _)| *w != W::Fists)
+                        .map(|&(_, i)| &sums[i])
+                        .collect();
+                    let rank = 1 + others.iter().filter(|o| cost(o) < cost(m)).count();
+                    let best_all = others
+                        .iter()
+                        .all(|o| m.win >= o.win && cost(m) <= cost(o) && m.taken <= o.taken);
+                    let worst_all = others
+                        .iter()
+                        .all(|o| m.win <= o.win && cost(m) >= cost(o) && m.taken >= o.taken);
+                    println!(
+                        "monk: {rank} of {} by secs/win{}{}",
+                        rows.len(),
+                        if best_all {
+                            " · BEST ON EVERY MEASURE"
+                        } else {
+                            ""
+                        },
+                        if worst_all {
+                            " · WORST ON EVERY MEASURE"
+                        } else {
+                            ""
+                        }
+                    );
+                }
             }
         }
     }

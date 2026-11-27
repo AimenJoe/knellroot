@@ -750,7 +750,7 @@ pub const KO: Strings = Strings {
     pick_kick_b_d: "다 찬 뒤 처음 자리로 돌아온다",
     cap_kick: "마지막에 내려앉는 발이 둘레를 흔들어 자세를 두 배로 깎는다",
     skill_sweep: "쓸어 차기",
-    skill_sweep_d: "몸을 낮춰 둘레(2.4m)를 한 바퀴 쓸어 차 밀어낸다. 에워싸였을 때 자리를 만든다.",
+    skill_sweep_d: "몸을 낮춰 둘레(2.6m)를 두 바퀴 쓸어 차고, 마지막 바퀴에 밀어낸다. 에워싸였을 때 자리를 만든다.",
     pick_sweep_a: "도는 걸음",
     pick_sweep_a_d: "쓸어 차며 걷는다",
     pick_sweep_b: "두 바퀴",

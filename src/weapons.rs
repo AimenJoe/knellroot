@@ -1049,13 +1049,15 @@ const STAFF_COMBO: [Hit; 3] = [
 
 /// 맨손 — 짧고 빠른 주먹 3연타(가까이 붙어야 닿는다, 피해 10·자세 피해 작음), 셋째는 내디디며 한 방. 동작은 왼 잽 → 오른 잽 →
 /// 오른 어퍼컷(0198 — 전에는 검의 동작을 빈손으로 빌렸다).
+/// 맨손(0286부터 몽크)의 3연타. 자세 피해는 0286에 ×1.5(0.5 · 0.5 · 1.2 → 0.75 · 0.75 · 1.8 — 대시 1.0 → 1.5 · 강공격 2.0 → 3.0): 보스 모의에서
+/// 몽크가 이른 몸의 문지기 싸움마다 가장 느렸다(빠르지만 가벼운 주먹이 자세를 못 깬다 — 결정 0286 "모의").
 const FISTS_COMBO: [Hit; 3] = [
-    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "fist1"),
-    hit(0.6, 0.7, 0.8, 0.6, 10, 0.5, "fist2"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.75, "fist1"),
+    hit(0.6, 0.7, 0.8, 0.6, 10, 0.75, "fist2"),
     Hit {
         knock: 1.3,
         cancel: 0.1,
-        ..hit(0.8, 0.8, 0.6, 1.2, 10, 1.2, "fist3")
+        ..hit(0.8, 0.8, 0.6, 1.2, 10, 1.8, "fist3")
     },
 ];
 
@@ -1408,7 +1410,7 @@ pub const WEAPONS: &[Weapon] = &[
         twin: false,
         combo: &FISTS_COMBO,
         // 달려들며 앞차기(0199).
-        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.0, "fist_dash")),
+        dash: Some(hit(0.7, 0.8, 0.6, 2.0, 10, 1.5, "fist_dash")),
         // 모아 치기: 검보다 짧고 빠르다, 피해 10(다 모으면 + `heavy.full bonus`).
         heavy: Some(Heavy {
             time: 0.8,
@@ -1418,7 +1420,7 @@ pub const WEAPONS: &[Weapon] = &[
             lunge: 1.2,
             shape: Shape::Arc,
             damage: 10,
-            poise: 2.0,
+            poise: 3.0,
             walk: 1.2,
             anim_charge: "fist_charge",
             anim_heavy: "fist_heavy",

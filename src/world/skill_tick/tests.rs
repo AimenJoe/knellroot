@@ -4306,8 +4306,8 @@ fn flying_kick_leaps_to_each_foe_and_builds_shock() {
     assert!(flat(w.player.pos, p0) > 2.0, "the monk flew");
 }
 
-/// 쓸어 차기: 둘레(2.4 m)를 한 번 쓸어 차 밀어낸다 — 넷 다 맞고 밀려난다. 보스는 다치되 휘청이지 않는다. 두 바퀴(ㄴ)면 둘째 바퀴에
-/// 다시 맞는다(밀기는 마지막 바퀴만).
+/// 쓸어 차기: 둘레(2.6 m)를 두 바퀴 쓸어 차 마지막 바퀴에 밀어낸다 — 넷 다 맞고 밀려난다. 보스는 다치되 휘청이지 않는다. 한 바퀴 더(ㄴ)면
+/// 셋째 바퀴에 다시 맞는다(밀기는 마지막 바퀴만).
 #[test]
 fn leg_sweep_kicks_all_around_and_pushes_them_out() {
     let (mut w, t) = world();
@@ -4350,7 +4350,7 @@ fn leg_sweep_kicks_all_around_and_pushes_them_out() {
             .filter(|e| matches!(e, Event::Skill { id: Sk::Sweep, .. }))
             .count()
     };
-    assert_eq!((twice(Pick::A), twice(Pick::B)), (1, 2));
+    assert_eq!((twice(Pick::A), twice(Pick::B)), (2, 3));
 }
 
 /// 큰 기술 천 개의 손바닥(몽크): 세계가 멈추고(0.3초) 몸 앞 부채꼴(2.6 m · 110°)을 여섯 번 친다 — 앞의 다섯은 10씩, 마지막은 40(합 90)에
