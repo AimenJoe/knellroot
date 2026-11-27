@@ -1270,8 +1270,13 @@ fn boss_rules_hold_for(boss: Kind) {
             if id == Sk::Gather {
                 assert!(flat(w.enemies[0].pos, boss_was) < 0.05, "{tag}: pulled");
                 assert_eq!(w.enemies[0].hp, boss_hp, "{tag}: gather alone does no harm");
-            } else if id == Sk::Swallow || id == Sk::Ram || (id == Sk::Stitch && pick == Pick::A) {
-                // 제비걸음(0214)은 방랑자가 뛰어든다 — 보스가 처음 자리에서 끌려오지 않았는지만.
+            } else if id == Sk::Swallow
+                || id == Sk::Kick
+                || id == Sk::Ram
+                || ((id == Sk::Stitch || id == Sk::Rake) && pick == Pick::A)
+            {
+                // 제비걸음(0214) · 날아 차기(0286)는 방랑자가 뛰어든다(바늘땀 · 할퀴기의 ㄱ은 내딛는다) — 보스가 처음 자리에서 끌려오지
+                // 않았는지만.
                 let moved = flat(w.enemies[0].pos, Vec3::ZERO);
                 assert!(moved > was - 0.6, "{tag}: drawn in ({was} -> {moved})");
             } else if !(id == Sk::Quake && pick == Pick::A) {
@@ -4206,4 +4211,215 @@ fn skill_damage_per_cooldown_probe() {
             out[3]
         );
     }
+}
+
+// ---- 0286: 몽크(맨손 — 손바닥 치기 · 할퀴기 · 날아 차기 · 쓸어 차기 · 천 개의 손바닥) ----
+
+/// 손바닥 치기: 맨손(몽크)으로만 — 짧은 앞(2 m · 80°)의 적이 충격에 가득 차 기절하고, 공격을 준비하던 적은 그 공격이 끊긴다(막아치기의
+/// 꼴). 보스는 끊기지도 휘청이지도 않는다(자세만). 부채꼴 밖은 닿지 않는다.
+#[test]
+fn palm_strike_cuts_off_a_winding_foe_and_stuns_but_not_a_boss() {
+    let go = |boss: bool| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Palm, 1, Pick::A);
+        assert_eq!(w.player.weapon, crate::weapons::Id::Fists);
+        if boss {
+            w.spawn_boss(vec3(0.0, 0.0, -2.0));
+        } else {
+            w.spawn_mob(vec3(0.0, 0.0, -1.5));
+        }
+        w.spawn_mob(vec3(1.9, 0.0, -0.4));
+        still(&mut w);
+        let en = &mut w.enemies[0];
+        en.facing = 0.0;
+        en.atk = Atk::Smash;
+        en.state = EState::Tele { t: 0.0 };
+        let mut ev = run(&mut w, &t, skill(0), 40);
+        let mut stunned = w.enemies[0].ail.stun > 0.0;
+        for _ in 0..20 {
+            ev.extend(w.step(&Actions::default(), &t));
+            stunned |= w.enemies[0].ail.stun > 0.0;
+        }
+        let cut = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Interrupt { .. }))
+            .count();
+        (w, cut, stunned)
+    };
+    let (w, cut, stunned) = go(false);
+    assert_eq!(cut, 1, "the winding foe is cut off");
+    assert!(stunned, "one palm fills a plain foe's shock");
+    assert_eq!(w.enemies[1].hp, 90, "outside the arc");
+    let (w, cut, _) = go(true);
+    assert_eq!(cut, 0, "a boss keeps its swing");
+    assert!(!matches!(w.enemies[0].state, EState::Stagger { .. }));
+}
+
+/// 할퀴기: 앞(1.9 m)을 0.05초마다 다섯 번 할퀸다 — 타마다 10, 다섯이 다 닿으면 보통 적은 피를 흘린다. 더 깊은 손톱(ㄴ)은 둘 더.
+#[test]
+fn rake_claws_five_times_and_bleeds() {
+    let go = |rank: u8, pick: Pick| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Rake, rank, pick);
+        w.spawn_mob(vec3(0.0, 0.0, -1.4));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        let ev = finish(&mut w, &t, 0);
+        let rakes = ev
+            .iter()
+            .filter(|e| matches!(e, Event::Skill { id: Sk::Rake, .. }))
+            .count();
+        (rakes, w.enemies[0].ail.bleed > 0.0, 900 - w.enemies[0].hp)
+    };
+    let (n, bled, lost) = go(1, Pick::A);
+    assert_eq!(n, 5);
+    assert!(bled, "five claws open a wound");
+    assert!(lost >= 50, "{lost}");
+    assert_eq!(go(3, Pick::B).0, 7, "two more rakes");
+}
+
+/// 날아 차기: 6 m 안의 적 셋에게 차례로 날아들어 한 번씩 찬다(제비걸음의 꼴) — 차인 적에게 충격이 쌓인다. 보스는 휘청이지 않는다.
+#[test]
+fn flying_kick_leaps_to_each_foe_and_builds_shock() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Kick, 1, Pick::A);
+    for p in [
+        vec3(0.0, 0.0, -3.0),
+        vec3(3.0, 0.0, -4.0),
+        vec3(-3.0, 0.0, -5.0),
+    ] {
+        w.spawn_mob(p);
+    }
+    still(&mut w);
+    let p0 = w.player.pos;
+    finish(&mut w, &t, 0);
+    for (i, e) in w.enemies.iter().enumerate() {
+        assert!(e.hp < 90, "{i} kicked");
+        assert!(
+            e.ail.gauge[crate::status::Kind::Shock.slot().unwrap()] > 0.0 || e.ail.stun > 0.0,
+            "{i} shaken"
+        );
+    }
+    assert!(flat(w.player.pos, p0) > 2.0, "the monk flew");
+}
+
+/// 쓸어 차기: 둘레(2.4 m)를 한 번 쓸어 차 밀어낸다 — 넷 다 맞고 밀려난다. 보스는 다치되 휘청이지 않는다. 두 바퀴(ㄴ)면 둘째 바퀴에
+/// 다시 맞는다(밀기는 마지막 바퀴만).
+#[test]
+fn leg_sweep_kicks_all_around_and_pushes_them_out() {
+    let (mut w, t) = world();
+    wear(&mut w, Sk::Sweep, 1, Pick::A);
+    let ring = [
+        vec3(1.6, 0.0, 0.0),
+        vec3(-1.6, 0.0, 0.0),
+        vec3(0.0, 0.0, 1.6),
+        vec3(0.0, 0.0, -1.6),
+    ];
+    for p in ring {
+        w.spawn_mob(p);
+    }
+    w.spawn_boss(vec3(1.2, 0.0, 1.2));
+    still(&mut w);
+    w.enemies[4].hp = 2000;
+    let mut boss_staggered = false;
+    let mut ev = w.step(&skill(0), &t);
+    for _ in 0..90 {
+        ev.extend(w.step(&Actions::default(), &t));
+        boss_staggered |= matches!(w.enemies[4].state, EState::Stagger { .. });
+        still_keep(&mut w);
+    }
+    for (i, p) in ring.iter().enumerate() {
+        assert!(w.enemies[i].hp < 90, "{i} hit");
+        assert!(
+            flat(w.enemies[i].pos, w.player.pos) > p.length() + 0.6,
+            "{i} pushed out"
+        );
+    }
+    assert!(w.enemies[4].hp < 2000, "the boss is hurt");
+    assert!(!boss_staggered, "but not staggered");
+    let twice = |pick: Pick| {
+        let (mut w, t) = world();
+        wear(&mut w, Sk::Sweep, 3, pick);
+        w.spawn_mob(vec3(0.0, 0.0, -1.6));
+        still(&mut w);
+        let ev = finish(&mut w, &t, 0);
+        ev.iter()
+            .filter(|e| matches!(e, Event::Skill { id: Sk::Sweep, .. }))
+            .count()
+    };
+    assert_eq!((twice(Pick::A), twice(Pick::B)), (1, 2));
+}
+
+/// 큰 기술 천 개의 손바닥(몽크): 세계가 멈추고(0.3초) 몸 앞 부채꼴(2.6 m · 110°)을 여섯 번 친다 — 앞의 다섯은 10씩, 마지막은 40(합 90)에
+/// 충격을 크게 쌓고 잡몹을 밀어낸다. 보스도 다치고 자세가 깎이되 밀리지도 휘청이지도 않는다. 부채꼴 밖 · 2.6 m 너머는 그대로. 2단 3.4 m,
+/// 3단 20씩 · 마지막 60(합 160).
+#[test]
+fn thousand_palms_pour_into_the_fan_ahead_then_shove() {
+    let palms = |rank: u8| {
+        let mut w = World::new("test", 30.0);
+        let t = Tuning::default();
+        w.player.facing = PI;
+        w.set_weapon(crate::weapons::Id::Fists);
+        wear_ult(&mut w, Ult::Palms, rank);
+        for p in [
+            vec3(0.0, 0.0, -1.4),
+            vec3(1.0, 0.0, -1.9),
+            vec3(0.0, 0.0, -3.3),
+            vec3(0.0, 0.0, 2.0),
+        ] {
+            w.spawn_mob(p);
+        }
+        w.spawn_boss(vec3(-1.6, 0.0, -2.0));
+        still(&mut w);
+        for e in &mut w.enemies {
+            e.hp = 900;
+            e.max_hp = 900;
+        }
+        let boss_at = w.enemies[4].pos;
+        w.player.skill.gauge = 1.0;
+        w.step(
+            &Actions {
+                ult: true,
+                ..Default::default()
+            },
+            &t,
+        );
+        assert!(w.hitstop >= skills::PALMS.freeze - 1e-4, "the world stops");
+        let mut ev = Vec::new();
+        let mut staggered = false;
+        for _ in 0..150 {
+            ev.extend(w.step(&Actions::default(), &t));
+            staggered |= matches!(w.enemies[4].state, EState::Stagger { .. });
+            still_keep(&mut w);
+        }
+        let blows = ev
+            .iter()
+            .filter(|e| matches!(e, Event::PalmBlow { .. }))
+            .count();
+        assert_eq!(blows, skills::PALMS.blows as usize);
+        assert!(!staggered, "a boss is not staggered");
+        assert!(flat(w.enemies[4].pos, boss_at) < 0.3, "nor thrown");
+        assert_eq!(w.player.skill.gauge, 0.0);
+        let lost: Vec<i32> = w.enemies.iter().map(|e| 900 - e.hp).collect();
+        lost
+    };
+    let near = |got: &[i32], want: [i32; 4]| {
+        got.iter().zip(want).all(|(g, w)| {
+            if w == 0 {
+                *g == 0
+            } else {
+                (w..w + 10).contains(g)
+            }
+        })
+    };
+    let a = palms(1);
+    assert!(near(&a, [90, 90, 0, 0]), "{a:?}");
+    assert!(a[4] >= 90, "the boss too: {}", a[4]);
+    let b = palms(2);
+    assert!(near(&b, [90, 90, 90, 0]), "3.4 m: {b:?}");
+    let c = palms(3);
+    assert!(near(&c, [160, 160, 160, 0]), "{c:?}");
 }

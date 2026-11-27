@@ -105,6 +105,16 @@ Class(Wand)
   Vein(Rift) row 2 Left
   Vein(Knell) row 2 Right
   Ult(Price) row 2 Mid
+Class(Monk)
+  Skill(Gather) row 0 Mid
+  Skill(Brace) row 0 Mid
+  Skill(Palm) row 0 Left
+  Skill(Rake) row 0 Right
+  Skill(Kick) row 1 Left
+  Skill(Sweep) row 1 Mid
+  Vein(Shock) row 2 Left
+  Vein(Sharp) row 2 Right
+  Ult(Palms) row 2 Mid
 Shield
   Skill(Whirl) row 0 Mid
   Skill(Gather) row 0 Mid

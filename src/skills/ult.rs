@@ -30,10 +30,12 @@ pub enum Ult {
     Grove,
     /// 치른 값(0274 ⑥ — 완드 판): 둘레의 적에게 저주를 퍼뜨려 금을 내고, 잠시 뒤 그 값이 울림으로 터진다 — 금 간 적은 더 크게.
     Price,
+    /// 천 개의 손바닥(0286 — 몽크 판): 앞 부채꼴에 손바닥을 잇달아 쏟고 마지막에 크게 밀쳐 친다 — 마지막 한 대가 충격을 가득 쌓는다.
+    Palms,
 }
 
 /// 큰 기술의 표 순서(판의 단 `Board::ult`의 자리 — 뒤에만 붙인다).
-pub const ULTS: [Ult; 11] = [
+pub const ULTS: [Ult; 12] = [
     Ult::Upend,
     Ult::Flurry,
     Ult::Line,
@@ -45,6 +47,7 @@ pub const ULTS: [Ult; 11] = [
     Ult::Tempest,
     Ult::Grove,
     Ult::Price,
+    Ult::Palms,
 ];
 pub const NU: usize = ULTS.len();
 
@@ -72,6 +75,7 @@ impl Ult {
             Ult::Tempest => "tempest",
             Ult::Grove => "grove",
             Ult::Price => "price",
+            Ult::Palms => "palms",
         }
     }
 
@@ -83,7 +87,7 @@ impl Ult {
     pub fn branch(self) -> Branch {
         match self {
             Ult::Upend | Ult::Blizzard | Ult::Rain | Ult::Grove => Branch::Footing,
-            Ult::Flurry | Ult::Ambush | Ult::Tempest => Branch::Beat,
+            Ult::Flurry | Ult::Ambush | Ult::Tempest | Ult::Palms => Branch::Beat,
             Ult::Line | Ult::Bell | Ult::Gale | Ult::Price => Branch::Riposte,
         }
     }
@@ -102,6 +106,7 @@ impl Ult {
             Ult::Tempest => TEMPEST.anim,
             Ult::Grove => GROVE.anim,
             Ult::Price => PRICE.anim,
+            Ult::Palms => PALMS.anim,
         }
     }
 
@@ -118,6 +123,7 @@ impl Ult {
             Ult::Tempest => TEMPEST.clip,
             Ult::Grove => GROVE.clip,
             Ult::Price => PRICE.clip,
+            Ult::Palms => PALMS.clip,
         }
     }
 
@@ -135,6 +141,7 @@ impl Ult {
             Ult::Tempest => (TEMPEST.freeze, TEMPEST.startup, TEMPEST.recover()),
             Ult::Grove => (GROVE.freeze, GROVE.startup, GROVE.recover()),
             Ult::Price => (PRICE.freeze, PRICE.startup, PRICE.recover()),
+            Ult::Palms => (PALMS.freeze, PALMS.startup, PALMS.recover()),
         }
     }
 
@@ -537,6 +544,90 @@ impl Gale {
     }
 
     /// `rank`단의 (앞 찌름의 피해, 마지막 찌름의 피해).
+    pub fn damage_at(&self, rank: u8) -> (i32, i32) {
+        if rank >= ULT_MAX_RANK {
+            (self.damage3, self.last3)
+        } else {
+            (self.damage, self.last)
+        }
+    }
+}
+
+/// 큰 기술 "천 개의 손바닥"(0286 — 몽크 판, 무협의 백 번 치기 · BG3 몽크의 연타): 세계 멈춤 뒤 시동 끝부터 `gap`초마다 `blows`번
+/// 앞 부채꼴(`range` m · `arc_deg`°)의 깨어 있는 적을 모두 손바닥으로 친다 — 앞의 타는 가볍게(밀지 않는다 — 떼가 손 앞에 남는다),
+/// 마지막은 크게 밀쳐 친다: 큰 피해 · 큰 자세 피해 · 충격 `dose`(기절), 잡몹은 밀려 `stagger`초 휘청(보스는 밀리지도 휘청이지도
+/// 않는다 — 큰 기술의 규칙). 질풍 찌르기(창 — 한 줄)와 같은 틀에 모양만 몸 앞의 부채꼴(가깝고 넓다). 2단 = 닿는 거리 `range2`,
+/// 3단 = 피해 `damage3` · `last3`.
+pub struct Palms {
+    pub freeze: f32,
+    pub startup: f32,
+    pub blows: u8,
+    pub gap: f32,
+    /// 마지막 타 뒤의 후딜(초).
+    pub tail: f32,
+    pub range: f32,
+    pub range2: f32,
+    pub arc_deg: f32,
+    pub damage: i32,
+    pub damage3: i32,
+    pub last: i32,
+    pub last3: i32,
+    pub poise: f32,
+    pub last_poise: f32,
+    pub push: f32,
+    pub stagger: f32,
+    pub dose: Dose,
+    pub anim: &'static str,
+    pub clip: Clip,
+}
+
+/// 질풍 찌르기와 같은 박자 · 같은 수(타 여섯 — 가벼운 타 10 · 마지막 40, 3단 20 · 60) — 한 줄을 꿰는 창보다 닿는 거리가 짧고 몸 앞에 넓다.
+pub const PALMS: Palms = Palms {
+    freeze: 0.3,
+    startup: 0.2,
+    blows: 6,
+    gap: 0.11,
+    tail: 0.4,
+    range: 2.6,
+    range2: 3.4,
+    arc_deg: 110.0,
+    damage: HP_UNIT,
+    damage3: 2 * HP_UNIT,
+    last: 4 * HP_UNIT,
+    last3: 6 * HP_UNIT,
+    poise: 1.0,
+    last_poise: 8.0,
+    push: 2.5,
+    stagger: 0.8,
+    dose: (Kind::Shock, 2.0),
+    anim: "fist3",
+    // 처음에는 질풍 찌르기의 동작을 빌린다(같은 박자 — 멈춤 0.3 · 시동 0.2 · 타 여섯이 0.11초마다 · 꼬리 0.4).
+    clip: Clip {
+        name: "ult_gale",
+        seg: [0.30, 0.20, 0.95],
+    },
+};
+
+impl Palms {
+    /// 후딜(초): 타가 모두 이 안에 있다 — 첫 타는 시동 끝, 마지막은 `(blows - 1) × gap` 뒤.
+    pub const fn recover(&self) -> f32 {
+        (self.blows as f32 - 1.0) * self.gap + self.tail
+    }
+
+    /// `k`째 타의 때(시동 끝에서 초).
+    pub fn blow_at(&self, k: u8) -> f32 {
+        k as f32 * self.gap
+    }
+
+    pub fn range_at(&self, rank: u8) -> f32 {
+        if rank >= 2 {
+            self.range2
+        } else {
+            self.range
+        }
+    }
+
+    /// `rank`단의 (앞 타의 피해, 마지막 타의 피해).
     pub fn damage_at(&self, rank: u8) -> (i32, i32) {
         if rank >= ULT_MAX_RANK {
             (self.damage3, self.last3)

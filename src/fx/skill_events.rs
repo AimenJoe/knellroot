@@ -579,6 +579,54 @@ impl Fx {
         }
     }
 
+    /// 천 개의 손바닥(0286 — 몽크): 타마다 손 앞의 작은 흰 별 + 앞으로 짧게 튀는 바람줄(가로로 조금씩 엇갈려 — 손이 여럿으로 보이게),
+    /// 마지막은 큰 별 + 부채꼴 끝까지 번지는 바람빛 고리 + 앞으로 튀는 빛줄 + 먼지.
+    pub(super) fn ev_palm_blow(&mut self, at: Vec3, dir: Vec3, reach: f32, last: bool, w: &World) {
+        let g = vec3(at.x, w.ground_y(at), at.z);
+        let side = vec3(dir.z, 0.0, -dir.x);
+        if last {
+            let tip = g + Vec3::Y * 1.0 + dir * 0.9;
+            self.star(tip, 2.6, 0.13, WHITE_HOT);
+            self.mark(
+                g + dir * 0.4,
+                MarkKind::Ring { r0: 0.4, r1: reach },
+                0.4,
+                SKY,
+            );
+            self.spray(
+                tip,
+                dir,
+                0.35,
+                12,
+                12.0,
+                Shape::Streak,
+                0.07,
+                0.3,
+                1.0,
+                WHITE_HOT,
+                SKY,
+            );
+            self.dust_kick(g, -dir, 6, 0.6);
+        } else {
+            let k = self.rs();
+            let tip = g
+                + Vec3::Y * (0.8 + 0.4 * self.r())
+                + dir * (0.7 + 0.6 * self.r())
+                + side * k * 0.6;
+            self.star(tip, 0.8, 0.06, WHITE_HOT);
+            self.mark(
+                g + side * k * 0.4,
+                MarkKind::Streak {
+                    dir,
+                    len: reach,
+                    half: 0.18,
+                },
+                0.1,
+                SKY,
+            );
+        }
+    }
+
     /// 칼바람(0274 ④): 휩쓸기마다 둘레 끝까지 번지는 강철빛 고리 + 둘레에서 바깥으로 튀는 빛줄, 마지막은 큰 별 + 잔불빛 고리 둘 +
     /// 튀는 불씨 + 먼지 고리.
     pub(super) fn ev_tempest_sweep(&mut self, at: Vec3, radius: f32, last: bool, w: &World) {
@@ -893,6 +941,12 @@ impl Fx {
                 let f = w.player.facing_dir();
                 self.star(pp + Vec3::Y * 1.0 + f * 0.6, 1.2, 0.3, STEEL);
                 self.implode(g, 2.0, 10, SMOKE);
+            }
+            // 0286: 천 개의 손바닥 = 몸 앞에 모인 두 손의 흰 별 + 발밑으로 모이는 바람빛(흰빛).
+            crate::skills::Ult::Palms => {
+                let f = w.player.facing_dir();
+                self.star(pp + Vec3::Y * 1.0 + f * 0.7, 1.3, 0.3, WHITE_HOT);
+                self.implode(g, 2.4, 12, SKY);
             }
             // 0274 ⑥: 치른 값 = 든 완드 끝의 하늘빛 별 + 발밑으로 모이는 잿빛 연기(값이 걷히기 전).
             crate::skills::Ult::Price => {

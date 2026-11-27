@@ -94,13 +94,14 @@ pub(super) fn candidates(
             .collect();
     }
     if slot == SUB_SLOT {
-        // 보조무기 칸(0223 → 0224) = 비우기 + 맨손 + 가진 무기 + 가진 방패 — 주무기를 고르면 둘을 맞바꾼다
-        // (`App::set_sub_weapon`), 방패를 고르면 바꿔 들 무기는 없다(막기와 바꿔 들기 가운데 하나).
+        // 보조무기 칸(0223 → 0224) = 비우기 + 가진 무기 + 가진 방패 — 주무기를 고르면 둘을 맞바꾼다
+        // (`App::set_sub_weapon`), 방패를 고르면 바꿔 들 무기는 없다(막기와 바꿔 들기 가운데 하나). 맨손(0286 몽크)은 보조무기로
+        // 메지 않는다(`Id::slings`). 주무기가 몽크면 칸이 잠긴다 — 이 목록 대신 `App::cands`가 비우기 하나만.
         return std::iter::once(Cand::Empty)
             .chain(
                 weapons::IDS
                     .into_iter()
-                    .filter(|&w| w == weapons::Id::Fists || arms.contains(&w))
+                    .filter(|&w| w.slings() && arms.contains(&w))
                     .map(Cand::Weapon),
             )
             .chain(
@@ -775,8 +776,12 @@ impl App {
         crate::garb::owned(&self.progress.finds)
     }
 
-    /// 칸의 후보(가진 것에서).
+    /// 칸의 후보(가진 것에서). 주무기만 드는 종류(0286 몽크)면 보조무기 칸은 잠겨 비우기 하나뿐이다(목록이 열리지 않는다 —
+    /// 설명 칸이 까닭을 한 줄로).
     fn cands(&self, slot: usize) -> Vec<Cand> {
+        if slot == SUB_SLOT && self.weapon.one_slot() {
+            return vec![Cand::Empty];
+        }
         let list = candidates(
             slot,
             &self.progress.owned,
@@ -879,7 +884,12 @@ impl App {
             if let Cand::Weapon(w) = c {
                 // 보조무기를 주무기로 고르면 둘이 맞바뀐다(`App::wield`) — 보조특성(0272 1b)도 옛 주무기의 것으로.
                 if p.sub == Some(w) {
-                    p.sub = p.weapon.filter(|&old| old != weapons::Id::Fists);
+                    p.sub = p.weapon.filter(|&old| old.slings());
+                }
+                // 몽크(0286)를 들면 보조무기 칸이 빈다(`App::wield`와 같은 셈).
+                if w.one_slot() {
+                    p.sub = None;
+                    p.shield = None;
                 }
                 p.weapon = Some(w);
                 p.bag.gear.main = inst;
@@ -1443,7 +1453,10 @@ impl App {
                 .owned
                 .iter()
                 .any(|c| c.kind() == charms::SLOT_KINDS[slot - 1]);
-        let desc = if slot == SUB_SLOT && focus == Cand::Empty {
+        let desc = if slot == SUB_SLOT && self.weapon.one_slot() {
+            // 잠긴 보조무기 슬롯(0286 몽크): 까닭 한 줄.
+            s.equip_sub_locked
+        } else if slot == SUB_SLOT && focus == Cand::Empty {
             s.sub_empty_d
         } else if none_of_kind {
             // 장신구는 있지만 이 칸의 종류는 아직 없다(0224).
@@ -1511,7 +1524,10 @@ mod tests {
         assert_eq!(main, fill(s.trait_line, &[&fill(s.trait_hammer, &["30"])]));
         let (class, main, _) = class_text(weapons::Id::Staff, s.weapon_staff).unwrap();
         assert!(class.starts_with(s.class_staff) && main.contains("50"));
-        assert_eq!(class_text(weapons::Id::Fists, s.weapon_fists), None);
+        // 0286: 맨손은 몽크 — 종류 줄이 서고, 보조특성 줄은 잠긴 보조무기 슬롯을 말한다.
+        let (class, _, sub) = class_text(weapons::Id::Fists, s.weapon_fists).unwrap();
+        assert_eq!(class, format!("{} · {}", s.class_monk, s.weapon_fists));
+        assert_eq!(sub, fill(s.subtrait_line, &[s.subtrait_monk]));
         for id in weapons::IDS {
             if let Some((class, main, sub)) = class_text(id, weapon_name(id)) {
                 assert!(
@@ -1662,17 +1678,11 @@ mod tests {
     #[test]
     fn shields_are_offered_in_the_off_hand_slot_after_the_weapons() {
         use crate::shield::Id;
-        assert_eq!(
-            candidates(SUB_SLOT, &[], &[], &[], &[]),
-            vec![Cand::Empty, Cand::Weapon(weapons::Id::Fists)]
-        );
+        // 0286: 맨손(몽크)은 보조무기로 메지 않는다.
+        assert_eq!(candidates(SUB_SLOT, &[], &[], &[], &[]), vec![Cand::Empty]);
         assert_eq!(
             candidates(SUB_SLOT, &[], &[], &[], &[Id::Pilgrim]),
-            vec![
-                Cand::Empty,
-                Cand::Weapon(weapons::Id::Fists),
-                Cand::Shield(Id::Pilgrim)
-            ]
+            vec![Cand::Empty, Cand::Shield(Id::Pilgrim)]
         );
     }
 
@@ -1700,9 +1710,9 @@ mod tests {
         );
     }
 
-    /// 0223: 부무기 칸의 후보 = 비우기 + 맨손 + 가진 무기(주무기도 — 고르면 맞바꾼다).
+    /// 0223 → 0286: 부무기 칸의 후보 = 비우기 + 가진 무기(주무기도 — 고르면 맞바꾼다). 맨손(몽크)은 보조무기가 되지 않는다.
     #[test]
-    fn the_off_weapon_slot_offers_none_fists_and_the_weapons_you_own() {
+    fn fists_are_never_an_off_hand_weapon() {
         use weapons::Id;
         let got = candidates(SUB_SLOT, &[], &[Id::Sword, Id::Crossbow], &[], &[]);
         assert_eq!(
@@ -1710,10 +1720,16 @@ mod tests {
             vec![
                 Cand::Empty,
                 Cand::Weapon(Id::Sword),
-                Cand::Weapon(Id::Crossbow),
-                Cand::Weapon(Id::Fists)
+                Cand::Weapon(Id::Crossbow)
             ]
         );
+        let all = candidates(SUB_SLOT, &[], &weapons::IDS, &[], &[]);
+        assert!(!all.contains(&Cand::Weapon(Id::Fists)));
+        assert!(!Id::Fists.slings() && Id::Fists.one_slot());
+        assert!(weapons::IDS
+            .into_iter()
+            .filter(|&w| w != Id::Fists)
+            .all(|w| w.slings() && !w.one_slot()));
     }
 
     /// 0224: 장신구는 제 종류의 칸에만 낀다 — 같은 종류의 다른 것을 끼면 그 칸의 것이 바뀌고, 다른 칸은 그대로다.
@@ -1828,7 +1844,7 @@ mod pane_tests {
         );
         let v = EquipView::build(&p, Id::Sword, 0, Some((0, &main)), 1);
         assert_eq!(v.state, Mark::Worn);
-        // 보조무기 칸: 비우기 · 맨손 — 표지 없음, 검(주무기 칸에 든 것) · 망치(지금 것).
+        // 보조무기 칸: 비우기 — 표지 없음, 검(주무기 칸에 든 것) · 망치(지금 것). 맨손은 없다(0286).
         let sub = candidates(SUB_SLOT, &[], &[Id::Sword, Id::Hammer], &[], &[]);
         let v = EquipView::build(&p, Id::Sword, 0, Some((SUB_SLOT, &sub)), 0);
         let mark = |c: Cand| {
@@ -1841,11 +1857,11 @@ mod pane_tests {
                 .mark
         };
         assert_eq!(mark(Cand::Empty), Mark::None);
-        assert_eq!(mark(Cand::Weapon(Id::Fists)), Mark::None);
+        assert!(!sub.contains(&Cand::Weapon(Id::Fists)));
         assert_eq!(mark(Cand::Weapon(Id::Sword)), Mark::Slot(0));
         assert_eq!(mark(Cand::Weapon(Id::Hammer)), Mark::Worn);
         assert_eq!(v.here, Cand::Weapon(Id::Hammer));
-        // 맨손을 든 판: 보조무기 칸의 맨손 줄은 "주무기"라 하지 않는다(낀 것이 아니다).
+        // 맨손을 든 판: 보조무기 칸의 줄에는 표지가 없다.
         let p0 = crate::save::Progress::default();
         let v = EquipView::build(&p0, Id::Fists, 0, Some((SUB_SLOT, &sub)), 0);
         assert!(v.rows.unwrap().iter().all(|r| r.mark == Mark::None));

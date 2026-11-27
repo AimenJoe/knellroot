@@ -8,16 +8,20 @@ impl World {
     /// 한 줄기는 가를 쪽을 이 순간에 정한다(조준 > 락온 > 닿는 거리의 가장 가까운 적 > 바라보는 쪽).
     pub(super) fn start_ult(&mut self, cx: &Ctx) {
         let kind = self.player.skill.ult;
-        if matches!(kind, skills::Ult::Line | skills::Ult::Gale) {
+        if matches!(
+            kind,
+            skills::Ult::Line | skills::Ult::Gale | skills::Ult::Palms
+        ) {
             let pl = &self.player;
             let lock = cx
                 .target
                 .map(|tg| vec3(tg.x - pl.pos.x, 0.0, tg.z - pl.pos.z).normalize_or_zero())
                 .filter(|v| v.length_squared() > 0.5);
-            let reach = if kind == skills::Ult::Gale {
-                skills::GALE.len_at(pl.skill.ult_rank)
-            } else {
-                LINE.len_at(pl.skill.ult_rank)
+            let reach = match kind {
+                skills::Ult::Gale => skills::GALE.len_at(pl.skill.ult_rank),
+                // 천 개의 손바닥(0286): 손이 닿는 거리보다 조금 먼 적까지 돌아선다(한 걸음 앞의 적).
+                skills::Ult::Palms => skills::PALMS.range_at(pl.skill.ult_rank) + 1.5,
+                _ => LINE.len_at(pl.skill.ult_rank),
             };
             let dir = cx
                 .aim
@@ -75,7 +79,8 @@ impl World {
                 skills::Ult::Gale
                 | skills::Ult::Ambush
                 | skills::Ult::Tempest
-                | skills::Ult::Grove => {}
+                | skills::Ult::Grove
+                | skills::Ult::Palms => {}
                 // 치른 값(0274 ⑥): 시동 끝 = 번지는 저주(첫 박), 그 뒤 `gap`초 = 터지는 울림(아래에서).
                 skills::Ult::Price => self.price_pulse(cx.t, false),
             }
@@ -91,6 +96,14 @@ impl World {
                 let at = startup + skills::GALE.thrust_at(k);
                 if e < at && e1 >= at {
                     self.gale_thrust(cx.t, k);
+                }
+            }
+        }
+        if kind == skills::Ult::Palms {
+            for k in 0..skills::PALMS.blows {
+                let at = startup + skills::PALMS.blow_at(k);
+                if e < at && e1 >= at {
+                    self.palms_blow(cx.t, k);
                 }
             }
         }
@@ -249,6 +262,77 @@ impl World {
             dir,
             len,
             half: g.half,
+            last,
+        });
+        self.skill_ev = ev;
+    }
+
+    /// 천 개의 손바닥(0286 — 몽크)의 `k`째 타: 몸 앞 부채꼴(`PALMS.range_at` m · `arc_deg`°)의 깨어 있는 적을 모두 손바닥으로 친다.
+    /// 앞의 타는 가볍게(밀지 않는다 — 떼가 손 앞에 남는다), 마지막은 크게 밀쳐 친다: 큰 피해 · 큰 자세 피해 · 충격(기절), 잡몹은 밀려나
+    /// 휘청인다(보스는 밀리지도 휘청이지도 않는다 — `skill_touch`가 보스의 휘청을 거르고, 밀기는 여기서 뺀다). 타마다 새 타 번호.
+    pub(super) fn palms_blow(&mut self, t: &Tuning, k: u8) {
+        let g = &skills::PALMS;
+        let mut ev = std::mem::take(&mut self.skill_ev);
+        let p = self.player.pos;
+        let body = p.y + self.player.air;
+        let dir = self.player.facing_dir();
+        let rank = self.player.skill.ult_rank;
+        let last = k + 1 >= g.blows;
+        let reach = g.range_at(rank);
+        let cone = (g.arc_deg * 0.5).to_radians().cos_d();
+        let (light, deep) = g.damage_at(rank);
+        let dose = if last {
+            self.dosed(g.dose)
+        } else {
+            crate::status::NO_DOSE
+        };
+        self.player.swings += 1;
+        for i in 0..self.enemies.len() {
+            let en = &self.enemies[i];
+            if !en.active() || (en.pos.y - body).abs() > HIT_DY {
+                continue;
+            }
+            let dv = vec3(en.pos.x - p.x, 0.0, en.pos.z - p.z);
+            let d = dv.length();
+            if d - en.radius > reach || (d > en.radius && dv.dot(dir) / d < cone) {
+                continue;
+            }
+            let out = dv.normalize_or(dir);
+            let knock = if last && !en.boss {
+                out * g.push * KNOCK_DECAY
+            } else {
+                Vec3::ZERO
+            };
+            if last {
+                self.sparks.extend(sparks_at(
+                    en.pos + Vec3::Y * en.height * 0.55,
+                    out,
+                    self.player.swings,
+                    true,
+                ));
+            }
+            self.skill_touch(
+                t,
+                &mut ev,
+                i,
+                &Touch {
+                    damage: if last { deep } else { light },
+                    poise: if last { g.last_poise } else { g.poise },
+                    stagger: if last { g.stagger } else { 0.0 },
+                    knock,
+                    crit: last,
+                    dose,
+                    flat: false,
+                },
+            );
+        }
+        if last {
+            self.hitstop = self.hitstop.max(t[P::Hitstop] * ULT_HITSTOP);
+        }
+        ev.push(Event::PalmBlow {
+            at: p,
+            dir,
+            reach,
             last,
         });
         self.skill_ev = ev;

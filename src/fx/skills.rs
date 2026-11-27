@@ -1062,4 +1062,86 @@ impl Fx {
             Stick::Ground,
         );
     }
+
+    /// 손바닥 치기(0286 — 몽크): 손 앞의 하늘빛 별 + 앞으로 번지는 바람빛 충격의 부채꼴 + 손바닥에서 앞으로 밀려 나가는 바람 알갱이.
+    pub(super) fn fx_palm(&mut self, dir: Vec3, g: Vec3, d: crate::skills::Eff) {
+        let Form::Bash { range, arc_deg, .. } = d.skill.form else {
+            return;
+        };
+        let hand = g + dir * 0.6 + Vec3::Y * 1.0;
+        self.star(hand, 1.5, 0.09, SKY);
+        self.mark(
+            g,
+            MarkKind::Shock {
+                dir,
+                r0: 0.3,
+                r1: range,
+                arc_deg,
+            },
+            0.22,
+            SKY,
+        );
+        self.spray(
+            hand,
+            dir,
+            0.5,
+            6,
+            9.0,
+            Shape::Dot,
+            0.06,
+            0.22,
+            0.0,
+            WHITE_HOT,
+            SKY,
+        );
+    }
+
+    /// 할퀴기(0286 — 몽크): 할퀼 때마다 나란한 손톱 자국 셋(가는 흰 빛줄 — 옆으로 벌어져 손톱으로 읽힌다) + 손끝의 작은 별.
+    pub(super) fn fx_rake(&mut self, dir: Vec3, g: Vec3, d: crate::skills::Eff) {
+        let Form::Stab { range, .. } = d.skill.form else {
+            return;
+        };
+        let side = vec3(dir.z, 0.0, -dir.x);
+        self.star(g + Vec3::Y * 0.9 + dir * range * 0.6, 0.7, 0.06, WHITE_HOT);
+        for k in [-1.0f32, 0.0, 1.0] {
+            self.mark(
+                g + side * (0.22 * k),
+                MarkKind::Streak {
+                    dir,
+                    len: range,
+                    half: 0.05,
+                },
+                0.12,
+                WHITE_HOT,
+            );
+        }
+    }
+
+    /// 날아 차기(0286 — 몽크): 내려앉은 발밑에서 번지는 하늘빛 고리 + 발의 흰 별 + 뒤로 차 내는 먼지.
+    pub(super) fn fx_kick(&mut self, dir: Vec3, g: Vec3, d: crate::skills::Eff) {
+        let Form::Hop { reach, .. } = d.skill.form else {
+            return;
+        };
+        self.star(g + Vec3::Y * 0.7 + dir * 0.5, 1.2, 0.09, WHITE_HOT);
+        self.mark(g, MarkKind::Ring { r0: 0.3, r1: reach }, 0.25, SKY);
+        self.dust_kick(g, -dir, 4, 0.45);
+    }
+
+    /// 쓸어 차기(0286 — 몽크): 땅에 낮게 붙어 둘레 끝까지 번지는 흙빛 고리 + 둘레로 쓸려 나가는 먼지(빛줄 없이 — 장대 휩쓸기의 강철빛과
+    /// 갈리게 낮고 흙빛으로).
+    pub(super) fn fx_sweep(&mut self, g: Vec3, d: crate::skills::Eff) {
+        let Form::Ring { radius, .. } = d.skill.form else {
+            return;
+        };
+        self.mark(
+            g,
+            MarkKind::Ring {
+                r0: radius * 0.3,
+                r1: radius,
+            },
+            0.3,
+            DUST,
+        );
+        self.dust_ring(g, radius * 0.8, 20, 6.0, 0.55, DUST);
+    }
 }

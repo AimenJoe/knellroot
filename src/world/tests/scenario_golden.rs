@@ -377,6 +377,19 @@ fn aimed_cases(out: &mut Vec<(String, u64)>) {
             }),
             |e| matches!(e, Event::Interrupt { .. }),
         ),
+        // 손바닥 치기(0286 몽크): 앞의 잔재가 공격을 준비하는 중(끊긴다 — ㄴ 드러난 틈), 옆 50°의 적(ㄱ 넓은 손 = 맞는다).
+        (
+            "palm.winding_and_side",
+            Sk::Palm,
+            mobs(vec![(0.0, -1.3, 300), (1.2, -1.0, 300)]),
+            Box::new(|k, w| {
+                if k == 1 {
+                    wind_up(w, 0);
+                }
+                Actions::default()
+            }),
+            |e| matches!(e, Event::Interrupt { .. }),
+        ),
         // 밀치기: 기둥 앞의 적(ㄱ 벽에 박기)과 옆 95°의 적(ㄴ 넓게).
         (
             "shove.wall_and_side",
@@ -446,6 +459,7 @@ fn aimed_cases(out: &mut Vec<(String, u64)>) {
             Sk::Ram,
             Sk::Pommel,
             Sk::Shove,
+            Sk::Palm,
         ]
         .contains(id)
         {

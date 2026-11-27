@@ -52,6 +52,8 @@ case.ram.wall_and_swing.A e905d4fd6f60b1a8
 case.ram.wall_and_swing.B 75b6e43a806d60e2
 case.pommel.winding_and_side.A e2d27b1622443525
 case.pommel.winding_and_side.B 54b56f2e0c804a3c
+case.palm.winding_and_side.A bc24f85f932f9286
+case.palm.winding_and_side.B 0001f860e82241c4
 case.shove.wall_and_side.A d4d3421e4b3b981c
 case.shove.wall_and_side.B 37c805ba780c60f4
 case.cut.refund_kill.A dd678777032842a2

@@ -154,23 +154,30 @@ fn what_a_skill_leaves_behind_keeps_the_weapon_it_was_cast_with() {
     );
 }
 
-/// 0272: 맨손은 무기 종류가 아니다 — 무기 판의 스킬이 놓인 칸은 빈 칸이 된다(배운 단은 남는다). 방패를 들면 방패 판의 것은 쓴다
-/// (맨손도 한손 계열). 빈 손의 덤(날카로움)은 맨손도 받는다.
+/// 0272 → 0286: 맨손은 몽크다 — 다른 무기 판의 스킬이 놓인 칸은 빈 칸이 되고(배운 단은 남는다), 몽크 판의 스킬은 쓴다. 방패를 메어도
+/// 두 주먹이 다 차 방패 판의 것은 쓰지 못한다(방패는 쉰다). 빈 손의 덤(날카로움)은 몽크도 받는다(종류 표의 `Quirks::keen`).
 #[test]
-fn bare_hands_hold_no_weapon_plate() {
+fn fists_are_the_monks_weapon_and_hold_the_monk_plate() {
     let mut w = World::new("test", 30.0);
     worn(&mut w, Sk::Whirl, Sk::Bash);
     assert_eq!(w.player.skill.rank, [1, 0]);
     w.set_weapon(W::Fists);
-    assert_eq!(w.grip(), Grip::Bare);
-    assert_eq!(w.player.skill.rank, [0, 0], "nothing fits bare hands");
+    assert_eq!(w.grip(), Grip::Class(crate::weapons::Class::Monk));
+    assert_eq!(
+        w.player.skill.rank,
+        [0, 0],
+        "nothing of the sword fits bare hands"
+    );
     assert_eq!(w.player.skill.known, [1, 1], "what was learned stays");
     assert!(w.keen(), "a free hand all the same");
     w.set_shield(Some(crate::shield::Id::Pilgrim));
-    assert_eq!(w.grip(), Grip::Shield(None));
-    assert_eq!(w.player.skill.rank, [1, 1], "shield arts with a shield");
-    assert!(!w.keen());
+    assert_eq!(w.grip(), Grip::Class(crate::weapons::Class::Monk));
+    assert_eq!(w.player.skill.rank, [0, 0], "the shield rests on a monk");
+    assert!(!w.shield_guards() && !w.shield_throws());
     w.set_shield(None);
+    worn(&mut w, Sk::Palm, Sk::Gather);
+    assert_eq!(w.player.skill.rank, [1, 1], "the monk's own arts");
+    worn(&mut w, Sk::Whirl, Sk::Bash);
     w.set_weapon(W::Sword);
     assert_eq!(w.player.skill.rank, [1, 0], "back in the sword's hands");
 }

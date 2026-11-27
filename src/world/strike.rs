@@ -160,6 +160,10 @@ impl World {
                     ev.push(Event::Heft { at });
                 }
             }
+            // 흐름(0286 몽크): 손의 타가 닿은 휘두르기마다 한 번 찬다(여러 틱 · 여러 적이어도 한 번).
+            if self.player.connected != swing {
+                self.flow_gain(crate::weapons::FLOW_STEP);
+            }
             // 공격자 확인(KB, Hollow Knight 반동): 맞힌 스윙은 남은 내딛기를 멈춘다 — 빗나감과 맞힘이 손에서 다르게.
             self.player.connected = swing;
             self.strike_cells(t, &s, first_hit, ev);

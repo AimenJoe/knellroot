@@ -91,6 +91,8 @@ pub enum Kind {
     Pole,
     Pin,
     Gale,
+    /// 그림만(0286): 몽크 판의 큰 기술 천 개의 손바닥 — 펼친 손바닥과 바람줄.
+    Palms,
     /// 그림만(0274): 한손검 판의 전투 기술 셋.
     Pommel,
     Shove,
@@ -131,6 +133,11 @@ pub enum Kind {
     Plunge,
     Boomerang,
     Word,
+    /// 그림만(0286): 몽크의 스킬 넷 — 손바닥 치기 · 할퀴기 · 날아 차기 · 쓸어 차기.
+    Palm,
+    Rake,
+    Kick,
+    Sweep,
     /// 멈춤(0019): 왼쪽 위.
     Pause,
     /// 시점(0184): 오른쪽 위 땅 돌리기 왼쪽 — 누르면 쿼터뷰 ↔ 자유 숄더뷰(거리 단계는 기억한다). 눈 그림.
@@ -1073,6 +1080,7 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Pole
         | Kind::Pin
         | Kind::Gale
+        | Kind::Palms
         | Kind::Pommel
         | Kind::Shove
         | Kind::Rally
@@ -1100,7 +1108,11 @@ fn press(a: &mut Read, k: Kind) {
         | Kind::Withdraw
         | Kind::Plunge
         | Kind::Boomerang
-        | Kind::Word => {}
+        | Kind::Word
+        | Kind::Palm
+        | Kind::Rake
+        | Kind::Kick
+        | Kind::Sweep => {}
         Kind::Brace | Kind::Echo | Kind::Throw | Kind::Embers | Kind::Flurry | Kind::Line => {}
         Kind::Pause => a.pause = true,
     }
@@ -1202,6 +1214,10 @@ pub fn skill_icon(id: crate::skills::Id) -> Kind {
         Id::Plunge => Kind::Plunge,
         Id::Boomerang => Kind::Boomerang,
         Id::Word => Kind::Word,
+        Id::Palm => Kind::Palm,
+        Id::Rake => Kind::Rake,
+        Id::Kick => Kind::Kick,
+        Id::Sweep => Kind::Sweep,
     }
 }
 
@@ -1220,6 +1236,7 @@ pub fn ult_icon(u: crate::skills::Ult) -> Kind {
         Ult::Tempest => Kind::Tempest,
         Ult::Grove => Kind::Grove,
         Ult::Price => Kind::Price,
+        Ult::Palms => Kind::Palms,
     }
 }
 
@@ -1612,6 +1629,7 @@ mod tests {
             Kind::Pole,
             Kind::Pin,
             Kind::Gale,
+            Kind::Palms,
             Kind::Pommel,
             Kind::Shove,
             Kind::Rally,
@@ -1644,6 +1662,10 @@ mod tests {
             Kind::Plunge,
             Kind::Boomerang,
             Kind::Word,
+            Kind::Palm,
+            Kind::Rake,
+            Kind::Kick,
+            Kind::Sweep,
             Kind::Pick,
             Kind::Open,
             Kind::Pull,

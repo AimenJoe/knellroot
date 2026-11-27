@@ -609,6 +609,10 @@ impl App {
 
     /// 방패를 든다·내린다(0223 — 가진 것만). 방패는 보조무기 칸에 든다(0224) — 들면 그 칸의 무기는 내린다.
     pub(super) fn set_shield(&mut self, s: Option<crate::shield::Id>) {
+        // 몽크(0286)는 보조무기 칸이 잠겨 방패도 들지 않는다.
+        if s.is_some() && self.weapon.one_slot() {
+            return;
+        }
         self.progress.shield = s.filter(|id| self.progress.shields.contains(id));
         if self.progress.shield.is_some() {
             self.progress.sub = None;
@@ -617,8 +621,12 @@ impl App {
         self.persist();
     }
 
-    /// 보조무기 칸 빨리 바꾸기(0223 → 0224): 비우기 → 맨손 → 가진 무기(표 순서, 주무기 빼고) → 가진 방패 → 비우기로 돈다.
+    /// 보조무기 칸 빨리 바꾸기(0223 → 0224): 비우기 → 가진 무기(표 순서, 주무기 빼고 — 맨손은 메지 않는다 0286) → 가진 방패 → 비우기로
+    /// 돈다. 몽크(0286)를 든 동안은 칸이 잠겨 돌지 않는다.
     pub(super) fn step_sub(&mut self, step: i32) {
+        if self.weapon.one_slot() {
+            return;
+        }
         #[derive(Clone, Copy, PartialEq)]
         enum Off {
             None,
@@ -630,7 +638,7 @@ impl App {
         opts.extend(
             weapons::IDS
                 .into_iter()
-                .filter(|&w| w != main && (w == weapons::Id::Fists || self.arms().contains(&w)))
+                .filter(|&w| w != main && w.slings() && self.arms().contains(&w))
                 .map(Off::Arm),
         );
         opts.extend(

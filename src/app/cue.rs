@@ -237,6 +237,8 @@ pub(super) fn cue(e: &Event, cx: &CueCtx) -> Cue {
         // 그림자 습격(0274 ③): 숨어듦 = 스치는 바람(조용히), 찌름마다 휘두름.
         Event::Blink { .. } => Cue::snd(Id::Dodge, 0.0),
         Event::AmbushStab { last, .. } => last_or(last, Id::Hit, Id::Swing),
+        // 천 개의 손바닥(0286 — 몽크): 손바닥마다 둔한 타(맨주먹의 퍽), 마지막은 큰 기술만큼.
+        Event::PalmBlow { last, .. } => last_or(last, Id::Hit, Id::Thwack),
         // 칼바람(0274 ④): 휩쓸기마다 휘두름.
         Event::TempestSweep { last, .. } => last_or(last, Id::Hit, Id::Swing),
         // 깨어나는 숲(0274 ⑤): 고리마다 낮은 울림(땅이 솟는다), 마지막은 둔한 소리(되찾는 소리는 `Mend`).
@@ -354,7 +356,12 @@ fn skill_start_sound(id: Sk) -> Id {
         | Sk::Harvest
         | Sk::Hex
         | Sk::Withdraw
-        | Sk::Boomerang => Id::Swing,
+        | Sk::Boomerang
+        | Sk::Rake
+        | Sk::Kick
+        | Sk::Sweep => Id::Swing,
+        // 0286: 손바닥 치기 = 둔한 소리(손바닥이 몸에 붙는다).
+        Sk::Palm => Id::Thwack,
         // 0280: 불씨 내리꽂기 = 잔불 소리(달군 날), 끊는 말 = 가운데 종(말 한마디가 울린다).
         Sk::Plunge => Id::Ember,
         Sk::Word => Id::Beat2,
@@ -421,6 +428,12 @@ fn skill_sound(id: Sk) -> Id {
         Sk::Plunge => Id::Wake,
         Sk::Boomerang => Id::Dodge,
         Sk::Word => Id::Parry,
+        // 0286(몽크): 손바닥 치기 = 타격(맨손의 퍽), 할퀴기 = 할퀼 때마다 스치는 바람, 날아 차기 = 둔한 소리(내려앉는 발), 쓸어 차기 =
+        // 휘두름(낮게 도는 다리).
+        Sk::Palm => Id::Hit,
+        Sk::Rake => Id::Dodge,
+        Sk::Kick => Id::Thwack,
+        Sk::Sweep => Id::Swing,
     }
 }
 
@@ -466,7 +479,11 @@ fn skill_zoom(id: Sk, brace_full: bool) -> f32 {
         | Sk::Withdraw
         | Sk::Plunge
         | Sk::Boomerang
-        | Sk::Word => 0.0,
+        | Sk::Word
+        | Sk::Palm
+        | Sk::Rake
+        | Sk::Kick
+        | Sk::Sweep => 0.0,
     }
 }
 

@@ -85,7 +85,8 @@ fn no_shield_or_a_two_handed_weapon_means_no_guard() {
         guarded
     };
     assert!(run(true, Id::Sword));
-    assert!(run(true, Id::Fists), "bare hands are one-handed");
+    // 0286: 맨손은 몽크 — 두 주먹이 다 차 방패로 막지 않는다.
+    assert!(!run(true, Id::Fists), "the monk holds no shield");
     assert!(!run(false, Id::Sword), "no shield");
     // 0274: 망치는 한 손에 드는 메 — 방패와 함께 막는다. 두 손(창)은 막지 못한다.
     assert!(run(true, Id::Hammer), "the one-handed hammer");

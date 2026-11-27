@@ -25,7 +25,7 @@ fn slot(w: Id) -> usize {
     weapons::IDS.iter().position(|&i| i == w).unwrap_or(0)
 }
 
-/// 벼릴 수 있는 무기인가(맨손은 아니다).
+/// 벼릴 수 있는 무기인가(무기 표의 `forge` — 0286부터 맨손도).
 pub fn forgeable(w: Id) -> bool {
     w.def().forge.is_some()
 }
@@ -137,10 +137,18 @@ mod tests {
         assert_eq!(free(&finds, &f), 4, "taking back returns every stone");
         assert!(can_raise(&finds, &f, 60, Id::Hammer));
         assert!(!can_raise(&finds, &f, 59, Id::Hammer), "embers too");
-        // 맨손은 벼리지 않는다.
-        assert!(!forgeable(Id::Fists) && next_cost(&f, Id::Fists).is_none());
+    }
+
+    /// 0286: 맨손(몽크)도 다른 근접 무기처럼 벼린다 — 같은 값 · 같은 단(타마다 +5 · +10 · +15), 기록 `forge.fists`.
+    #[test]
+    fn fists_are_forged_like_any_melee_weapon() {
+        let mut f = Forged::default();
+        assert!(forgeable(Id::Fists));
+        assert_eq!(next_cost(&f, Id::Fists), Some(COST[0]));
         f.set(Id::Fists, 2);
-        assert_eq!(f.rank(Id::Fists), 0);
+        assert_eq!(f.rank(Id::Fists), 2);
+        assert_eq!(f.mods(Id::Fists).light_dmg, 10);
+        assert_eq!(Id::Fists.def().forge, Id::Sword.def().forge);
     }
 
     /// 0180: 근접 무기의 단은 타마다 +5씩(대 수가 하나 준다), 쇠뇌는 탄창부터 — 판정 창·기력은 건드리지 않는다.

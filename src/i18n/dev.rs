@@ -454,6 +454,11 @@ pub const MOTION_LABELS: &[(&str, Pair)] = &[
     ("sk_hex", ("스킬: 저주 새기기", "skill: etch a curse")),
     ("sk_blight", ("스킬: 시드는 그늘", "skill: withering shade")),
     ("ult_price", ("궁극기: 치른 값", "ult: the price paid")),
+    // 0286 — 몽크
+    (
+        "ult_palms",
+        ("궁극기: 천 개의 손바닥", "ult: thousand palms"),
+    ),
     // 0283 — 빈 노드 넷의 제 동작
     (
         "sk_withdraw",

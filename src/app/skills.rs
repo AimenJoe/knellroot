@@ -83,6 +83,10 @@ pub(super) fn skill_text(id: sk::Id) -> (&'static str, &'static str) {
         sk::Id::Plunge => (s.skill_plunge, s.skill_plunge_d),
         sk::Id::Boomerang => (s.skill_boomerang, s.skill_boomerang_d),
         sk::Id::Word => (s.skill_word, s.skill_word_d),
+        sk::Id::Palm => (s.skill_palm, s.skill_palm_d),
+        sk::Id::Rake => (s.skill_rake, s.skill_rake_d),
+        sk::Id::Kick => (s.skill_kick, s.skill_kick_d),
+        sk::Id::Sweep => (s.skill_sweep, s.skill_sweep_d),
     }
 }
 
@@ -101,6 +105,7 @@ pub(super) fn ult_text(u: sk::Ult) -> (&'static str, &'static str) {
         sk::Ult::Tempest => (s.ult_tempest, s.ult_tempest_d),
         sk::Ult::Grove => (s.ult_grove, s.ult_grove_d),
         sk::Ult::Price => (s.ult_price, s.ult_price_d),
+        sk::Ult::Palms => (s.ult_palms, s.ult_palms_d),
     }
 }
 
@@ -225,6 +230,14 @@ pub(super) fn pick_text(id: sk::Id, p: Pick) -> (&'static str, &'static str, &'s
         (sk::Id::Boomerang, Pick::B) => (s.pick_boomerang_b, s.pick_boomerang_b_d),
         (sk::Id::Word, Pick::A) => (s.pick_word_a, s.pick_word_a_d),
         (sk::Id::Word, Pick::B) => (s.pick_word_b, s.pick_word_b_d),
+        (sk::Id::Palm, Pick::A) => (s.pick_palm_a, s.pick_palm_a_d),
+        (sk::Id::Palm, Pick::B) => (s.pick_palm_b, s.pick_palm_b_d),
+        (sk::Id::Rake, Pick::A) => (s.pick_rake_a, s.pick_rake_a_d),
+        (sk::Id::Rake, Pick::B) => (s.pick_rake_b, s.pick_rake_b_d),
+        (sk::Id::Kick, Pick::A) => (s.pick_kick_a, s.pick_kick_a_d),
+        (sk::Id::Kick, Pick::B) => (s.pick_kick_b, s.pick_kick_b_d),
+        (sk::Id::Sweep, Pick::A) => (s.pick_sweep_a, s.pick_sweep_a_d),
+        (sk::Id::Sweep, Pick::B) => (s.pick_sweep_b, s.pick_sweep_b_d),
     };
     (mark, name, desc)
 }
@@ -271,6 +284,10 @@ fn cap_text(id: sk::Id) -> &'static str {
         sk::Id::Plunge => s.cap_plunge,
         sk::Id::Boomerang => s.cap_boomerang,
         sk::Id::Word => s.cap_word,
+        sk::Id::Palm => s.cap_palm,
+        sk::Id::Rake => s.cap_rake,
+        sk::Id::Kick => s.cap_kick,
+        sk::Id::Sweep => s.cap_sweep,
     }
 }
 
@@ -361,6 +378,9 @@ pub(super) fn ult_gives(u: sk::Ult, rank: u8) -> String {
         // 치른 값(0274 ⑥): 2단 = 둘레, 3단 = 터지는 울림의 피해.
         (sk::Ult::Price, 2) => fill(s.rk_bell_radius, &[&num(sk::PRICE.radius2)]),
         (sk::Ult::Price, _) => fill(s.rk_line_dmg, &[&sk::PRICE.toll3.to_string()]),
+        // 천 개의 손바닥(0286): 2단 = 손이 닿는 거리, 3단 = 마지막 타의 피해.
+        (sk::Ult::Palms, 2) => fill(s.rk_palms_range, &[&num(sk::PALMS.range2)]),
+        (sk::Ult::Palms, _) => fill(s.rk_line_dmg, &[&sk::PALMS.last3.to_string()]),
     }
 }
 
@@ -1315,7 +1335,7 @@ impl App {
 
     /// 든 무기·보조무기의 판(0270 C2 → 0272 → 0281): 주무기의 쥔 꼴이 쓰는 판(`Plate::holds` — 한손 무기와 방패면 그 종류의 판과
     /// 방패 판 둘, 차례는 무기 트리가 먼저 = 탭이 여는 판)과 보조무기의 판(`Plate::held`) — 스킬을 끼우는 셈(`kits`·`World::grip`)과
-    /// 같은 꼴. 맨손은 무기 판이 없다(공통 판에서 연다 — 한손검의 판을 빌려 쓰지 않는다). 판 줄의 금빛 표지와 판을 고르는 차례가 쓴다.
+    /// 같은 꼴. 맨손은 0286부터 몽크라 몽크 판에서 연다. 판 줄의 금빛 표지와 판을 고르는 차례가 쓴다.
     pub(super) fn held_plates(&self) -> (Vec<Plate>, Option<Plate>) {
         let kits = self.kits();
         (
@@ -2787,6 +2807,7 @@ mod tests {
                 s.class_greatsword,
                 s.class_scythe,
                 s.class_wand,
+                s.class_monk,
                 s.plate_shield
             ]
         );
@@ -2808,6 +2829,7 @@ mod tests {
                 s.attr_slash,
                 s.attr_slash,
                 s.attr_magic,
+                s.attr_strike,
                 s.attr_guard
             ]
         );
@@ -3483,6 +3505,8 @@ mod tests {
         keyless.ult[Ult::Price.index()] = 0;
         // 0280: 완드의 끊는 말도 맞받기 갈래.
         keyless.rank[Id::Word.index()] = 0;
+        // 0286: 몽크의 손바닥 치기도 맞받기 갈래.
+        keyless.rank[Id::Palm.index()] = 0;
         keyless.ult[Ult::Line.index()] = 0;
         keyless.ult[Ult::Bell.index()] = 0;
         keyless.rank[Id::Pin.index()] = 0;

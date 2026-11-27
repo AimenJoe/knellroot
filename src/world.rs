@@ -390,6 +390,13 @@ pub enum Event {
         half: f32,
         last: bool,
     },
+    /// 천 개의 손바닥(0286 — 몽크)의 타 하나 — `at`(방랑자) 앞 `dir`으로 `reach` m의 부채꼴, 마지막 타면 `last`.
+    PalmBlow {
+        at: Vec3,
+        dir: Vec3,
+        reach: f32,
+        last: bool,
+    },
     /// 그림자 습격(0274 ③): 방랑자가 `from`에서 `to`(그 적의 등 뒤)로 숨어들었다.
     Blink {
         from: Vec3,
@@ -478,7 +485,7 @@ pub enum Event {
 #[cfg(test)]
 impl Event {
     /// 갈래의 수(0278 R12 — 사건 덮개 시험).
-    pub const COUNT: usize = 87;
+    pub const COUNT: usize = 88;
 
     /// 갈래의 번호(0278 R12): 와일드카드 없는 match라 새 갈래는 여기서 컴파일이 깨진다 — 다음 번호 + `samples`에 표본 한 줄 +
     /// `COUNT`. 사건 덮개 시험(소리 `app::play` · 이펙트 `fx`)이 표본을 돈다.
@@ -571,6 +578,7 @@ impl Event {
             Event::FuryFull { .. } => 84,
             Event::Pull { .. } => 85,
             Event::Heft { .. } => 86,
+            Event::PalmBlow { .. } => 87,
         }
     }
 
@@ -734,6 +742,12 @@ impl Event {
             Event::FuryFull { at },
             Event::Pull { at },
             Event::Heft { at },
+            Event::PalmBlow {
+                at,
+                dir,
+                reach: 2.6,
+                last: false,
+            },
         ]
     }
 
@@ -818,6 +832,13 @@ impl Event {
             });
         }
         events.push(E::Turn { quarters: -2 });
+        // 0286: 몽크의 큰 기술 — 끝에 붙인다(앞의 표본 차례가 그대로이게).
+        events.push(E::PalmBlow {
+            at,
+            dir,
+            reach: 2.6,
+            last: true,
+        });
         events
     }
 
@@ -1202,6 +1223,17 @@ pub struct ClassState {
     pub cleaved: (u32, u8),
     /// 들이받기(방패 0276): 막는 동안 모인 힘 0..1(`RUSH_FULL`초에 가득) — 막기를 놓으면 0.
     pub rush: f32,
+    /// 흐름(0286 몽크 — `World::flow`).
+    pub flow: Flow,
+}
+
+/// 흐름(0286 몽크의 주특성 `Art::flow` — `ClassState::flow`): 맞힌 손의 타마다 `weapons::FLOW_STEP`씩 차고(한 휘두르기에 한 번),
+/// 방랑자가 맞으면 0, 손의 타가 `FLOW_HOLD`초 닿지 않으면 초당 `FLOW_FADE`씩 빠진다. 열린 손(빈 손의 결)은 패링에 가득.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Flow {
+    pub level: f32,
+    /// 마지막으로 손의 타가 닿은 뒤(또는 차오른 뒤) 흐른 초.
+    pub idle: f32,
 }
 
 /// 분노(0274 ④ 대검 — `ClassState::fury`).
@@ -1980,7 +2012,7 @@ impl World {
     }
 
     /// 날카로움의 덤을 받는 손인가(0270 C5 — `hurt_by`의 `Knack::keen`): 0274 ③부터 날카로움을 대표로 삼는 쌍단검(도적의 손 — 종류
-    /// 표의 `Quirks::keen`)과 맨손(종류가 없다), 방패 없이. 한손검은 0274 ②에서 전사(충격 · 흡수)가 되어 이 덤을 쌍단검에 넘겼다.
+    /// 표의 `Quirks::keen`)과 맨손(0286부터 몽크 — 같은 칸), 방패 없이. 한손검은 0274 ②에서 전사(충격 · 흡수)가 되어 이 덤을 쌍단검에 넘겼다.
     pub fn keen(&self) -> bool {
         self.player
             .weapon
@@ -2111,6 +2143,10 @@ impl World {
     /// 바꿔 든 뒤에도 부무기 칸에 옛 무기가 있으니 결은 없다). 맨손은 없다.
     pub fn bare(&self) -> Option<weapons::Bare> {
         let pl = &self.player;
+        // 주무기만 드는 종류(0286 몽크 — `Quirks::one_slot`)는 보조무기 슬롯이 없다: 결이 늘 켜진다.
+        if pl.weapon.one_slot() {
+            return pl.weapon.bare();
+        }
         if !pl.bare.open || pl.sub.is_some() || pl.shield.is_some() {
             return None;
         }
@@ -2145,7 +2181,8 @@ impl World {
                 | Bare::ShadowStep
                 | Bare::Reckless
                 | Bare::GroundHand
-                | Bare::PactMark,
+                | Bare::PactMark
+                | Bare::OpenHand,
             )
             | None => {}
         }
@@ -2192,7 +2229,8 @@ impl World {
     /// 부무기를 정한다(0223 — 기록에서 앱이). 주무기와 같으면 비운다. 탄은 처음 드는 것처럼(가득).
     pub fn set_sub(&mut self, sub: Option<weapons::Id>) {
         let pl = &mut self.player;
-        pl.sub = sub.filter(|&w| w != pl.weapon);
+        // 주무기만 드는 종류(0286 몽크)는 보조무기가 없고, 메지 못하는 무기(맨손)는 보조무기가 되지 않는다.
+        pl.sub = sub.filter(|&w| w != pl.weapon && w.slings() && !pl.weapon.one_slot());
         pl.sub_load = None;
     }
 
@@ -2654,7 +2692,38 @@ impl World {
             return;
         }
         let k = self.player.weapon.art().fury() - 1.0;
-        self.player.class.fury.boost = if k > 0.0 { k * self.fury() } else { 0.0 };
+        // 흐름(0286 몽크)도 같은 걸쇠로 — 종류마다 주특성은 하나라 둘이 겹치지 않는다.
+        let f = self.player.weapon.art().flow() - 1.0;
+        self.player.class.fury.boost = if k > 0.0 {
+            k * self.fury()
+        } else if f > 0.0 {
+            f * self.flow()
+        } else {
+            0.0
+        };
+    }
+
+    /// 흐름(0286 — 몽크의 주특성 `Art::flow`) 0..1. 흐름이 없는 종류는 0.
+    pub fn flow(&self) -> f32 {
+        if self.player.weapon.art().flow() <= 1.0 {
+            return 0.0;
+        }
+        self.player.class.flow.level
+    }
+
+    /// 흐름이 찬다(0286): 손의 타가 닿은 휘두르기마다 한 번(`apply_strike`) — 흐름이 없는 종류는 아무것도 하지 않는다.
+    pub(crate) fn flow_gain(&mut self, amount: f32) {
+        if self.player.weapon.art().flow() <= 1.0 {
+            return;
+        }
+        let f = &mut self.player.class.flow;
+        f.level = (f.level + amount).min(1.0);
+        f.idle = 0.0;
+    }
+
+    /// 흐름이 끊긴다(0286): 방랑자가 맞았다(`wanderer_takes_hit` — 피해를 받은 타만).
+    pub(crate) fn flow_break(&mut self) {
+        self.player.class.flow = Flow::default();
     }
 
     /// 분노가 가득 찬 순간을 알린다(0277): 아래에서 1로 넘어선 틱에 `Event::FuryFull` 한 번 — `weapons::FURY_REARM` 밑으로 내려가야 다시

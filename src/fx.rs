@@ -825,6 +825,12 @@ impl Fx {
                 last,
             } => self.ev_gale_thrust(at, dir, len, half, last, w),
             Event::TempestSweep { at, radius, last } => self.ev_tempest_sweep(at, radius, last, w),
+            Event::PalmBlow {
+                at,
+                dir,
+                reach,
+                last,
+            } => self.ev_palm_blow(at, dir, reach, last, w),
             Event::PricePulse { at, radius, last } => self.ev_price_pulse(at, radius, last, w),
             Event::Hexed { at } => self.ev_hexed(at),
             Event::HexJump { from, to } => self.ev_hex_jump(from, to),
@@ -1015,7 +1021,11 @@ impl Fx {
             | Sk::Withdraw
             | Sk::Plunge
             | Sk::Boomerang
-            | Sk::Word => {}
+            | Sk::Word
+            | Sk::Palm
+            | Sk::Rake
+            | Sk::Kick
+            | Sk::Sweep => {}
         }
     }
 
@@ -1064,6 +1074,10 @@ impl Fx {
             Sk::Plunge => self.fx_plunge(g, d),
             Sk::Boomerang => self.fx_boomerang(dir, g, d),
             Sk::Word => self.fx_word(dir, g, d),
+            Sk::Palm => self.fx_palm(dir, g, d),
+            Sk::Rake => self.fx_rake(dir, g, d),
+            Sk::Kick => self.fx_kick(dir, g, d),
+            Sk::Sweep => self.fx_sweep(g, d),
         }
     }
 
@@ -1492,6 +1506,19 @@ mod tests {
             Event::AmbushStab {
                 at,
                 dir,
+                last: true,
+            },
+            // 0286: 몽크 판의 큰 기술.
+            Event::PalmBlow {
+                at,
+                dir,
+                reach: 2.6,
+                last: false,
+            },
+            Event::PalmBlow {
+                at,
+                dir,
+                reach: 2.6,
                 last: true,
             },
         ]);

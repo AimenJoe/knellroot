@@ -291,7 +291,7 @@ fn number_cells_pick_one_of_two_and_flip_for_free() {
 fn the_board_stands_as_the_0161_table_says() {
     use Branch::{Beat, Footing, Riposte};
     use Entry::{Cell as C, Link as L, Skill as S, Ult as U};
-    let table: [(usize, Branch, &[Entry]); 54] = [
+    let table: [(usize, Branch, &[Entry]); 59] = [
         (
             0,
             Beat,
@@ -328,6 +328,9 @@ fn the_board_stands_as_the_0161_table_says() {
         (0, Footing, &[S(Id::Reap)]),
         // 0274 ⑥: 완드 판.
         (0, Riposte, &[S(Id::Hex)]),
+        // 0286: 몽크 판.
+        (0, Riposte, &[S(Id::Palm)]),
+        (0, Beat, &[S(Id::Rake)]),
         (
             1,
             Beat,
@@ -365,6 +368,9 @@ fn the_board_stands_as_the_0161_table_says() {
         (1, Beat, &[S(Id::Withdraw)]),
         (1, Footing, &[S(Id::Plunge), S(Id::Boomerang)]),
         (1, Riposte, &[S(Id::Word)]),
+        // 0286: 몽크 판의 둘째 줄.
+        (1, Beat, &[S(Id::Kick)]),
+        (1, Footing, &[S(Id::Sweep)]),
         (2, Beat, &[U(Ult::Flurry), C(Cell::FinalMeasure)]),
         (2, Riposte, &[U(Ult::Line), C(Cell::OneWhoStands)]),
         (2, Footing, &[U(Ult::Upend), C(Cell::PathOpeningStep)]),
@@ -375,6 +381,8 @@ fn the_board_stands_as_the_0161_table_says() {
         (2, Beat, &[U(Ult::Tempest)]),
         (2, Footing, &[U(Ult::Grove)]),
         (2, Riposte, &[U(Ult::Price)]),
+        // 0286: 몽크 판의 큰 기술.
+        (2, Beat, &[U(Ult::Palms)]),
         (
             3,
             Beat,
@@ -421,7 +429,7 @@ fn the_board_stands_as_the_0161_table_says() {
             assert_eq!((e.row(), e.branch()), (row, branch), "{e:?}");
         }
     }
-    assert_eq!(NE, 85);
+    assert_eq!(NE, 90);
     for (i, e) in ENTRIES.iter().enumerate() {
         assert!(!ENTRIES[i + 1..].contains(e), "{e:?} twice");
     }
@@ -867,7 +875,8 @@ fn the_great_skills_are_learned_for_two_points_once_eight_are_spent() {
             Ult::Ambush,
             Ult::Tempest,
             Ult::Grove,
-            Ult::Price
+            Ult::Price,
+            Ult::Palms
         ]
     );
     for u in ULTS {

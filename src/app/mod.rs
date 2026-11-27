@@ -723,8 +723,13 @@ impl App {
         self.wield(next);
     }
 
-    /// 무기 둘(주·부, 0223)을 월드에.
+    /// 무기 둘(주·부, 0223)을 월드에. 몽크(0286)를 들었으면 보조무기 칸은 비어 있다(기록에 남은 것도 여기서 내린다 — 장비가 바뀌는
+    /// 길은 모두 여기를 지난다).
     pub(super) fn arm_world(&mut self) {
+        if self.weapon.one_slot() {
+            self.progress.sub = None;
+            self.progress.shield = None;
+        }
         self.world.set_weapon(self.weapon);
         self.world.set_sub(self.progress.sub);
         self.world.set_shield(self.progress.shield);
@@ -737,11 +742,16 @@ impl App {
     }
 
     /// 주무기를 바꾼다(0223): 부무기 칸에 있던 것이면 둘을 맞바꾼다(같은 무기 두 칸 금지 — 맨손은 부무기로 남기지 않는다). 지금 판에 바로, 저장.
+    /// 주무기만 드는 종류(0286 몽크 — 맨손)를 들면 보조무기 칸에 있던 것(무기 · 방패)은 가방으로 돌아간다(가진 것은 그대로 — 칸만 빈다).
     pub(super) fn wield(&mut self, w: weapons::Id) {
         let old = self.weapon;
         if self.progress.sub == Some(w) {
-            self.progress.sub = (old != weapons::Id::Fists).then_some(old);
+            self.progress.sub = old.slings().then_some(old);
             self.swap_kits();
+        }
+        if w.one_slot() {
+            self.progress.sub = None;
+            self.progress.shield = None;
         }
         self.weapon = w;
         self.progress.weapon = Some(w);
@@ -756,8 +766,12 @@ impl App {
         self.apply_board();
     }
 
-    /// 부무기를 정한다(0223): 지금 주무기를 고르면 둘을 맞바꾼다(주무기 자리에는 옛 부무기, 없으면 맨손).
+    /// 부무기를 정한다(0223): 지금 주무기를 고르면 둘을 맞바꾼다(주무기 자리에는 옛 부무기, 없으면 맨손). 주무기만 드는 종류(0286
+    /// 몽크)를 든 동안은 칸이 잠겨 무기를 메지 못하고, 메지 못하는 무기(맨손)는 보조무기가 되지 않는다.
     pub(super) fn set_sub_weapon(&mut self, s: Option<weapons::Id>) {
+        if s.is_some_and(|w| !w.slings()) || (s.is_some() && self.weapon.one_slot()) {
+            return;
+        }
         if s.is_some() && s == Some(self.weapon) {
             self.weapon = self.progress.sub.unwrap_or(weapons::Id::Fists);
             self.progress.weapon = Some(self.weapon);

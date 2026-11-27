@@ -85,6 +85,10 @@ impl World {
             .count()
             - parries_before;
         self.echo_ring(t, parries, ev);
+        // 열린 손(0286 — 몽크의 빈 손의 결): 받아치면 흐름이 단번에 가득 찬다.
+        if parries > 0 && self.bare() == Some(crate::weapons::Bare::OpenHand) {
+            self.flow_gain(1.0);
+        }
         let (hurt_player, hurt_tier) = self.guards_land(t, ev, guarded, hurt_player, hurt_tier);
         self.wanderer_takes_hit(t, ev, hurt_player, hurt_tier);
         // 갈고리(0208): 이번 틱에 맞았으면(받아내지 않았으면) 권양지기 쪽으로 끌려간다 — 밀림 대신.
@@ -810,6 +814,10 @@ impl World {
             } else {
                 taken
             };
+            // 흐름(0286 몽크)은 피해를 받은 타에 끊긴다(다 받아낸 버팀의 타는 아니다).
+            if taken > 0 {
+                self.flow_break();
+            }
             let pl = &mut self.player;
             pl.hp -= taken;
             // 나가기 전에 맞았으면 받아 둔 패링은 버린다(0110) — 맞은 뒤 뒤늦게 나가 헛침 굳음이 생기지 않게.

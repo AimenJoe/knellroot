@@ -399,10 +399,11 @@ fn the_wand_takes_a_shield_that_guards_and_bashes_but_its_rb_stays_the_curse_bol
     );
 }
 
-/// 0281: 한손검 · 망치 · 낫(과 맨손)은 방패와 들면 그 전처럼 RB가 방패 던지기다 — 바뀐 것은 무기 트리를 함께 쓰는 것뿐.
+/// 0281: 한손검 · 망치 · 낫은 방패와 들면 그 전처럼 RB가 방패 던지기다 — 바뀐 것은 무기 트리를 함께 쓰는 것뿐. 맨손은 0286부터 몽크라
+/// 방패와 들지 않는다(`world/tests/off_hand.rs`).
 #[test]
 fn a_sword_hammer_or_scythe_with_a_shield_still_throws_it() {
-    for arm in [W::Sword, W::Hammer, W::Scythe, W::Fists] {
+    for arm in [W::Sword, W::Hammer, W::Scythe] {
         let mut w = World::new("test", 40.0);
         w.set_weapon(arm);
         w.set_shield(Some(crate::shield::Id::Pilgrim));

@@ -572,6 +572,8 @@ impl Progress {
             base: r,
         };
         p.migrate_after_read(migrated, r_has_no_weapons, before_v06, before_ult);
+        // 0286: 몽크(맨손)를 든 옛 기록 · 맨손을 보조무기로 적은 옛 기록 — 보조무기 칸을 비운다(가진 것은 그대로).
+        p.lock_off_hand();
         // 가방(0223 V4b): 가진 바탕마다 아이템 하나는 있게 — 옛 기록의 무기·방패·장신구가 보통 것으로 옮겨진다.
         p.settle_items();
         p
@@ -636,6 +638,19 @@ impl Progress {
         ) + self.gift
             + self.ult_gift
             + crate::journey::points(&self.journey)
+    }
+
+    /// 보조무기 칸을 지금 규칙에 맞춘다(0286 — 기록을 읽을 때 · 앱이 판을 세울 때): 메지 못하는 무기(맨손 = 몽크)는 보조무기가 아니고,
+    /// 주무기만 드는 종류(몽크)를 들었으면 보조무기도 방패도 칸에서 내린다 — 가진 무기 · 방패(`weapons` · `shields`)와 가방의 아이템은
+    /// 그대로라 잃는 것이 없다(장비 탭에서 다른 무기를 들면 다시 멜 수 있다). 기록 키와 그 뜻은 그대로다.
+    pub fn lock_off_hand(&mut self) {
+        if self.sub.is_some_and(|w| !w.slings()) {
+            self.sub = None;
+        }
+        if self.weapon.is_some_and(|w| w.one_slot()) {
+            self.sub = None;
+            self.shield = None;
+        }
     }
 
     /// 이 무기를 가졌나(0117 → 0220): 맨손은 늘, 그 밖은 얻은 것만 — 검도 깨어난 자리 곁에서 줍는다.
@@ -1805,11 +1820,17 @@ skill.2=ram
             } else {
                 Id::Sword
             };
+            // 몽크(0286 — 맨손)는 늘 가진 것이라 기록의 무기 줄에 없고, 보조무기 슬롯이 잠긴다.
+            let one = w.one_slot();
             let mut p = Progress {
                 finds: vec!["garden.stone.0".to_string()],
-                weapons: vec![other, w],
+                weapons: if w == Id::Fists {
+                    vec![other]
+                } else {
+                    vec![other, w]
+                },
                 weapon: Some(w),
-                sub: Some(other),
+                sub: (!one).then_some(other),
                 cores: 3,
                 bell_cores: 3,
                 moss_cores: 3,
@@ -1848,7 +1869,12 @@ skill.2=ram
             assert_eq!(back.weapon, Some(w));
             assert_eq!(back.forged.rank(w), 1);
             assert_eq!(back.board, p.board, "{:?}: the plate's arts", c.class);
-            assert!(back.bag.of(crate::items::Base::Weapon(w)).next().is_some());
+            assert!(w == Id::Fists || back.bag.of(crate::items::Base::Weapon(w)).next().is_some());
+            if one {
+                assert_eq!(back.sub, None, "{w:?}: the off-hand slot is locked");
+                assert_eq!(w.sub_trait(), None, "{w:?}: never slung");
+                continue;
+            }
             // 보조특성: 멘 동안만.
             let swapped = Progress {
                 weapon: Some(other),
@@ -3010,6 +3036,49 @@ migrated.ult=1
         }
         let was = std::fs::read_to_string(FILE).expect("save_fixture.txt");
         assert_eq!(text, was, "the full record's text changed");
+    }
+
+    /// 0286: 맨손에 방패를 든 옛 기록(맨손 + 방패는 0281까지 방패 판을 쓰던 꼴) · 맨손에 보조무기를 멘 옛 기록 · 맨손을 보조무기로
+    /// 멘 옛 기록은 잃는 것 없이 읽힌다 — 가진 무기 · 방패는 그대로 남고(가방에도), 몽크의 보조무기 슬롯만 빈다. 다른 무기를 들면
+    /// 그 무기 · 방패를 다시 멜 수 있다. 기록 키(`weapon.sub` · `shield.worn`)와 그 뜻은 그대로다.
+    #[test]
+    fn an_old_save_with_fists_and_a_shield_or_off_hand_loads_with_nothing_lost() {
+        use crate::weapons::Id as W;
+        let read = |text: &str| {
+            let mut p = Progress::from_record(Record::parse(text));
+            p.settle_items();
+            p
+        };
+        let shielded = read("weapon=fists\nweapons=sword\nshields=pilgrim\nshield.worn=pilgrim\n");
+        assert_eq!(shielded.weapon, Some(W::Fists));
+        assert_eq!((shielded.sub, shielded.shield), (None, None));
+        assert_eq!(
+            shielded.shields,
+            vec![crate::shield::Id::Pilgrim],
+            "still owned"
+        );
+        assert!(shielded
+            .bag
+            .of(crate::items::Base::Shield(crate::shield::Id::Pilgrim))
+            .next()
+            .is_some());
+        let slung = read("weapon=fists\nweapons=sword,spear\nweapon.sub=spear\n");
+        assert_eq!((slung.sub, slung.shield), (None, None));
+        assert_eq!(slung.weapons, vec![W::Sword, W::Spear], "still owned");
+        assert!(slung
+            .bag
+            .of(crate::items::Base::Weapon(W::Spear))
+            .next()
+            .is_some());
+        // 맨손을 보조무기로 멘 옛 기록(0224~0285의 장비 탭은 맨손을 보조무기 칸에 냈다): 주무기는 그대로, 보조무기 칸만 빈다.
+        let fists_slung = read("weapon=sword\nweapons=sword\nweapon.sub=fists\n");
+        assert_eq!(fists_slung.weapon, Some(W::Sword));
+        assert_eq!(fists_slung.sub, None);
+        // 다른 종류는 그대로다.
+        let other = read("weapon=sword\nweapons=sword,spear\nweapon.sub=spear\n");
+        assert_eq!(other.sub, Some(W::Spear));
+        let other = read("weapon=hammer\nweapons=hammer\nshields=pilgrim\nshield.worn=pilgrim\n");
+        assert_eq!(other.shield, Some(crate::shield::Id::Pilgrim));
     }
 
     #[test]

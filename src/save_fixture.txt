@@ -16,6 +16,7 @@ finds=sanctuary.garb.0,sanctuary.garb.1,sanctuary.stone.0,sanctuary.stone.1,sanc
 forge.bow=3
 forge.crossbow=1
 forge.daggers=2
+forge.fists=2
 forge.greatsword=3
 forge.hammer=2
 forge.scythe=1

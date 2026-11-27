@@ -457,7 +457,7 @@ mod tests {
     use super::*;
     use weapons::Id;
 
-    /// 0180: 가게 줄은 진열(자리 = `wares`의 자리) → 벼릴 무기(맨손 빼고) → 벼린 무기의 거두기.
+    /// 0180: 가게 줄은 진열(자리 = `wares`의 자리) → 벼릴 무기(0286부터 맨손도 — 몽크) → 벼린 무기의 거두기.
     #[test]
     fn shop_rows_keep_wares_first_then_forging_then_recall() {
         let mut f = crate::forge::Forged::default();
@@ -467,6 +467,7 @@ mod tests {
             vec![
                 ShopRow::Ware(0),
                 ShopRow::Ware(1),
+                ShopRow::Forge(Id::Fists),
                 ShopRow::Forge(Id::Sword),
                 ShopRow::Forge(Id::Crossbow)
             ]

@@ -404,6 +404,12 @@ impl World {
         pl.beat.since_swing = (pl.beat.since_swing + dt).min(f32::MAX);
         pl.beat.since = (pl.beat.since + dt).min(f32::MAX);
         pl.beat.since_perfect = (pl.beat.since_perfect + dt).min(f32::MAX);
+        // 흐름(0286 몽크): 손의 타가 `FLOW_HOLD`초 닿지 않으면 초당 `FLOW_FADE`씩 빠진다.
+        let flow = &mut pl.class.flow;
+        flow.idle += dt;
+        if flow.idle > crate::weapons::FLOW_HOLD {
+            flow.level = (flow.level - crate::weapons::FLOW_FADE * dt).max(0.0);
+        }
         // 스태미나: 마지막으로 쓴 뒤 `stamina.regen delay s`가 지나야 찬다.
         pl.stamina_denied = (pl.stamina_denied - dt).max(0.0);
         pl.hurt.stun_window = (pl.hurt.stun_window - dt).max(0.0);

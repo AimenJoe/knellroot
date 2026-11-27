@@ -71,6 +71,9 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Reap),
     // 0274 ⑥ — 완드 판의 균열 갈래 첫 줄
     Entry::Skill(Id::Hex),
+    // 0286 — 몽크 판의 첫 줄(충격 · 날카로움)
+    Entry::Skill(Id::Palm),
+    Entry::Skill(Id::Rake),
     // 2 — 쓴 점수 4
     Entry::Skill(Id::Quake),
     Entry::Cell(Cell::ClosingBlow),
@@ -108,6 +111,9 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Skill(Id::Plunge),
     Entry::Skill(Id::Boomerang),
     Entry::Skill(Id::Word),
+    // 0286 — 몽크 판의 둘째 줄(충격 · 가운데)
+    Entry::Skill(Id::Kick),
+    Entry::Skill(Id::Sweep),
     // 3 — 쓴 점수 8
     Entry::Ult(Ult::Flurry),
     Entry::Cell(Cell::FinalMeasure),
@@ -130,6 +136,8 @@ pub const ENTRIES: [Entry; NE] = [
     Entry::Ult(Ult::Grove),
     // 0274 ⑥ — 완드 판의 큰 기술
     Entry::Ult(Ult::Price),
+    // 0286 — 몽크 판의 큰 기술
+    Entry::Ult(Ult::Palms),
     // 4 — 쓴 점수 14(0214)
     Entry::Skill(Id::Swallow),
     Entry::Cell(Cell::HeldBreath),

@@ -741,6 +741,11 @@ impl App {
     fn dev_arm(&mut self, w: crate::weapons::Id, shield: bool) {
         self.weapon = w;
         self.dev_pick(OffPick::Shield(shield));
+        // 몽크(0286)는 보조무기 슬롯이 잠긴다: 멘 보조무기 · 방패 · "비우기" 표시를 내린다(결은 늘 켜진다).
+        if w.one_slot() {
+            self.dev_pick(OffPick::Sub(None));
+            self.dev_pick(OffPick::Bare(false));
+        }
     }
 
     /// 놀이터의 보조 슬롯에 지금 선 것.

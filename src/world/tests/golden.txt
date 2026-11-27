@@ -74,6 +74,14 @@ skill.Boomerang.A 10981159084f4f17
 skill.Boomerang.B 1b25fc46dd919baa
 skill.Word.A e39d93f8905d0348
 skill.Word.B 33147d4518f6fa34
+skill.Palm.A aee49d78c8258ad7
+skill.Palm.B aee49d78c8258ad7
+skill.Rake.A 1080c3be73ee18ea
+skill.Rake.B 037ff10bb903600b
+skill.Kick.A 0c676d9e622eae9b
+skill.Kick.B 196b3b5b11188179
+skill.Sweep.A 8e8f90af25e87bf1
+skill.Sweep.B 1650037268380bb6
 ult.Upend b3c0d52387df9ee1
 ult.Flurry ce2443fe61e5aafd
 ult.Line d27df575ebf7d95c
@@ -85,6 +93,7 @@ ult.Ambush f145f0e6205be475
 ult.Tempest 47d4de66b49a2f93
 ult.Grove fe9eab612d88cac1
 ult.Price 9bdd7f0fc96915a7
+ult.Palms 8bc19171ff867f10
 rb.Sword.tap 0a93bd3ab03e6916
 rb.Sword.hold 86f5bb0695eb2ce9
 rb.Hammer.tap 1e73b1387b3e2e95

@@ -75,6 +75,7 @@ impl Renderer {
         cast_charge(w, pp, t, &fl);
         rush_charge(w, pp, &fl);
         fury_glow(w, pp, &fl);
+        flow_glow(w, pp, &fl);
         throw_aim(w, pp, t, &fl);
         cracks(w, &fl);
         blasts(w, &fl);
@@ -596,6 +597,26 @@ fn fury_glow(w: &World, pp: Vec3, fl: &Drape) {
         360.0,
         with_a(ember, (0.18 + 0.32 * k) * breath),
     );
+}
+
+/// 흐름(0286 — 몽크의 주특성 `World::flow`): 차오른 만큼 발밑에 도는 바람빛(옅은 하늘) 고리 둘 — 몸을 감도는 숨의 결. 고리는 흐름의
+/// 몫만큼 한 바퀴에 가깝게 이어지고(4분의 1 = 한 대), 가득이면 둘 다 온 바퀴로 빠르게 돈다. 분노의 불빛과 갈리게 차가운 빛, 빨강 없음.
+fn flow_glow(w: &World, pp: Vec3, fl: &Drape) {
+    let f = w.flow();
+    if f <= 0.0 {
+        return;
+    }
+    let full = f >= 1.0;
+    let wind = Color::new(0.78, 0.94, 1.0, 1.0);
+    let spin = w.time * if full { 9.0 } else { 4.0 };
+    let at = pp + Vec3::Y * 0.05;
+    for (i, r) in [0.55f32, 0.75].into_iter().enumerate() {
+        let start = spin * if i == 0 { 1.0 } else { -1.3 };
+        fl.ring(at, r, start, 360.0 * f, with_a(wind, 0.25 + 0.35 * f));
+    }
+    if full {
+        glow_disc(pp + Vec3::Y * (w.player.air + 0.6), 0.7, with_a(wind, 0.12));
+    }
 }
 
 /// 분노의 빛무리가 보이기 시작하는 분노(0..1 — 적 둘에 에워싸이면 0.5, `Fx`의 불씨와 같은 문턱).
@@ -1360,6 +1381,24 @@ fn ult_shape(w: &World, pp: Vec3, fl: &Drape) {
                 } else {
                     let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
                     fl.lane_edge(at, dir, len, u.half * 2.0, with_a(steel, 0.5 * (1.0 - k)));
+                }
+            }
+            // 천 개의 손바닥(0286 — 몽크): 세계가 멈춘 동안 손이 닿을 몸 앞 부채꼴의 테가 자라고, 치는 동안은 그 면이 옅게 남아 사라진다
+            // (타마다의 빛은 이펙트가). 바람빛(옅은 하늘) — 빨강은 쓰지 않는다.
+            crate::skills::Ult::Palms => {
+                let u = &crate::skills::PALMS;
+                let wind = Color::new(0.80, 0.94, 1.0, 1.0);
+                let r = u.range_at(w.player.skill.ult_rank);
+                let yaw = w.player.facing;
+                let at = pp + Vec3::Y * 0.06;
+                if !done {
+                    let frozen = 1.0 - (w.hitstop / u.freeze.max(1e-3)).clamp(0.0, 1.0);
+                    let k = if e > 0.0 { 1.0 } else { frozen };
+                    fl.sector(at, r * k, yaw, u.arc_deg, with_a(wind, 0.10 + 0.1 * k));
+                    fl.ring(at, r * k, yaw, u.arc_deg, with_a(wind, 0.75));
+                } else {
+                    let k = ((e - u.startup) / u.recover().max(1e-3)).clamp(0.0, 1.0);
+                    fl.ring(at, r, yaw, u.arc_deg, with_a(wind, 0.5 * (1.0 - k)));
                 }
             }
             // 깨어나는 숲(0274 ⑤): 세계가 멈춘 동안 고리 셋의 자리(뿌리빛 테)가 몸에서 바깥으로 차례로 서고, 솟는 동안 아직 솟지 않은

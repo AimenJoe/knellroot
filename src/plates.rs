@@ -307,6 +307,7 @@ mod tests {
     const GREATSWORD: Plate = Plate::Class(Class::Greatsword);
     const SCYTHE: Plate = Plate::Class(Class::Scythe);
     const WAND: Plate = Plate::Class(Class::Wand);
+    const MONK: Plate = Plate::Class(Class::Monk);
 
     #[test]
     fn every_weapon_plate_pairs_two_different_types_and_every_type_has_a_home() {
@@ -345,6 +346,7 @@ mod tests {
                 GREATSWORD,
                 SCYTHE,
                 WAND,
+                MONK,
                 Plate::Shield
             ]
         );
@@ -362,8 +364,9 @@ mod tests {
         }
         assert_eq!(Plate::held(Grip::Bare), None);
         use crate::weapons::Id as W;
-        assert_eq!(Plate::held(W::Fists.grip(false)), None, "bare hands");
-        assert_eq!(Plate::held(W::Fists.grip(true)), Some(Plate::Shield));
+        // 0286: 맨손은 몽크 — 방패를 메어도 두 주먹이 다 차 몽크 트리만(방패는 쉰다).
+        assert_eq!(Plate::held(W::Fists.grip(false)), Some(MONK), "bare hands");
+        assert_eq!(Plate::held(W::Fists.grip(true)), Some(MONK));
         assert_eq!(Plate::held(W::Sword.grip(false)), Some(SWORD));
         // 0281: 한손 무기와 방패 — 탭은 무기 트리에서 열고, 금빛 점은 무기 트리와 방패 트리 둘에.
         for (w, p) in [
@@ -385,8 +388,15 @@ mod tests {
                 .collect();
             assert_eq!(lit, [p], "{w:?} alone");
         }
-        assert!(Plate::Shield.holds(W::Fists.grip(true)));
-        assert!(!PLATES.into_iter().any(|q| q.holds(W::Fists.grip(false))));
+        assert!(
+            !Plate::Shield.holds(W::Fists.grip(true)),
+            "the monk holds no shield"
+        );
+        let lit: Vec<Plate> = PLATES
+            .into_iter()
+            .filter(|q| q.holds(W::Fists.grip(false)))
+            .collect();
+        assert_eq!(lit, [MONK]);
         assert_eq!(Plate::held(W::Spear.grip(true)), Some(SPEAR), "two hands");
         assert!(
             !Plate::Shield.holds(W::Spear.grip(true)),

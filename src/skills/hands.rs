@@ -23,6 +23,8 @@ pub const GREATSWORD: Hands = class_bit(Class::Greatsword);
 pub const SCYTHE: Hands = class_bit(Class::Scythe);
 /// 완드(0274 ⑥ — 한 손에 드는 짧은 막대. 0281부터 한손: 방패와 든다 — RB는 그대로 저주탄, `Quirks::rb_main`).
 pub const WAND: Hands = class_bit(Class::Wand);
+/// 몽크(0286 — 맨손: 두 주먹이 다 찬다, 양손 계열이라 묶음 `TWO`에 든다 — 방패와 들지 않는다).
+pub const MONK: Hands = class_bit(Class::Monk);
 /// 한손 계열과 방패(방패 판의 기술).
 pub const SHIELD: Hands = 1 << 15;
 /// 묶음: 한손(방패가 있든 없든 — 0274부터 망치도, ⑤부터 낫도, 0281부터 완드도) · 양손 근접(지팡이 · 창 · 쌍단검 · 대검 — 두 손이 다 찬다) · 근접 ·
@@ -47,7 +49,8 @@ pub const fn hand_bits(h: Hand) -> Hands {
 }
 pub const ANY: Hands = MELEE | RANGED;
 
-/// 쥔 꼴 하나의 비트 — 맨손은 어느 무기 판의 기술도 쓰지 못한다(0272: 무기 판이 없다). 한손 무기와 방패는 그 종류의 비트와 방패의
+/// 쥔 꼴 하나의 비트 — 무기 판이 없는 꼴(`Grip::Bare` — 0286부터 맨손은 몽크라 이 꼴로 쥐는 무기는 없다)은 어느 무기 판의 기술도
+/// 쓰지 못한다. 한손 무기와 방패는 그 종류의 비트와 방패의
 /// 비트를 다(0281 — 두 트리의 스킬을 섞어 장착한다).
 pub const fn grip_bit(g: Grip) -> Hands {
     match g {
@@ -78,9 +81,11 @@ mod tests {
             | GREATSWORD
             | SCYTHE
             | WAND
+            | MONK
             | SHIELD;
         assert_eq!(ONE & known, SWORD | HAMMER | SCYTHE | WAND | SHIELD);
-        assert_eq!(TWO & known, STAFF | SPEAR | DAGGER | GREATSWORD);
+        // 0286: 몽크는 양손(두 주먹).
+        assert_eq!(TWO & known, STAFF | SPEAR | DAGGER | GREATSWORD | MONK);
         assert_eq!(RANGED & known, CROSSBOW | BOW);
         assert_eq!(ONE & TWO, 0);
         assert_eq!((ONE | TWO) & RANGED, 0);

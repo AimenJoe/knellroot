@@ -19,6 +19,7 @@ mod growth;
 mod heavy;
 mod hurt;
 mod jump_ledge;
+mod monk;
 mod off_hand;
 mod parry;
 mod placed;

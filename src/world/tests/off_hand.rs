@@ -30,7 +30,7 @@ fn bare_world(weapon: Id) -> World {
 }
 
 /// 0276: 종류마다 하나의 결이 켜지고, 보조무기 슬롯에 무엇이든(무기 · 방패) 들면 꺼진다. 앱이 비었다고 하지 않으면 없다(시험 ·
-/// 시나리오의 `World::new`). 맨손은 종류가 아니라 없다.
+/// 시나리오의 `World::new`). 0286: 몽크(맨손)는 보조무기 슬롯이 없어 늘 켜진다(아래 시험).
 #[test]
 fn every_class_has_an_empty_hand_way_that_anything_in_the_off_hand_turns_off() {
     let mut seen = Vec::new();
@@ -40,6 +40,10 @@ fn every_class_has_an_empty_hand_way_that_anything_in_the_off_hand_turns_off() {
         assert_eq!(w.bare(), Some(c.bare), "{id:?}");
         assert!(!seen.contains(&c.bare), "{:?} twice", c.bare);
         seen.push(c.bare);
+        // 0286: 주무기만 드는 종류(몽크)는 슬롯이 없어 결이 늘 켜진다 — 아래의 끄는 길은 다른 종류의 것.
+        if c.quirks.one_slot {
+            continue;
+        }
         let other = if id == Id::Sword {
             Id::Hammer
         } else {
@@ -55,11 +59,7 @@ fn every_class_has_an_empty_hand_way_that_anything_in_the_off_hand_turns_off() {
         w.set_open_hand(false);
         assert_eq!(w.bare(), None, "the app did not say the slot is empty");
     }
-    assert_eq!(
-        bare_world(Id::Fists).bare(),
-        None,
-        "bare fists are not a class"
-    );
+    assert_eq!(bare_world(Id::Fists).bare(), Some(Bare::OpenHand));
     let mut w = World::new("test", 30.0);
     w.set_weapon(Id::Sword);
     assert_eq!(w.bare(), None, "a fresh world knows no slot");

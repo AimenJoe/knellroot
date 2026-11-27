@@ -1397,7 +1397,8 @@ pub const WEAPONS: &[Weapon] = &[
     Weapon {
         id: Id::Fists,
         key: "fists",
-        class: None,
+        // 0286: 맨손 = 몽크.
+        class: Some(Class::Monk),
         name: |s| s.weapon_fists,
         desc: |s| s.weapon_fists_d,
         place: |s| s.cx_weapon_fists,
@@ -1424,14 +1425,16 @@ pub const WEAPONS: &[Weapon] = &[
             cancel: 0.1,
             ..Heavy::BASE
         }),
-        // 맨손은 종류가 아니다 — 돌을 던진다(0274 ②b, `STONE_TOSS`).
+        // 몽크의 RB = 돌(0274 ②b `STONE_TOSS` — 0286부터 종류 표의 칸).
         rb: Rb::Toss,
         grenade: None,
         // 든 것이 없다(다른 무기 부위는 모두 숨는다).
         node: "",
         off_hand: "",
+        // 0286: 맨손도 벼린다(손에 감는 천을 숫돌로 다진다 — 다른 근접 무기와 같은 단, 몽크가 정원 · 작업층에서 잡몹을 쓰러뜨리는 대 수의
+        // 폭 안에 남게 — `tuning::tiers_keep_the_hits_to_kill_at_arrival`).
         stamina: 0.6,
-        forge: None,
+        forge: Some(MELEE_FORGE),
     },
     // 잔뿌리 활(0231): 쇠뇌와 같은 틀(평타 = 사격, 꾹 = 모은 사격, 특수 = 던지는 것)에서 손맛을 가른다 —
     // 화살은 가볍고 빠르고 멀리(전통 가득 6 · 다시 채우기 짧음 · 한 발 빠름), 당겨 쏘는 한 발은 화살 하나로(쇠뇌는 둘) 꿰뚫고,
@@ -1775,6 +1778,8 @@ pub enum Class {
     Scythe,
     /// 완드(0274 ⑥ — 흑마법사).
     Wand,
+    /// 몽크(0286 — 맨손): 두 주먹이 다 찬다(양손 계열 · 방패와 들지 않는다), 주무기만 든다(`Quirks::one_slot`).
+    Monk,
 }
 
 /// 무기의 주특성이 얹는 배(0225 → 0272 — 종류마다 하나, 0278 R21부터 합 타입: 읽는 쪽은 `art.force()` 같은 접근자 — 그 종류가 아니면
@@ -1796,6 +1801,9 @@ pub enum Art {
     /// 치른 값(0274 ⑥ 완드): 균열(금)이 키우는 받는 피해의 덤 × 배(`hurt_by` 한 곳 — 금 간 적 ×1.3 → ×1.45), 그리고 금 간 채
     /// 쓰러진 적은 둘레의 적에게 울림을 남긴다(`World::tick_embers` — 죽음의 울림). 받는 피해는 건드리지 않는다.
     Hex(f32),
+    /// 흐름(0286 몽크): 맞지 않고 손의 타를 이어 맞힐수록 평타가 빨라진다 — 가장 빠를 때의 배(`World::flow`, 대검의 분노와 같은 길
+    /// `World::swing_rate`). 맞으면 흐름이 끊긴다. 받는 피해는 건드리지 않는다.
+    Flow(f32),
 }
 
 impl Art {
@@ -1808,7 +1816,8 @@ impl Art {
             | Art::Sneak(_)
             | Art::Fury(_)
             | Art::Sap(_)
-            | Art::Hex(_) => 1.0,
+            | Art::Hex(_)
+            | Art::Flow(_) => 1.0,
         }
     }
 
@@ -1821,7 +1830,8 @@ impl Art {
             | Art::Sneak(_)
             | Art::Fury(_)
             | Art::Sap(_)
-            | Art::Hex(_) => 1.0,
+            | Art::Hex(_)
+            | Art::Flow(_) => 1.0,
         }
     }
 
@@ -1834,7 +1844,8 @@ impl Art {
             | Art::Channel(_)
             | Art::Fury(_)
             | Art::Sap(_)
-            | Art::Hex(_) => 1.0,
+            | Art::Hex(_)
+            | Art::Flow(_) => 1.0,
         }
     }
 
@@ -1847,7 +1858,8 @@ impl Art {
             | Art::Channel(_)
             | Art::Sneak(_)
             | Art::Sap(_)
-            | Art::Hex(_) => 1.0,
+            | Art::Hex(_)
+            | Art::Flow(_) => 1.0,
         }
     }
 
@@ -1860,7 +1872,8 @@ impl Art {
             | Art::Channel(_)
             | Art::Sneak(_)
             | Art::Fury(_)
-            | Art::Hex(_) => 1.0,
+            | Art::Hex(_)
+            | Art::Flow(_) => 1.0,
         }
     }
 
@@ -1873,7 +1886,22 @@ impl Art {
             | Art::Channel(_)
             | Art::Sneak(_)
             | Art::Fury(_)
-            | Art::Sap(_) => 1.0,
+            | Art::Sap(_)
+            | Art::Flow(_) => 1.0,
+        }
+    }
+
+    /// 몽크의 흐름(그 밖은 1).
+    pub fn flow(self) -> f32 {
+        match self {
+            Art::Flow(k) => k,
+            Art::Plain
+            | Art::Force(_)
+            | Art::Channel(_)
+            | Art::Sneak(_)
+            | Art::Fury(_)
+            | Art::Sap(_)
+            | Art::Hex(_) => 1.0,
         }
     }
 
@@ -1886,23 +1914,28 @@ impl Art {
             .max(self.fury())
             .max(self.sap())
             .max(self.hex())
+            .max(self.flow())
             - 1.0)
             * 100.0)
             .round() as i32
     }
 }
 
-/// Debug는 옛 구조체의 꼴 그대로(배 여섯 — 고정 파일 `weapon_fixture.txt`가 이 글을 바이트로 본다, 0278 R21).
+/// Debug는 옛 구조체의 꼴 그대로(배 여섯 — 고정 파일 `weapon_fixture.txt`가 이 글을 바이트로 본다, 0278 R21). 뒤에 온 배(0286 흐름)는
+/// 그 배가 있을 때만 덧붙인다 — 다른 종류의 줄이 그대로이게.
 impl std::fmt::Debug for Art {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Art")
-            .field("force", &self.force())
+        let mut d = f.debug_struct("Art");
+        d.field("force", &self.force())
             .field("channel", &self.channel())
             .field("sneak", &self.sneak())
             .field("fury", &self.fury())
             .field("sap", &self.sap())
-            .field("hex", &self.hex())
-            .finish()
+            .field("hex", &self.hex());
+        if self.flow() != 1.0 {
+            d.field("flow", &self.flow());
+        }
+        d.finish()
     }
 }
 
@@ -1937,6 +1970,13 @@ pub const ART_HEX: f32 = 1.5;
 pub const DEATH_KNELL_R: f32 = 4.0;
 pub const DEATH_KNELL_DOSE: f32 = 0.5;
 pub const GREATSWORD_KNOCK: f32 = 0.5;
+/// 몽크의 흐름(0286 — 무협의 "끊기지 않는 흐름", BG3 몽크의 연타): 평타가 가장 빠를 때의 배(+30% — 대검의 분노 +50%보다 작다: 맨손은
+/// 처음부터 빠르다). 흐름 0..1 = 맞힌 손의 타마다 `FLOW_STEP`(네 대에 가득), 방랑자가 맞으면 0, 손의 타가 `FLOW_HOLD`초 동안 닿지 않으면
+/// 초당 `FLOW_FADE`씩 빠진다. 휘두르기 하나 동안은 그 처음의 빠르기에 머문다(분노와 같은 걸쇠 — `World::latch_fury`). 값은 보스 모의로.
+pub const ART_FLOW: f32 = 1.3;
+pub const FLOW_STEP: f32 = 0.25;
+pub const FLOW_HOLD: f32 = 1.5;
+pub const FLOW_FADE: f32 = 0.5;
 
 /// 보조특성(0272 1b): 보조무기 슬롯에 멘 종류가 **손에 쥐지 않아도** 보태는 한 가지(방패의 막기와 같은 말 — 0224). 주무기로 든
 /// 동안에는 없다 — 바꿔 들면 특성도 맞바뀐다. 숫자는 능력치의 있는 칸(`stats::Mods`)으로만, 능력치를 합치는 한 곳
@@ -2112,6 +2152,9 @@ pub enum Bare {
     /// `PACT_MARK_SECS`초)가 남은 적이 쓰러지면 체력 `BARE_PACT_HEAL`이 돌고 RB 칸 `BARE_PACT_CHARGE`가 돌아온다 — 손이 저주탄으로
     /// 마무리하는 쪽으로 움직인다(`World::tick_embers`).
     PactMark,
+    /// 몽크 — 열린 손(0286 — 보조무기를 들 수 없는 몽크에게는 늘 켜진다): 받아치면(패링) 흐름이 단번에 가득 찬다 — 받아친 뒤의 반격과
+    /// 그 뒤의 연타가 가장 빠르게 나간다(`World::flow`).
+    OpenHand,
 }
 
 /// 빈 손의 결 값(0276 — 처음 값, 판정에서 고친다). 보스 모의(`balance::bare_hand_probe`)로 골랐다 — 어느 싸움도 같은 무기 + 가장
@@ -2398,6 +2441,34 @@ pub const CLASSES: &[ClassDef] = &[
             ..Quirks::NONE
         },
     },
+    // 몽크(0286 — 사장 "맨손 일땐, 몽크도 넣어줘. 대신 몽크는 보조무기를 들수 없어."): 맨손이 종류가 되었다 — 두 주먹이 다 차서 방패와
+    // 들지 않고(양손 계열), 보조무기 슬롯이 잠긴다(`Quirks::one_slot` — 무기도 방패도). 타격(주먹과 발) · 충격과 날카로움(급소를 쳐
+    // 흔들고, 손톱으로 할퀸다 — 맨손은 0270 C5부터 날카로움의 덤을 받는 손이다 `Quirks::keen`) · 주특성 흐름 · 빈 손 열린 손(늘 켜진다) ·
+    // RB 돌(맨손의 것 그대로 — 손끝으로 튕긴다). 보조특성은 없다(보조무기로 메지 못한다 — 칸은 비어 있고 글은 잠긴 슬롯을 말한다).
+    ClassDef {
+        class: Class::Monk,
+        hand: Hand::Two,
+        name: |s| s.class_monk,
+        attribute: |s| s.attr_strike,
+        pair: [Kind::Shock, Kind::Sharp],
+        great: Ult::Palms,
+        art: Art::Flow(ART_FLOW),
+        main_trait: |s| s.trait_monk,
+        sub: SubTrait {
+            mods: Mods::NONE,
+            stowed_reload: false,
+        },
+        sub_trait: |s| s.subtrait_monk,
+        toss: Some(STONE_TOSS),
+        bare: Bare::OpenHand,
+        bare_name: |s| s.bare_monk,
+        bare_trait: |s| s.bare_monk_d,
+        quirks: Quirks {
+            keen: true,
+            one_slot: true,
+            ..Quirks::NONE
+        },
+    },
 ];
 
 impl Class {
@@ -2421,10 +2492,10 @@ impl Class {
 
 /// 손에 쥔 꼴(0225 → 0272 → 0281): 스킬과 판이 "지금 무엇을 쥐었나"를 묻는 한 곳. 종류는 `Id::class` 하나에서 오고, 이 꼴은 거기에
 /// **방패를 들었나**만 더한다 — 한손 계열과 방패 = 그 종류의 판 **과** 방패 판(`Shield(종류)` — 0281 멀티클래스: 둘 다 쓴다),
-/// 그 밖에는 그 종류의 판(`Class`), 맨손 = 무기 판 없음(`Bare`).
+/// 그 밖에는 그 종류의 판(`Class`). 무기 판이 없는 꼴(`Bare`)은 0286부터 쓰는 무기가 없다(맨손 = 몽크의 판) — 판의 셈이 지닌다.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grip {
-    /// 맨손, 방패 없이 — 무기 판이 없다(공통 판만).
+    /// 무기 판이 없는 꼴(0286까지의 맨손 — 지금은 쥐는 무기가 없다, 판 · 스킬의 셈이 지닌다).
     Bare,
     /// 그 종류의 무기(방패 없이, 또는 방패와 들지 않는 종류).
     Class(Class),
@@ -2434,12 +2505,12 @@ pub enum Grip {
 }
 
 impl Id {
-    /// 무기의 종류(0272 — 무기 표의 줄 `Weapon::class`). 맨손은 종류가 아니다(무기 칸을 비운 것).
+    /// 무기의 종류(0272 — 무기 표의 줄 `Weapon::class`). 0286부터 맨손도 종류(몽크)다.
     pub fn class(self) -> Option<Class> {
         self.def().class
     }
 
-    /// 계열(0223 → 0272): 종류의 것 — 맨손은 한손.
+    /// 계열(0223 → 0272): 종류의 것(0286부터 맨손 = 몽크 = 양손 — 종류가 없는 무기는 없다).
     pub fn hand(self) -> Hand {
         self.class().map_or(Hand::One, |c| c.def().hand)
     }
@@ -2459,6 +2530,11 @@ impl Id {
         self.hand() == Hand::One
     }
 
+    /// 주무기만 드는 무기인가(0286 — 종류 표의 `Quirks::one_slot`, 맨손 = 몽크): 보조무기 슬롯이 잠긴다(무기도 방패도 없다).
+    pub fn one_slot(self) -> bool {
+        self.class().is_some_and(|c| c.def().quirks.one_slot)
+    }
+
     /// 보조무기로 멜 수 있나(0286): 종류가 있고 주무기만 드는 종류가 아니다 — 맨손은 메지 않는다.
     pub fn slings(self) -> bool {
         self.class().is_some_and(|c| !c.def().quirks.one_slot)
@@ -2475,12 +2551,14 @@ impl Id {
         self.class().map_or(Art::Plain, |c| c.def().art)
     }
 
-    /// 보조무기 슬롯에 멨을 때의 보조특성(0272 1b) — 맨손은 종류가 아니라 없다.
+    /// 보조무기 슬롯에 멨을 때의 보조특성(0272 1b) — 보조무기로 메지 못하는 종류(0286 몽크 — 맨손)는 없다.
     pub fn sub_trait(self) -> Option<SubTrait> {
-        self.class().map(|c| c.def().sub)
+        self.class()
+            .filter(|c| !c.def().quirks.one_slot)
+            .map(|c| c.def().sub)
     }
 
-    /// 보조무기 슬롯이 비었을 때의 결(0276) — 맨손은 종류가 아니라 없다.
+    /// 보조무기 슬롯이 비었을 때의 결(0276) — 몽크(0286)는 슬롯이 늘 비어 늘 켜진다(`World::bare`).
     pub fn bare(self) -> Option<Bare> {
         self.class().map(|c| c.def().bare)
     }
@@ -2623,15 +2701,20 @@ mod tests {
             assert!(!greats[i + 1..].contains(g), "{g:?} on two classes");
         }
         for id in IDS {
-            assert_eq!(id.class().is_none(), id == Id::Fists, "{id:?}");
+            // 0286: 맨손도 종류(몽크)다 — 종류가 없는 무기는 없다.
+            assert!(id.class().is_some(), "{id:?}");
             // 원거리 계열 = 사격 무기(표의 `rb`와 종류 표의 계열이 어긋나지 않는다).
             assert_eq!(id.hand() == Hand::Ranged, id.is_ranged(), "{id:?}");
         }
         assert_eq!(Id::Sword.class(), Some(Class::Sword));
         assert_eq!(Id::Crossbow.class(), Some(Class::Crossbow));
         assert_eq!(Id::Bow.class(), Some(Class::Bow));
-        assert_eq!(Id::Fists.hand(), Hand::One, "bare hands can hold a shield");
-        assert_eq!(Id::Fists.art(), Art::Plain);
+        // 0286: 맨손 = 몽크 — 두 주먹이 다 차 방패와 들지 않는다(양손 계열), 주특성은 흐름.
+        assert_eq!(Id::Fists.class(), Some(Class::Monk));
+        assert_eq!(Id::Fists.hand(), Hand::Two, "both fists are full");
+        assert!(!Id::Fists.takes_shield());
+        assert_eq!(Id::Fists.art().flow(), ART_FLOW);
+        assert_eq!(Class::Monk.def().art.percent(), 30);
         assert_eq!(
             (Id::Sword.hand(), Id::Hammer.hand(), Id::Spear.hand()),
             (Hand::One, Hand::One, Hand::Two)
@@ -2655,8 +2738,8 @@ mod tests {
         // 0281: 완드도 한손.
         assert_eq!(Id::Wand.hand(), Hand::One);
         assert_eq!(Id::Wand.grip(true), Grip::Shield(Some(Class::Wand)));
-        assert_eq!(Id::Fists.grip(false), Grip::Bare);
-        assert_eq!(Id::Fists.grip(true), Grip::Shield(None));
+        assert_eq!(Id::Fists.grip(false), Grip::Class(Class::Monk));
+        assert_eq!(Id::Fists.grip(true), Grip::Class(Class::Monk), "no shield");
         assert_eq!(Id::Staff.grip(true), Grip::Class(Class::Staff));
         assert_eq!(Id::Bow.grip(true), Grip::Class(Class::Bow));
     }
@@ -2668,6 +2751,12 @@ mod tests {
         use crate::stats::Stats;
         let none = Stats::default();
         for c in CLASSES.iter() {
+            // 0286: 보조무기로 메지 못하는 종류(몽크)는 보조특성이 없다 — 칸은 비어 있고 글은 잠긴 슬롯을 말한다.
+            if c.quirks.one_slot {
+                assert_eq!(c.sub.mods, Mods::NONE, "{:?}", c.class);
+                assert!(!c.sub.stowed_reload && c.sub.percent() == 0);
+                continue;
+            }
             let got = Stats::compute(&[c.sub.mods]);
             assert_eq!(
                 (
@@ -2749,7 +2838,7 @@ mod tests {
         assert_eq!(Class::Scythe.def().sub.mods.kill_heal, SUB_KILL_HEAL);
         assert_eq!(Class::Scythe.def().art.percent(), 50);
         assert!(Class::Crossbow.def().sub.stowed_reload);
-        assert_eq!(Id::Fists.sub_trait(), None, "bare hands are no class");
+        assert_eq!(Id::Fists.sub_trait(), None, "the monk is never slung");
         assert_eq!(Id::Hammer.sub_trait(), Some(Class::Hammer.def().sub));
     }
 
@@ -2768,7 +2857,7 @@ mod tests {
     }
 
     /// 0274 ②b "RB를 종류마다": 근접 종류는 저마다 제 원거리 수단(꼴이 서로 다르다 — 클래스의 결), 사격 종류는 칸이 비고 무기 표의
-    /// 사격을 쓴다. 맨손은 종류가 아니라 돌 — 가장 약하다. 손도끼는 자세 피해가 가장 크고, 빛은 울림을 싣고, 창은 꿰뚫어 돌아온다.
+    /// 사격을 쓴다. 맨손(0286부터 몽크)은 돌 — 가장 약하다. 손도끼는 자세 피해가 가장 크고, 빛은 울림을 싣고, 창은 꿰뚫어 돌아온다.
     #[test]
     fn every_melee_kind_has_its_own_rb_and_ranged_kinds_shoot() {
         let mut looks = Vec::new();
@@ -2795,7 +2884,8 @@ mod tests {
                 looks.push(t.bolt.look);
             }
         }
-        assert!(!looks.contains(&Look::Stone), "bare hands only");
+        // 0286: 돌은 몽크(맨손)의 것 하나.
+        assert_eq!(Class::Monk.def().toss, Some(STONE_TOSS));
         for id in IDS {
             assert_eq!(id.toss().is_some(), !id.is_ranged(), "{id:?}");
         }

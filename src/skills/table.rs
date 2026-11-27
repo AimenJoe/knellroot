@@ -83,10 +83,18 @@ pub enum Id {
     Boomerang,
     /// 끊는 말(0280 — 완드·마법): 뜻 모를 말 한마디로 앞의 준비하던 공격을 끊는다.
     Word,
+    /// 손바닥 치기(0286 — 몽크·충격): 손바닥으로 짧게 밀쳐 쳐 준비하던 공격을 끊고 기절을 쌓는다.
+    Palm,
+    /// 할퀴기(0286 — 몽크·날카로움): 앞을 다섯 번 빠르게 할퀸다 — 손톱이 출혈을 쌓는다.
+    Rake,
+    /// 날아 차기(0286 — 몽크·충격): 가까운 적에게서 적으로 두 번 날아들며 찬다.
+    Kick,
+    /// 쓸어 차기(0286 — 몽크·타격): 몸을 낮춰 둘레를 한 바퀴 쓸어 차 밀어낸다(에워싸였을 때의 답).
+    Sweep,
 }
 
 /// 표 순서(대기 칸 `Player::skill_cd`의 자리 — 뒤에만 붙인다).
-pub const IDS: [Id; 38] = [
+pub const IDS: [Id; 42] = [
     Id::Whirl,
     Id::Cut,
     Id::Gather,
@@ -125,6 +133,10 @@ pub const IDS: [Id; 38] = [
     Id::Plunge,
     Id::Boomerang,
     Id::Word,
+    Id::Palm,
+    Id::Rake,
+    Id::Kick,
+    Id::Sweep,
 ];
 pub const N: usize = IDS.len();
 
@@ -1399,6 +1411,132 @@ pub const SKILLS: [Skill; N] = [
         ],
         cap: Cap::Break,
     },
+    // ---- 0286: 몽크(맨손 — 충격 · 날카로움). 있는 모양에 새 수. 동작은 0286 처음에는 같은 구간 길이의 있는 전용 동작을 빌린다(시동 ·
+    // 이어짐 · 후딜이 그 동작과 같다) ----
+    // 손바닥 치기(충격 첫 줄): 손바닥으로 짧고 조금 넓게(2.0 m · 80°) 밀쳐 친다 — 막아치기의 꼴(`Form::Bash`): 준비하던 잡몹의 공격을 끊고
+    // 자세 피해 ×2.5 · 충격을 한 번에 쌓는다(기절). 보스는 끊기지 않고 자세만(보스 규칙 그대로). 자루 치기(한손검)보다 짧게 닿고
+    // 자세를 더 깎는다. 넓은 손(ㄱ 120°) · 드러난 틈(ㄴ — 끊긴 적 2초 피해 +25%) · 최종 효과 = 끊긴 적은 자세가 곧바로 무너진다.
+    Skill {
+        id: Id::Palm,
+        cooldown: 7.0,
+        startup: 0.12,
+        recover: 0.28,
+        damage: HP_UNIT,
+        poise: 3.0,
+        form: Form::Bash {
+            range: 2.0,
+            arc_deg: 80.0,
+            stagger: 0.7,
+            mult: 2.5,
+        },
+        anim: "fist3",
+        clip: Clip {
+            name: "sk_pommel",
+            seg: [0.12, 0.0, 0.28],
+        },
+        row: 0,
+        hands: MONK,
+        kind: Kind::Shock,
+        build: 1.0,
+        branch: Branch::Riposte,
+        picks: [
+            Twist::Wide { arc_deg: 120.0 },
+            Twist::Expose {
+                secs: 2.0,
+                mult: 1.25,
+            },
+        ],
+        cap: Cap::Break,
+    },
+    // 할퀴기(날카로움 첫 줄): 앞(1.9 m · 80°)을 0.05초마다 다섯 번 할퀸다(바늘땀의 꼴 `Form::Stab` — 좁고 깊게 찌르는 바늘땀보다 짧고 넓고
+    // 잦다) — 타마다 10 · 출혈 0.3(다섯이 다 닿으면 보통 적은 피를 흘린다 — 날카로움에 무른 정도 0.75인 잔재도), 쿨타임 8초. 파고드는 손(ㄱ — 할퀴는 동안 1.5 m 내딛는다) · 더 할퀸다
+    // (ㄴ — 둘 더) · 최종 효과 = 마지막 할퀴기에 맞은 적이 0.5초 휘청.
+    Skill {
+        id: Id::Rake,
+        cooldown: 8.0,
+        startup: 0.10,
+        recover: 0.25,
+        damage: HP_UNIT,
+        poise: 0.5,
+        form: Form::Stab {
+            range: 1.9,
+            arc_deg: 80.0,
+            hits: 5,
+            gap: 0.05,
+        },
+        anim: "fist1",
+        clip: Clip {
+            name: "sk_stitch",
+            seg: [0.10, 0.20, 0.25],
+        },
+        row: 0,
+        hands: MONK,
+        kind: Kind::Sharp,
+        build: 0.3,
+        branch: Branch::Beat,
+        picks: [Twist::Lunge { dist: 1.5 }, Twist::Stitches { more: 2 }],
+        cap: Cap::Pin { stagger: 0.5 },
+    },
+    // 날아 차기(충격 둘째 줄): 6 m 안의 적에게서 적으로 세 번 날아들며 찬다(제비걸음의 꼴 `Form::Hop` — 베는 날이 아니라 발이라 자세를
+    // 더 깎고 충격을 쌓는다: 10 · 자세 2.0 · 충격 0.4, 닿는 둘레 1.8 m). 한 적만(ㄱ) · 돌아오는 걸음(ㄴ) · 최종 효과 = 마지막 착지가
+    // 둘레 2.5 m를 흔든다(자세 피해 ×2).
+    Skill {
+        id: Id::Kick,
+        cooldown: 9.0,
+        startup: 0.12,
+        recover: 0.25,
+        damage: HP_UNIT,
+        poise: 2.0,
+        form: Form::Hop {
+            range: 6.0,
+            hops: 3,
+            gap: 0.15,
+            reach: 1.8,
+        },
+        anim: "fist_dash",
+        clip: Clip {
+            name: "sk_swallow",
+            seg: [0.12, 0.45, 0.25],
+        },
+        row: 1,
+        hands: MONK,
+        kind: Kind::Shock,
+        build: 0.4,
+        branch: Branch::Beat,
+        picks: [Twist::Focus, Twist::HomeStep],
+        cap: Cap::Finale {
+            reach: 2.5,
+            poise: 2.0,
+        },
+    },
+    // 쓸어 차기(가운데 둘째 줄 — 타격): 몸을 낮춰 둘레(2.4 m)를 한 바퀴 쓸어 차 1.2 m 밀어낸다(장대 휩쓸기의 꼴 `Form::Ring` — 창보다
+    // 가깝고 덜 민다). 몽크의 둘레 답(맨손은 한 적씩 친다). 걸으며 찬다(ㄱ) · 한 바퀴 더(ㄴ) · 최종 효과 = 쓸린 적이 0.8초 휘청.
+    Skill {
+        id: Id::Sweep,
+        cooldown: 9.0,
+        startup: 0.20,
+        recover: 0.35,
+        damage: HP_UNIT,
+        poise: 3.0,
+        form: Form::Ring {
+            radius: 2.4,
+            hits: 1,
+            gap: 0.2,
+            push: 1.2,
+        },
+        anim: "fist_heavy",
+        clip: Clip {
+            name: "sk_pole",
+            seg: [0.20, 0.0, 0.35],
+        },
+        row: 1,
+        hands: MONK,
+        kind: Kind::Physical,
+        build: 0.0,
+        branch: Branch::Footing,
+        picks: [Twist::Walk { speed: 0.5 }, Twist::Spins { more: 1 }],
+        cap: Cap::Lift { stagger: 0.8 },
+    },
 ];
 
 impl Id {
@@ -1450,6 +1588,10 @@ impl Id {
             Id::Plunge => "plunge",
             Id::Boomerang => "boomerang",
             Id::Word => "word",
+            Id::Palm => "palm",
+            Id::Rake => "rake",
+            Id::Kick => "kick",
+            Id::Sweep => "sweep",
         }
     }
 
@@ -1507,7 +1649,12 @@ mod tests {
                 }
             }
         }
-        assert_eq!(shared, 0, "no skill borrows another skill's clip (0283)");
+        // 0286: 몽크의 넷이 같은 구간의 있는 동작을 빌린다(손바닥 치기 = 자루 치기 · 할퀴기 = 바늘땀 · 날아 차기 = 제비걸음 · 쓸어 차기 =
+        // 장대 휩쓸기).
+        assert_eq!(
+            shared, 4,
+            "the monk's four borrow until their own clips come"
+        );
         let keys: Vec<_> = IDS.iter().map(|i| i.key()).collect();
         for (i, k) in keys.iter().enumerate() {
             assert!(!keys[i + 1..].contains(k), "{k} twice");
