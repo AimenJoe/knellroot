@@ -214,7 +214,7 @@ pub const EN: Strings = Strings {
     tip_curse_d: "The hand knows a word. When it learned it, it cannot say. Where the curse bolt lands, things crack",
     weapon_sword_d: "3-hit combo · charged attack (wide slash) · a thrown hand axe (short and heavy, it breaks stances). The plain blade most pilgrims carry",
     weapon_hammer_d: "One-handed 3-hit combo (the third comes down overhead and rings the ground around) · overhead charged attack (the ground rings once more) · holy light (falls where you aim and rings the foes around). Can be equipped with a shield. The mallet that rang the sanctuary bell",
-    weapon_staff_d: "Fast 4-hit combo · charged attack (spin) · piercing magic bolt. A pilgrim's light staff",
+    weapon_staff_d: "Magic bolts (the main attack, flowing along the ground and piercing, five charges that refill fast) · a plain 3-hit combo that pushes foes back · charged attack (pushes back foes all around). A pilgrim's light staff",
     weapon_crossbow_d: "Grenades dropped at your feet · aimed shots (4 bolts) · a piercing charged shot (2 bolts) · an empty magazine reloads slowly, stand still to top it up bolt by bolt · dodge to reload. An old hunter's powder crossbow",
     weapon_bow_d: "Root seeds dropped at your feet bind the foes around them · hold to draw (the longer, the farther. A full draw pierces and hamstrings: the foe slows) · a quiver of three that refills quickly · dodge to reload one. A light bow woven from the garden's rootlets",
     weapon_spear_d: "Long 3-hit thrusts (pierce a whole line) · charged attack that lunges through · javelin throw (pierces a line and comes back to your hand). The ash-wood spear carried by the watch of the village left behind",
