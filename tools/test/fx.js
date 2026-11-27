@@ -271,7 +271,7 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
     await p.keyboard.down('KeyJ'); await burst(p, 'sf-charge', 16); await p.keyboard.up('KeyJ'); await burst(p, 'sf-heavy', 20);
     // 줄에서 물러나 다시 줄 쪽을 본다(RB의 판과 같은 걸음) — 마법 탄이 땅을 따라 흘러 줄을 꿰뚫는다.
     await p.keyboard.press('F6'); await p.keyboard.press('KeyL'); await hold(p, 'KeyS', 900); await hold(p, 'KeyW', 120); await p.waitForTimeout(400); await p.keyboard.press('F6'); await p.waitForTimeout(300);
-    for (let k = 0; k < 5; k++) { await p.keyboard.press('KeyU'); await burst(p, `sf-rb${k}`, 10); }
+    for (let k = 0; k < 5; k++) { await p.keyboard.press('KeyU'); await burst(p, `sf-rb${k}`, 32); } // 쏘기 한 번 = 0.52초(31틱)
     await burst(p, 'sf-refill', 4);
     await p.keyboard.down('KeyU'); await burst(p, 'sf-rb-charge', 50); await p.keyboard.up('KeyU'); await burst(p, 'sf-rb-charged', 16);
     await p.close();
