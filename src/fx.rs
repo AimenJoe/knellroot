@@ -698,7 +698,7 @@ impl Fx {
         let from_player = |at: Vec3| vec3(at.x - pp.x, 0.0, at.z - pp.z).normalize_or(Vec3::Z);
         match *e {
             Event::Hit { at } => self.ev_hit(at, &from_player),
-            Event::Sneak { at } => self.ev_sneak(at, &from_player),
+            Event::Sneak { at } => self.ev_sneak(at, &from_player, w),
             Event::Crit { at } => self.ev_crit(at, &from_player),
             Event::Smash { at } => self.ev_smash(at, &from_player, w),
             Event::Parry { at } => self.ev_parry(at),
@@ -2153,35 +2153,63 @@ mod tests {
         }
     }
 
-    /// 0277: 급소는 평타와 다른 번쩍임이다 — 별의 빛이 서늘한 은빛(평타는 따뜻한 흰빛)이고, 직각으로 엇갈리는 빛줄 넷이 함께 나간다.
-    /// 같은 틱의 평타 번쩍임 위에 얹혀도(사건 둘) 갈려 읽힌다.
+    /// 0277 → 0284: 급소는 평타 · 치명타와 다른 번쩍임이고, 쿼터뷰의 떼 속에서도 읽힌다(사장 판정 p-dagger "티가 안 남") — 가장 큰 별의
+    /// 빛이 서늘한 은빛(평타는 따뜻한 흰빛 · 치명타는 금)이고 치명타의 별보다 크고 길며, 몸을 가르는 긴 빛줄(처음 길이 2 m 넘게 —
+    /// 양쪽으로), 직각으로 엇갈리는 빛줄 넷(맞은 쪽으로는 가지 않는다), 발밑에 퍼지는 고리, 0.4초 넘게 남는 점이 함께 나간다.
     #[test]
-    fn a_sneak_hit_glints_cold_and_crossed_apart_from_a_plain_hit() {
+    fn a_sneak_hit_reads_cold_crossed_and_larger_than_a_crit() {
         let w = world();
         let at = vec3(0.0, 1.0, 2.0);
         let look = |e: Event| {
             let mut fx = Fx::default();
             fx.on_events(&[e], &w);
-            fx.parts
+            (fx.parts, fx.marks)
         };
-        let hit = look(Event::Hit { at });
-        let sneak = look(Event::Sneak { at });
-        let star = |ps: &[Part]| *ps.iter().find(|p| p.shape == Shape::Star).unwrap();
-        let (h, k) = (star(&hit), star(&sneak));
+        let big = |ps: &[Part]| {
+            *ps.iter()
+                .filter(|p| p.shape == Shape::Star)
+                .max_by(|a, b| a.size.0.total_cmp(&b.size.0))
+                .unwrap()
+        };
+        let (hit, _) = look(Event::Hit { at });
+        let (crit, _) = look(Event::Crit { at });
+        let (sneak, marks) = look(Event::Sneak { at });
+        let (h, c, k) = (big(&hit), big(&crit), big(&sneak));
         assert!(
-            k.color.0.b > k.color.0.r && h.color.0.r > h.color.0.b,
-            "cold glint vs warm flash"
+            k.color.0.b > k.color.0.r && h.color.0.r > h.color.0.b && c.color.0.r > c.color.0.b,
+            "cold glint vs warm flash and gold crit"
         );
-        assert!(k.size.0 > h.size.0 && k.life <= 0.15);
+        assert!(k.size.0 > c.size.0 && k.life > c.life && k.life <= 0.25);
         let streaks: Vec<&Part> = sneak.iter().filter(|p| p.shape == Shape::Streak).collect();
+        // 가르는 줄: 꼬리 길이(그림은 속도 × 0.045)가 한쪽 1 m 넘게 — 둘이 맞은 자리를 지나 반대로.
+        let cut: Vec<&&Part> = streaks
+            .iter()
+            .filter(|p| p.vel.length() * 0.045 > 1.0)
+            .collect();
+        assert_eq!(cut.len(), 2, "one long slash through the target");
+        assert!(cut[0].vel.dot(cut[1].vel) < 0.0);
+        let cross: Vec<&&Part> = streaks
+            .iter()
+            .filter(|p| p.vel.length() * 0.045 <= 1.0)
+            .collect();
+        assert_eq!(cross.len(), 4, "an X of four streaks");
+        assert_eq!(cross.iter().filter(|p| p.vel.y > 0.0).count(), 2);
         assert!(
-            sneak.iter().any(|p| p.shape == Shape::Dot && p.life > 0.3),
-            "a lingering glitter"
+            streaks.iter().all(|p| p.vel.z.abs() < 1e-3),
+            "across the blow, not along it"
         );
-        assert_eq!(streaks.len(), 4, "an X of four streaks");
-        // 엇갈림: 위로 둘 · 아래로 둘, 맞은 쪽(z)으로는 가지 않는다.
-        assert_eq!(streaks.iter().filter(|p| p.vel.y > 0.0).count(), 2);
-        assert!(streaks.iter().all(|p| p.vel.z.abs() < 1e-3));
+        assert!(
+            marks
+                .iter()
+                .any(|m| matches!(m.kind, MarkKind::Ring { r0, r1 } if r1 > r0 + 1.0)),
+            "a ring spreads at the feet"
+        );
+        assert!(
+            sneak
+                .iter()
+                .any(|p| p.shape == Shape::Dot && p.vel == Vec3::ZERO && p.life >= 0.4),
+            "a mark stays on the spot"
+        );
     }
 
     /// 0277: 분노의 불씨는 분노만큼 — 분노가 없는 종류(검) · 둘레가 빈 대검에는 없고, 넷에 에워싸인 대검은 1초에 열 남짓이 솟는다.

@@ -66,7 +66,8 @@ pub enum Id {
     Knell,
     /// 껍질 받기(0185 — 이끼 덮인 문지기가 웅크린다): 돌이 갈리며 닫히는 낮은 소리 + 끝의 둔한 탁. 예고가 아니다(치지 않는다).
     Shell,
-    /// 급소(0277 — 쌍단검): 날이 급소에 든 순간의 짧고 높은 쇳빛 '칭'(패링의 맑은 쇳소리보다 높고 짧다) + 처음 2ms 날 긁힘.
+    /// 급소(0277 → 0284 — 쌍단검): 날이 급소에 베어 드는 소리 — 가르는 '슉' → 박히는 낮은 '푹' + 살결, 위에 작은 반짝임 하나.
+    /// 쇳빛 울림은 없다(0277의 높은 '칭'은 패링 · 튕김처럼 "막힌" 소리로 들렸다 — 사장 판정 p-dagger).
     Sneak,
     /// 분노가 가득(0277 — 대검): 낮게 차오르는 숨(걸러 낸 숨소리가 부풀고 밑에 낮은 웅이 오른다) — 한 번, 0.55초.
     Fury,
@@ -199,7 +200,8 @@ fn synth_gain(id: Id) -> f32 {
         // 0175: 0.65 → 0.95 — 길 안내의 종은 들려야 한다(폰 스피커에서 화면의 물결만 보였다).
         Id::Knell => 0.95,
         Id::Shell => 0.6,
-        Id::Sneak => 0.45,
+        // 0284: 같은 틱의 맞힘(파일 0.6 + 둘째 층 0.5) 위로 들리게 — 처음 0.12초의 크기가 맞힘의 것보다 크다(시험).
+        Id::Sneak => 0.9,
         Id::Fury => 0.55,
         Id::Pull => 0.45,
         // 0278: 다 모임은 박자 신호라 들려야 하지만 패링(0.55)보다 작게 · 2단계는 깨어남(0.7) 아래 · 벽 쿵은 맞힘 둘째 층과 같게 ·
@@ -612,19 +614,41 @@ pub fn synth(id: Id) -> Vec<i16> {
                 })
                 .collect()
         }
-        // 급소: 높은 쇳빛 배음 셋(2,640 · 3,960 · 5,280Hz 어긋나게)이 0.16초에 사라지는 '칭' + 처음 2ms 긁힘 — 패링(1,320Hz · 0.5초)보다
-        // 높고 짧아 귀로 갈린다.
-        Id::Sneak => (0..len(0.18))
-            .map(|i| {
-                let t = i as f32 / SR as f32;
-                let e = (-t * 26.0).exp_d();
-                let ring = (TAU * 2640.0 * t).sin_d()
-                    + 0.5 * (TAU * 3987.0 * t).sin_d()
-                    + 0.3 * (TAU * 5310.0 * t).sin_d() * (-t * 50.0).exp_d();
-                let scrape = if t < 0.002 { rng(&mut seed) * 0.9 } else { 0.0 };
-                ring * e + scrape
-            })
-            .collect(),
+        // 급소(0284 — 사장 "소리는 챙 하는데 막히는듯한 챙"): 쇳소리가 아니라 **베어 드는** 소리. 0~40ms 날이 가르는 '슉'(걸러 낸
+        // 잡음 — 띠의 위 끝이 1.8 → 9kHz로 열리며 부풀었다 끊긴다) → 38ms에 날이 박히는 부드러운 '푹'(150 → 62Hz로 떨어지는 몸) +
+        // 살결(200~900Hz로 거른 잡음, 짧게) → 그 위에 작은 반짝임 하나(3.1kHz, 몸의 5분의 1 · 25ms 안에 사라진다 — "급소였다"의 표지).
+        // 길게 우는 쇳빛 배음은 없다(패링 · 튕김 · 받아냄의 맑은 쇳소리와 갈린다). 0.32초(낮은 몸이 잦아드는 꼬리까지).
+        Id::Sneak => {
+            let (mut lp, mut hp, mut flo, mut fhi, mut ph) =
+                (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+            (0..len(0.32))
+                .map(|i| {
+                    let t = i as f32 / SR as f32;
+                    let x = rng(&mut seed);
+                    // 슉: 1차 저역의 문이 열린다(0.25 → 0.75) − 900Hz 아래를 덜어낸 띠.
+                    lp += (x - lp) * (0.25 + 0.5 * (t / 0.04).min(1.0));
+                    hp += (lp - hp) * 0.12;
+                    let swish = (lp - hp)
+                        * 2.4
+                        * (t / 0.03).min(1.0).powf_d(2.0)
+                        * (1.0 - ((t - 0.032) / 0.008).clamp(0.0, 1.0));
+                    let d = t - 0.038;
+                    let (thud, flesh, glint) = if d >= 0.0 {
+                        ph += (62.0 + 88.0 * (-d * 30.0).exp_d()) / SR as f32;
+                        flo += (x - flo) * 0.12;
+                        fhi += (flo - fhi) * 0.03;
+                        (
+                            (TAU * ph).sin_d() * (-d * 16.0).exp_d() * (d / 0.002).min(1.0) * 0.8,
+                            (flo - fhi) * 4.0 * (-d * 40.0).exp_d(),
+                            (TAU * 3100.0 * d).sin_d() * (-d * 120.0).exp_d() * 0.2,
+                        )
+                    } else {
+                        (0.0, 0.0, 0.0)
+                    };
+                    swish + thud + flesh + glint
+                })
+                .collect()
+        }
         // 분노: 걸러 낸 숨이 0.35초 부풀었다 잦아들고, 밑에서 낮은 웅(65 → 95Hz)이 함께 오른다 — 숨을 몰아쉬는 소리.
         Id::Fury => {
             let n = len(0.55);
@@ -929,34 +953,47 @@ mod tests {
         assert!(disk.0 < fan.0, "the husk ticks are short");
     }
 
-    /// 0277: 급소 · 분노 · 걸어 당김의 소리는 서로, 그리고 가까운 옛 소리(패링 · 문지기 깨어남 · 맞힘 둘째 층)와 귀로 갈린다 — 급소는
-    /// 패링보다 높고 짧다, 분노는 낮고 길다(깨어남보다는 짧다), 걸어 당김은 그 사이.
+    /// 0284(사장 판정 p-dagger "막히는듯한 챙"): 급소는 **베어 드는** 소리다 — 패링(튕김 · 받아냄 · 덫이 묾 · 금도 같은 쇳소리)보다
+    /// 쇳빛 울림이 다섯 배 넘게 적고, 패링에 없는 낮은 몸(300Hz 아래 몫 0.3 넘게)이 있다. 방패 막기 · 맞힘 둘째 층(같은 '둥')과는 가르는
+    /// '슉'(2kHz 위 몫)과 길이로 갈리고, 같은 틱에 함께 나는 맞힘(파일 0.6 + 둘째 층 0.5)보다 처음 0.12초가 크다(묻히지 않는다).
+    /// 분노 · 걸어 당김은 0277 그대로: 분노는 길지만 문지기 깨어남보다 짧고, 걸어 당김은 분노보다 높다.
     #[test]
-    fn the_sneak_fury_and_pull_cues_sound_apart() {
-        let feat = |id| {
-            let s = synth(id);
-            let crossings = s.windows(2).filter(|w| (w[0] < 0) != (w[1] < 0)).count() as f32;
-            let secs = s.len() as f32 / SR as f32;
-            (secs, crossings / secs)
-        };
-        let (sneak, fury, pull, parry, wake) = (
-            feat(Id::Sneak),
-            feat(Id::Fury),
-            feat(Id::Pull),
-            feat(Id::Parry),
-            feat(Id::Wake),
+    fn the_vital_cue_cuts_in_instead_of_clanging_and_fury_and_pull_sound_apart() {
+        let sneak = feel_of(&synth_f32(Id::Sneak));
+        let parry = feel_of(&synth_f32(Id::Parry));
+        let thwack = feel_of(&synth_f32(Id::Thwack));
+        assert!(
+            sneak.ring < parry.ring * 0.2,
+            "no metal ring: {sneak:?} vs parry {parry:?}"
         );
         assert!(
-            sneak.1 > parry.1 * 1.5 && sneak.0 < parry.0,
-            "the sneak glint is higher and shorter than a parry"
+            sneak.low > 0.3 && parry.low < 0.05,
+            "a low body the parry lacks"
         );
         assert!(
-            fury.0 > sneak.0 && fury.0 < wake.0,
+            sneak.high > thwack.high + 0.2 && sneak.secs > thwack.secs * 2.0,
+            "the swish and the length part it from a guard thud"
+        );
+        let hit = file_f32(include_bytes!("../assets/sfx/enemy_hit_0.wav"));
+        let thw = synth_f32(Id::Thwack);
+        let plain: Vec<f32> = (0..hit.len().max(thw.len()))
+            .map(|i| {
+                hit.get(i).copied().unwrap_or(0.0) * 0.6
+                    + thw.get(i).copied().unwrap_or(0.0) * synth_gain(Id::Thwack)
+            })
+            .collect();
+        assert!(
+            sneak.head_rms * synth_gain(Id::Sneak) > feel_of(&plain).head_rms,
+            "heard over the plain hit of the same tick"
+        );
+        let (fury, pull, wake) = (feat(Id::Fury), feat(Id::Pull), feat(Id::Wake));
+        assert!(
+            fury.0 > sneak.secs && fury.0 < wake.0,
             "the fury breath is long but not a boss waking"
         );
         assert!(
-            sneak.1 > pull.1 && pull.1 > fury.1,
-            "high glint · middle whip · low breath: {sneak:?} {pull:?} {fury:?}"
+            pull.1 > fury.1,
+            "middle whip · low breath: {pull:?} {fury:?}"
         );
     }
 
@@ -1028,7 +1065,7 @@ mod tests {
     /// 소리의 잣대(0284 — 귀로 듣지 못하니 수로 견준다): 웰치 평균 스펙트럼(한 틀 2,048 표본 · 해닝 창 · 반씩 겹침)에서 무게 중심(Hz)과
     /// 대역의 몫(300Hz 아래 · 300~2,000 · 2,000 위), 쇳소리의 울림 `ring` = 첫 40ms 뒤 꼬리의 1kHz 위 에너지 몫 × (1 − 그 대역 스펙트럼의
     /// 평탄도 — 기하 평균 ÷ 산술 평균: 맑게 우는 음은 0에 가깝고 잡음은 0.3 넘게), 봉우리 포락선(5ms RMS)이 −20dB 밑으로 내려가 다시
-    /// 오르지 않는 때(ms), 크기(받은 표본 그대로의 RMS — 앱은 여기에 `synth_gain`을 곱한다)와 300Hz 1차 고역 통과를 지난 몫(작은 스피커).
+    /// 오르지 않는 때(ms), 크기(처음 0.12초의 RMS, 받은 표본 그대로 — 앱은 여기에 `synth_gain`을 곱한다)와 300Hz 1차 고역 통과를 지난 몫(작은 스피커).
     #[derive(Clone, Copy, Debug)]
     pub(super) struct Feel {
         pub secs: f32,
@@ -1038,7 +1075,8 @@ mod tests {
         pub high: f32,
         pub ring: f32,
         pub decay_ms: f32,
-        pub rms: f32,
+        /// 처음 0.12초의 RMS(같은 틱에 함께 나는 맞힘 소리와 견주는 크기).
+        pub head_rms: f32,
         pub above_300: f32,
     }
 
@@ -1101,12 +1139,7 @@ mod tests {
                 .sum::<f64>()
                 / all
         };
-        let centroid = spec
-            .iter()
-            .enumerate()
-            .map(|(k, p)| hz(k) * p)
-            .sum::<f64>()
-            / all;
+        let centroid = spec.iter().enumerate().map(|(k, p)| hz(k) * p).sum::<f64>() / all;
         let e = |v: &[f32]| v.iter().map(|a| (*a as f64).powi(2)).sum::<f64>();
         let cut = len(0.04).min(x.len());
         let tail = e(&x[cut..]) / e(&x).max(1e-12);
@@ -1145,7 +1178,10 @@ mod tests {
             high: band(2000.0, 30000.0) as f32,
             ring: ring as f32,
             decay_ms: (last_loud + 1) as f32 * 5.0,
-            rms: (e(s) / s.len() as f64).sqrt() as f32,
+            head_rms: {
+                let h = &s[..len(0.12).min(s.len())];
+                (e(h) / h.len() as f64).sqrt() as f32
+            },
             above_300: (hi / e(&x).max(1e-12)) as f32,
         }
     }
@@ -1181,7 +1217,7 @@ mod tests {
         let row = |name: &str, s: &[f32], gain: f32| {
             let f = feel_of(s);
             println!(
-                "{name:<14} | {:>5.0} ms | {:>6.0} Hz | {:>4.2} {:>4.2} {:>4.2} | ring {:>5.3} | decay {:>4.0} ms | rms×gain {:>5.3} | >300Hz {:>4.2}",
+                "{name:<14} | {:>5.0} ms | {:>6.0} Hz | {:>4.2} {:>4.2} {:>4.2} | ring {:>5.3} | decay {:>4.0} ms | head rms×gain {:>5.3} | >300Hz {:>4.2}",
                 f.secs * 1000.0,
                 f.centroid,
                 f.low,
@@ -1189,13 +1225,17 @@ mod tests {
                 f.high,
                 f.ring,
                 f.decay_ms,
-                f.rms * gain,
+                f.head_rms * gain,
                 f.above_300
             );
         };
         println!("sound          | length  | centroid  | <300 mid >2k | metal ring | -20 dB      | loudness       | small speaker");
         row("Sneak", &synth_f32(Id::Sneak), synth_gain(Id::Sneak));
-        row("Parry/Deflect", &synth_f32(Id::Parry), synth_gain(Id::Parry));
+        row(
+            "Parry/Deflect",
+            &synth_f32(Id::Parry),
+            synth_gain(Id::Parry),
+        );
         row("Guard(Thwack)", &thw, synth_gain(Id::Thwack));
         row("Shell", &synth_f32(Id::Shell), synth_gain(Id::Shell));
         row("Charged", &synth_f32(Id::Charged), synth_gain(Id::Charged));

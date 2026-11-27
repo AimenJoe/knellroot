@@ -254,9 +254,12 @@ pub(super) fn cue(e: &Event, cx: &CueCtx) -> Cue {
         Event::SnareSnap { .. } => Cue::snd(Id::Parry, SHAKE_HIT),
         Event::ShieldBounce { .. } => Cue::snd(Id::Beat, 0.0),
         Event::Rush { .. } => Cue::snd(Id::Dodge, 0.0),
-        // 0277: 급소 = 짧고 높은 쇳빛 '칭'(맞힌 타만큼 가볍게 한 번 더), 분노가 가득 = 낮게 차오르는 숨, 걸어 당김 = 덩굴이 감겨
-        // 끌리는 소리(둘은 조용히 — 그림 · 소리가 말한다).
-        Event::Sneak { .. } => Cue::snd(Id::Sneak, SHAKE_HIT),
+        // 0277 → 0284: 급소 = 베어 드는 소리('슉' → '푹') — 치명타만큼 읽히게(사장 판정 p-dagger "티가 안 남"): 치명타의 흔들림 ·
+        // 강타의 킥 · 치명타의 줌(빛은 금이 아니라 은 — `fx`). 분노가 가득 = 낮게 차오르는 숨, 걸어 당김 = 덩굴이 감겨 끌리는
+        // 소리(둘은 조용히 — 그림 · 소리가 말한다).
+        Event::Sneak { at } => Cue::snd(Id::Sneak, SHAKE_CRIT)
+            .punch(at, KICK_SMASH_DEG)
+            .zoom(ZOOM_CRIT),
         Event::FuryFull { .. } => Cue::snd(Id::Fury, 0.0),
         Event::Pull { .. } => Cue::snd(Id::Pull, 0.0),
     }

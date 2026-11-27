@@ -13,20 +13,40 @@ impl Fx {
         self.star(at, 0.95, 0.07, WHITE_HOT);
     }
 
-    /// 급소(0277 — 쌍단검): 은빛의 날카로운 번쩍임(평타 별보다 크고 가늘게 짧다) + 맞은 쪽에 직각으로 엇갈리는 빛줄 넷(X — 날이
-    /// 지나간 자국). 치명타(금 · 사방의 알갱이) · 패링(하늘빛 · 사방의 빛줄)과 갈린다.
-    pub(super) fn ev_sneak(&mut self, at: Vec3, from_player: &impl Fn(Vec3) -> Vec3) {
+    /// 급소(0277 → 0284 — 쌍단검): 은빛의 큰 번쩍임(치명타의 금빛 별보다 크게 조금 길게) + 몸을 가르는 긴 빛줄 + 맞은 쪽에 직각으로
+    /// 엇갈리는 빛줄 넷(X — 날이 지나간 자국) + 발밑의 은빛 고리 + 잠시 남는 은빛 점. 치명타(금 · 사방의 알갱이) · 패링(하늘빛 · 사방의
+    /// 빛줄)과 갈린다.
+    pub(super) fn ev_sneak(&mut self, at: Vec3, from_player: &impl Fn(Vec3) -> Vec3, w: &World) {
         let d = from_player(at);
         let side = vec3(-d.z, 0.0, d.x);
-        self.star(at, 1.7, 0.13, SNEAK);
+        // 0284(사장 판정 p-dagger "은빛 반짝은 별로 티가 안 남"): 쿼터뷰의 작은 몸 · 떼 속에서도 읽히게 — 치명타(금빛 별 1.7)보다 큰
+        // 은빛 별이 조금 길게 + 흰 속, 몸을 비스듬히 가르는 긴 빛줄(양쪽으로 열리며 줄어든다), 발밑에 퍼지는 은빛 고리, 맞은 자리에
+        // 잠시 남는 은빛 점. 카메라(치명타의 흔들림 · 줌 + 강타의 킥)는 `app::cue`.
+        self.star(at, 2.6, 0.2, SNEAK);
+        self.star(at, 1.1, 0.09, WHITE_HOT);
+        let cut = (side * 0.8 + Vec3::Y * 0.6).normalize();
+        for s in [1.0, -1.0] {
+            self.push(Part {
+                pos: at,
+                vel: cut * (30.0 * s),
+                age: 0.0,
+                life: 0.2,
+                size: (0.12, 0.03),
+                color: (WHITE_HOT, fade(SNEAK)),
+                gravity: 0.0,
+                drag: 12.0,
+                shape: Shape::Streak,
+                decor: false,
+            });
+        }
         for (sx, sy) in [(1.0, 1.0), (-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0)] {
             let v = (side * sx + Vec3::Y * sy).normalize();
             self.push(Part {
                 pos: at + v * 0.1,
-                vel: v * 5.0,
+                vel: v * 7.0,
                 age: 0.0,
-                life: 0.24,
-                size: (0.13, 0.04),
+                life: 0.26,
+                size: (0.16, 0.05),
                 color: (WHITE_HOT, fade(SNEAK)),
                 gravity: 0.0,
                 drag: 5.0,
@@ -34,16 +54,30 @@ impl Fx {
                 decor: false,
             });
         }
-        // 남는 반짝임: 맞은 자리에서 천천히 떠오르는 은빛 알갱이 여섯(별 · 빛줄이 사라진 뒤에도 몇 프레임 "급소였다"가 남는다).
+        let g = vec3(at.x, w.ground_y(at), at.z);
+        self.mark(g, MarkKind::Ring { r0: 0.3, r1: 1.8 }, 0.32, SNEAK);
+        // 남는 표: 맞은 자리에 잠시 머무는 은빛 점 하나 + 천천히 떠오르는 은빛 알갱이 여덟.
+        self.push(Part {
+            pos: at,
+            vel: Vec3::ZERO,
+            age: 0.0,
+            life: 0.5,
+            size: (0.24, 0.06),
+            color: (WHITE_HOT, fade(SNEAK)),
+            gravity: 0.0,
+            drag: 0.0,
+            shape: Shape::Dot,
+            decor: false,
+        });
         self.spray(
             at,
             Vec3::Y,
             0.8,
-            6,
+            8,
             1.6,
             Shape::Dot,
-            0.09,
-            0.45,
+            0.11,
+            0.5,
             -0.5,
             WHITE_HOT,
             SNEAK,

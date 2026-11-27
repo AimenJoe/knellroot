@@ -330,10 +330,10 @@ Rush { at: Vec3(1.0, 0.0, -2.0), dir: Vec3(0.0, 0.0, 1.0), power: 0.6 } | chain 
 Rush { at: Vec3(1.0, 0.0, -2.0), dir: Vec3(0.0, 0.0, 1.0), power: 0.6 } | chain 1 at Vec3(3.0, 0.0, 0.0) brace true => sound Some(Dodge) shake 0.0 punch None zoom 0.0 camera None
 Rush { at: Vec3(1.0, 0.0, -2.0), dir: Vec3(0.0, 0.0, 1.0), power: 0.6 } | chain 2 at Vec3(1.0, 0.0, 14.0) brace false => sound Some(Dodge) shake 0.0 punch None zoom 0.0 camera None
 Rush { at: Vec3(1.0, 0.0, -2.0), dir: Vec3(0.0, 0.0, 1.0), power: 0.6 } | chain 3 at Vec3(40.0, 0.0, 0.0) brace true => sound Some(Dodge) shake 0.0 punch None zoom 0.0 camera None
-Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 0 at Vec3(0.0, 0.0, 0.0) brace false => sound Some(Sneak) shake 0.25 punch None zoom 0.0 camera None
-Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 1 at Vec3(3.0, 0.0, 0.0) brace true => sound Some(Sneak) shake 0.25 punch None zoom 0.0 camera None
-Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 2 at Vec3(1.0, 0.0, 14.0) brace false => sound Some(Sneak) shake 0.25 punch None zoom 0.0 camera None
-Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 3 at Vec3(40.0, 0.0, 0.0) brace true => sound Some(Sneak) shake 0.25 punch None zoom 0.0 camera None
+Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 0 at Vec3(0.0, 0.0, 0.0) brace false => sound Some(Sneak) shake 0.45 punch Some((Vec3(1.0, 0.0, -2.0), 0.55)) zoom 0.06 camera None
+Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 1 at Vec3(3.0, 0.0, 0.0) brace true => sound Some(Sneak) shake 0.45 punch Some((Vec3(1.0, 0.0, -2.0), 0.55)) zoom 0.06 camera None
+Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 2 at Vec3(1.0, 0.0, 14.0) brace false => sound Some(Sneak) shake 0.45 punch Some((Vec3(1.0, 0.0, -2.0), 0.55)) zoom 0.06 camera None
+Sneak { at: Vec3(1.0, 0.0, -2.0) } | chain 3 at Vec3(40.0, 0.0, 0.0) brace true => sound Some(Sneak) shake 0.45 punch Some((Vec3(1.0, 0.0, -2.0), 0.55)) zoom 0.06 camera None
 FuryFull { at: Vec3(1.0, 0.0, -2.0) } | chain 0 at Vec3(0.0, 0.0, 0.0) brace false => sound Some(Fury) shake 0.0 punch None zoom 0.0 camera None
 FuryFull { at: Vec3(1.0, 0.0, -2.0) } | chain 1 at Vec3(3.0, 0.0, 0.0) brace true => sound Some(Fury) shake 0.0 punch None zoom 0.0 camera None
 FuryFull { at: Vec3(1.0, 0.0, -2.0) } | chain 2 at Vec3(1.0, 0.0, 14.0) brace false => sound Some(Fury) shake 0.0 punch None zoom 0.0 camera None
