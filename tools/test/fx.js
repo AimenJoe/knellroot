@@ -1,6 +1,6 @@
 // 이펙트를 틱마다 찍는다(0141): 헤드리스 Chromium으로 개발 시나리오를 띄우고, 개발 키 F6(한 프레임 = 한 틱)을 켠 뒤
 // 동작마다 연달아 스크린숏 — 0.1초짜리 번쩍임·먼지를 실제 시간으로는 못 잡는다(헤드리스는 초당 8프레임 남짓).
-//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,pull,wand,staff,rb,bare,throw] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed,curse · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,wand,shield]
+//   cargo build --release --target wasm32-unknown-unknown && sh tools/web/assemble.sh dist && node tools/test/fx.js dist shots-fx [duel,horde,boss,stage,skills,spear,daggers,greatsword,scythe,pull,wand,staff,monk,rb,bare,throw] [스킬 이름들 · rb면 axe,light,javelin,stone,magic,bow,crossbow,knives,quake,seed,curse · bare면 sword,hammer,staff,crossbow,bow,spear,daggers,greatsword,scythe,wand,shield]
 // skills(0158 G2): 개발 창 기술 탭 "스킬 다 올리기"(끝 단 · 고르기 ㄱ, 기록에 안 쓴다) → "스킬 장착"에서 칸·큰 기술을 고르고 →
 //   전투 탭 "skills" 판에서 Q(칸 1)·E(칸 2)·Q+E(큰 기술)를 틱마다 찍는다 — 스킬·큰 기술마다 새 판(sk-<이름>-<n>.png).
 // 눈으로 볼 것: 맞힌 자리의 별·불똥, 휘두름의 초승달, 쓰러진 적의 재, 뛰기·회피·적 내리침의 먼지, 마법 탄의 마름모, 화로 불티.
@@ -66,7 +66,24 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
     for (let k = 0; k < 10; k++) { await p.keyboard.press('KeyK'); await burst(p, `parry${k}`, 6); }
     await p.close();
   }
-  if (want('skills')) {
+  if (want('monk')) {
+    // 0286 몽크(맨손): `Arm(Fists)` → "한 줄로 선 잔재"(`Scenario(Line)`) — 쿼터뷰 · 락온 한 장씩, 그다음 틱마다(F6): 평타 셋(흐름이 찬다 —
+    // 발밑의 바람빛 고리) · 넷째부터 가득(빨라진 평타 셋) · 쥐었다 치기 · 달려들며 차기(회피 뒤 공격) · RB 돌 둘. 스킬 넷 · 궁극기는 아래
+    // 스킬 판(이 묶음이면 몽크의 것만 — palm · rake · kick · sweep · palms).
+    p = await armed('Fists', { shot: 'mk-arm.png' }); await p.waitForTimeout(1200);
+    await p.keyboard.press('ArrowUp'); await p.waitForTimeout(700); // 한 단계 가까운 쿼터뷰
+    await p.screenshot({ path: path.join(OUT, 'mk-quarter.png') });
+    await p.keyboard.press('KeyL'); await p.waitForTimeout(900); await p.screenshot({ path: path.join(OUT, 'mk-lockon.png') });
+    await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyJ'); await burst(p, `mk-hit${k}`, 10); }
+    for (let k = 0; k < 3; k++) { await p.keyboard.press('KeyJ'); await burst(p, `mk-flow-hit${k}`, 8); }
+    await p.keyboard.down('KeyJ'); await burst(p, 'mk-charge', 14); await p.keyboard.up('KeyJ'); await burst(p, 'mk-heavy', 16);
+    await p.keyboard.press('Space'); await burst(p, 'mk-dodge', 6); await p.keyboard.press('KeyJ'); await burst(p, 'mk-dash', 12);
+    await p.keyboard.press('F6'); await hold(p, 'KeyS', 900); await hold(p, 'KeyW', 120); await p.waitForTimeout(400); await p.keyboard.press('F6'); await p.waitForTimeout(300);
+    for (let k = 0; k < 2; k++) { await p.keyboard.press('KeyU'); await burst(p, `mk-rb${k}`, 14); }
+    await p.close();
+  }
+  if (want('skills') || want('monk')) {
     // 판마다 새 페이지(떼가 몸을 덮기 전에 낸다): [이름, 끼울 스킬의 자리(줄, 칸) — 없으면 그대로, 끼울 큰 기술의 칸 — 없으면 그대로, 기다림 ms, 누름, 찍을 수].
     // 기술 화면(0161)의 자리: 스킬은 보이는 줄 0(휘돌이·가로지르기·버팀·끌어모으기)·줄 2(땅울림·되울림·던지기·잔불 흩기), 큰 기술은 줄 4의
     // 칸 0·2·4(몰아치기·한 줄기·쟁반 뒤집기). 칸에서 확인 = 목록의 첫 줄 "칸 1에 끼우기"(큰 기술은 "끼우기"). 처음 끼워진 것은 휘돌이(Q)·
@@ -107,7 +124,11 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
       ['price', null, 'Ult(Price)', 1300, 'ult', 100, 'Wand'],
       // 0280: 빈 노드 넷 — 찌르고 물러서기 · 불씨 내리꽂기 · 돌아오는 낫(날아갔다 돌아오는 0.8초) · 끊는 말.
       ['withdraw', 'Skill(Withdraw)', null, 1000, 'Q', 34, 'Spear'], ['plunge', 'Skill(Plunge)', null, 1000, 'Q', 44, 'Greatsword'],
-      ['boomerang', 'Skill(Boomerang)', null, 900, 'Q', 60, 'Scythe'], ['word', 'Skill(Word)', null, 900, 'Q', 30, 'Wand']];
+      ['boomerang', 'Skill(Boomerang)', null, 900, 'Q', 60, 'Scythe'], ['word', 'Skill(Word)', null, 900, 'Q', 30, 'Wand'],
+      // 0286: 몽크 판 — 손바닥 치기 · 할퀴기 · 날아 차기(세 걸음 0.8초) · 쓸어 차기(두 바퀴) · 천 개의 손바닥(타 여섯이 1.4초 남짓).
+      ['palm', 'Skill(Palm)', null, 900, 'Q', 26, 'Fists'], ['rake', 'Skill(Rake)', null, 900, 'Q', 34, 'Fists'],
+      ['kick', 'Skill(Kick)', null, 1000, 'Q', 52, 'Fists'], ['sweep', 'Skill(Sweep)', null, 1100, 'Q', 42, 'Fists'],
+      ['palms', null, 'Ult(Palms)', 1000, 'ult', 90, 'Fists']];
     const pick = async (p, n, key = 'ArrowRight') => { for (let i = 0; i < n; i++) { await p.keyboard.press(key); await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); await p.waitForTimeout(90); } };
     // 이름으로 칸 찾기(0270 C2 — 판 하나씩): 판 줄로 올라가(위를 넉넉히 — `@Strip`) ↓ = 보이는 판(든 무기의 판)의 맨 윗줄 → 줄마다 왼쪽 끝 →
     // 오른쪽으로 훑으며 장면 이름 끝의 `@칸`을 본다. 없으면 무기 판을 한손검부터 차례로(판 줄에서 → — 공통 판에는 스킬이 없다).
@@ -126,7 +147,7 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
       };
       await pick(p, 12, 'ArrowUp');
       let found = await scan();
-      for (let plate = 1; plate < 12 && !found; plate++) {
+      for (let plate = 1; plate < 13 && !found; plate++) {
         await pick(p, 12, 'ArrowUp'); await pick(p, 8, 'ArrowLeft'); await pick(p, plate);
         found = await scan();
       }
@@ -141,6 +162,8 @@ const DIST = path.resolve(process.argv[2] || 'dist'); const OUT = path.resolve(p
     const names = process.argv[5] ? process.argv[5].split(',') : null;
     for (const [name, slot, ult, wait, key, n, arm] of RUNS) {
       if (names && !names.includes(name)) continue;
+      // 몽크 묶음만 골랐으면(스킬 묶음 없이) 몽크의 판만.
+      if (!want('skills') && arm !== 'Fists') continue;
       // 스킬 다 올리기(켬 — 판은 그대로 타이틀) → 무기를 들고 개발 창을 "주무기 바꾸기" 줄에 열어 한 장 → 그 위에 기술 탭(host: Dev).
       p = await fresh(); await p.kit.dev('SkillsMax', `Arm(${arm})`, 'Dev(Arm)'); await p.kit.until(/^Dev \{.* @Arm$/, '개발 창 주무기 바꾸기 줄');
       await p.screenshot({ path: path.join(OUT, `sk-arm-${name}.png`) });

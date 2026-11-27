@@ -2,11 +2,11 @@
 //   쉼터 기록(잔불 넉넉)을 심고 이어하기 → 쉬기 → 화로 창(0263 — 성장 · 장비 · 가방 · 기술 · 가게 · 설정; 성장 탭 — 레벨 줄을 올려 보고
 //   묻는 창, 기술 줄에서 확인 = 기술 탭의 그 칸, 0173) → 화로의 Select(Tab) = 같은 창의 장비 탭(후보의 작은 목록) → 가방(작은 목록 ·
 //   여벌 정리) → 가게 · 설정 · 기술, 그리고 싸움에서 연 멈춤 창(장비 · 가방 · 기술 · 기록(여정·도감의 보상 받기) · 설정), 화면마다 스크린숏.
-//   기술 탭(0270 C2): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 쌍단검 · 대검 · 낫 · 완드 · 방패 — 넘치면 가로로 굴린다, 0275) + 그 판의 칸 격자 +
+//   기술 탭(0270 C2): 위의 판 줄(공통 · 한손검 · 망치 · 지팡이 · 쇠뇌 · 활 · 창 · 쌍단검 · 대검 · 낫 · 완드 · 몽크 · 방패 — 넘치면 가로로 굴린다, 0275) + 그 판의 칸 격자 +
 //   오른쪽 상세. 장면 이름이 보이는 판과 고른 칸을 말한다(`Skills { host: Hearth } [Class(Sword)] @Skill(Whirl)`) — 칸은 이름으로 찾는다.
 //   한 단 사기 · 3단 고르기 뒤집기 · 패시브 칸 열기 · 결 열기 · 잠긴 칸 · 되돌리기(묻는 창), 판마다 판 줄에서 한 장(눈으로 본다),
 //   멈춤의 기술 탭(끼우기만). 끝으로 새 판의 기록(0166·0167·0169 — 아는 스킬 없음, 튜토리얼의 상 한 점): 빈 스킬 칸 → 쉬기 = 기술 탭 →
-//   배움 = 빈 칸에 끼워짐 → 첫 레벨 = 둘째 점수 → 멈춤에서 끼우기, 그리고 맨손(공통 판에서 연다).
+//   배움 = 빈 칸에 끼워짐 → 첫 레벨 = 둘째 점수 → 멈춤에서 끼우기, 그리고 맨손(0286부터 몽크 — 몽크 판에서 열고 보조무기 칸이 잠겼다).
 //   0275: 글이 칸에 드는지는 `cargo test`(`app::text_fit` — 고정 칸의 모든 글을 글꼴로 잰다)가 본다. 이 스크립트는 흐름만 — 예전처럼
 //   모든 판의 모든 칸·단을 미리 찍은 기록 넷을 돌며 상세를 F4로 보던 걸음(언어마다 25분)은 걷었다. 칸에 닿는 걸음은 Rust 시험
 //   (`walking_reaches_every_cell_of_every_plate_from_anywhere`). F4 넘침 검사(`ui::check`)는 켜 둔다 — 지나는 화면에서 콘솔의
@@ -25,7 +25,7 @@ const KEY = 'knell.save.0';
 const SEED = 'v=1\nembers=700\nclears=1\nrun.rest=0\nrun.gate=1\ncharm.owned=shell\ncharm.worn=shell,,\nlv.life=1\nlv.stamina=4\nlv.might=4\ncore.warden=1\nfinds=sanctuary.garb.1,sanctuary.shard.0,sanctuary.stone.0,village.stone.0\nforge.sword=1\ngarb.worn=bark\nmigrated.v04=1\nweapon=sword\n';
 // 새 판의 기록(0166·0167·0169 — `migrated.v06`이 있다: 처음의 둘을 받지 않는다). 튜토리얼의 몸 걸음 넷을 마쳐 상(기술 점수 1)을
 // 받은 참이다. 문 앞 쉼터에 서 있고 잔불은 첫 레벨 값보다 넉넉히.
-// 0272: 맨손은 무기 판이 없다(기술 탭이 공통 판에서 열린다) — 여기 기록들은 검을 들었다(`weapon=sword`), 맨손의 길은 끝에서 따로 본다.
+// 여기 기록들은 검을 들었다(`weapon=sword`), 맨손(0286부터 몽크)의 길은 끝에서 따로 본다.
 const FRESH = 'v=1\nembers=130\nrun.rest=0\nrun.gate=0\nplay=1\nweapons=sword\nweapon=sword\nmigrated.v04=1\nmigrated.v06=1\nmigrated.ult=1\ntut.step=4\nskill.gift=1\n';
 
 async function run(browser, lang) {
@@ -59,7 +59,7 @@ async function run(browser, lang) {
   const toLeft = async () => {
     for (let i = 0; i < 10; i++) { const here = await at(); await press('ArrowLeft'); if ((await at()) === here) break; }
   };
-  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Class(Spear)', 'Class(Dagger)', 'Class(Greatsword)', 'Class(Scythe)', 'Class(Wand)', 'Shield'];
+  const PLATE_ORDER = ['Body', 'Class(Sword)', 'Class(Hammer)', 'Class(Staff)', 'Class(Crossbow)', 'Class(Bow)', 'Class(Spear)', 'Class(Dagger)', 'Class(Greatsword)', 'Class(Scythe)', 'Class(Wand)', 'Class(Monk)', 'Shield'];
   const toPlate = async (plate) => {
     await toStrip();
     const want = PLATE_ORDER.indexOf(plate);
@@ -191,7 +191,7 @@ async function run(browser, lang) {
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e4-equip-garb-pick-bare');
   await press('Escape'); await page.waitForTimeout(300);
-  // 보조무기 칸(0223 → 0224 — 왼쪽 열: 주무기 · 보조무기 · 덧옷, 방패는 이 칸의 후보): 덧옷에서 ↑ → 목록(비우기 · 맨손 · 가진 무기 · 가진 방패).
+  // 보조무기 칸(0223 → 0224 — 왼쪽 열: 주무기 · 보조무기 · 덧옷, 방패는 이 칸의 후보): 덧옷에서 ↑ → 목록(비우기 · 가진 무기 · 가진 방패 — 맨손은 없다, 0286).
   await press('ArrowUp'); await page.waitForTimeout(150);
   await shot('8e5-equip-sub-slot');
   await press('Enter'); await page.waitForTimeout(300);
@@ -433,12 +433,17 @@ async function run(browser, lang) {
   await rest('새 판: 다시 쉬기'); await until('Status { host: Hearth', '새 판: 다시 쉬면 성장 탭');
   await shot('33-fresh-rest-status');
   await press('Escape'); await page.waitForTimeout(300);
-  // 0272 맨손: 무기 판이 없다 — 첫 쉼의 기술 탭은 공통 판에서 열린다(한손검의 판을 빌려 쓰지 않는다), 판 줄에 금빛 점이 없다.
-  await boot(FRESH.replace('weapon=sword\n', 'weapon=fists\n'));
+  // 0286 맨손 = 몽크: 첫 쉼의 기술 탭은 몽크 판에서 열린다(점수 하나로 첫 줄을 살 수 있다). 옛 기록의 방패(맨손 + 방패)는 칸에서 내려 있고
+  // 장비 탭의 보조무기 칸은 잠겼다 — 눌러도 목록이 열리지 않고 설명 칸이 까닭을 한 줄로 말한다.
+  await boot(FRESH.replace('weapon=sword\n', 'weapon=fists\nshields=pilgrim\nshield.worn=pilgrim\n'));
   await rest('맨손: 화로'); await until('Skills { host: Hearth', '맨손: 화로 = 기술 탭');
-  await until(/\[Body\] @/, '맨손: 기술 탭은 공통 판에서 연다');
-  await shot('34-bare-common');
-  await press('Tab'); await until('Equip { host: Hearth', '맨손: 장비 탭'); await shot('34a-bare-equip');
+  await until(/\[Class\(Monk\)\] @/, '맨손: 기술 탭은 몽크 판에서 연다');
+  await shot('34-monk-plate');
+  await press('Tab'); await until('Equip { host: Hearth', '맨손: 장비 탭'); await shot('34a-monk-equip');
+  // 장비 탭: 주무기 → 아래 = 보조무기 칸(잠김), 확인해도 목록이 열리지 않는다.
+  await press('ArrowDown'); await page.waitForTimeout(150); await shot('34b-monk-sub-locked');
+  await press('Enter'); await page.waitForTimeout(300);
+  await until('Equip { host: Hearth', '맨손: 잠긴 보조무기 칸은 열리지 않는다'); await shot('34c-monk-sub-denied');
   await press('Escape'); await page.waitForTimeout(300);
   await ctx.close();
   return { errors, checks };
