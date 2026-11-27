@@ -38,7 +38,8 @@ pub struct Build {
     pub forge: u8,
     /// 보조무기 슬롯에 멘 무기(0272 1b — 그 종류의 보조특성이 능력치에 든다). 봇은 바꿔 들지 않는다.
     pub sub: Option<crate::weapons::Id>,
-    /// 왼손의 방패(0274 ② — 망치도 한손이 되어 방패와 든다). 봇은 막지 않는다(패링 버튼을 한 틱만 누른다) — 쥔 꼴만 바뀐다.
+    /// 왼손의 방패(0274 ② — 망치도 한손이 되어 방패와 든다). 옛 봇은 막지 않는다(패링 버튼을 한 틱만 누른다) — 쥔 꼴만 바뀐다.
+    /// `Kit::guard`면 막고 들이받는다(0281).
     pub shield: bool,
     /// 재기(0274 ② — 한손검의 스킬)의 레벨(0 = 없음): 끼워 두고, 틈에 체력이 한 번 돌 만큼 빠졌으면 쓴다.
     pub rally: u8,
@@ -49,7 +50,37 @@ pub struct Build {
     pub style: Style,
     /// 대검을 휘두르는 동안의 휘청 배를 바꾼다(0274 ④ — `Some(1.0)` = 휘청 줄임 없음: 그것이 보스전을 얼마나 줄이나 잰다).
     pub flinch: Option<f32>,
+    /// 사람처럼 쓰는 손(0281 — 멀티클래스 방패 모의): 장착한 스킬 둘 · RB · 방패 막기. `Kit::NONE`이면 옛 봇 그대로.
+    pub kit: Kit,
 }
+
+/// 봇이 쓰는 손(0281): 옛 봇(패링 · 평타 · 등잔)에 더하는 것.
+/// - `skills`: 그 둘을 `rank` 레벨로 장착하고, 틈에 서 있을 때 쿨타임이 끝났고 붙어 있으면(`SKILL_GAP`) 쓴다.
+/// - `rb`: 틈마다 한 번 RB(방패를 던지는 무기면 방패 던지기 — 날아간 동안은 막지 못한다, 평타를 누르면 돌아온다). RB가 주된 공격인
+///   종류(`Quirks::rb_main` — 완드)는 틈에 칸이 있는 한 쏜다.
+/// - `guard`: 패링 굴림이 실패한 받을 수 있는 공격(내려치기 · 돌진 · 종 조각)을 둘째 굴림(`SIM_GUARD`, 없으면 성공률 그대로 — 패링보다
+///   쉬운 손이지만 같은 읽기로 본다)이 맞으면 — 방패가 쓰이면(`World::can_block`) 길게 눌러 막고 공격이 지나면 놓아 들이받는다, 방패가
+///   없으면(또는 던져 날고 있으면) 닿기 직전에 뒤로 구른다. 사람은 패링을 놓쳐도 그냥 맞지 않는다 — 방패를 든 손과 들지 않은 손이 같은
+///   둘째 손을 가져야 견줌이 바르다(방패 봇에게만 막기를 주면 방패가 손의 몫까지 얻는다).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Kit {
+    pub skills: Option<[crate::skills::Id; 2]>,
+    pub rank: u8,
+    pub rb: bool,
+    pub guard: bool,
+}
+
+impl Kit {
+    pub const NONE: Kit = Kit {
+        skills: None,
+        rank: 0,
+        rb: false,
+        guard: false,
+    };
+}
+
+/// 스킬을 쓰는 거리(몸 사이 m).
+const SKILL_GAP: f32 = 2.2;
 
 /// 봇의 손(0276).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +105,37 @@ pub struct Fight {
     pub dmg_reflect: i32,
     /// 내 공격 동작 중에 맞아 끊긴 횟수.
     pub interrupted: u32,
+    /// 0281 손의 셈: 방패로 받은 타 · 들이받기 · RB · 스킬.
+    pub uses: Uses,
+}
+
+/// 봇이 쓴 손의 셈(0281 — 모의가 정말 그 손을 썼나 본다).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Uses {
+    pub rolls: u32,
+    pub guards: u32,
+    pub rushes: u32,
+    pub casts: u32,
+    pub skills: u32,
+}
+
+impl Uses {
+    /// 이번 틱의 사건과 구르기의 시작(`was` = 앞 틱에 구르고 있었나)을 센다.
+    fn count(&mut self, ev: &[crate::world::Event], was: bool, w: &World) {
+        if !was && matches!(w.player.state, PState::Dodge { .. }) {
+            self.rolls += 1;
+        }
+        use crate::world::Event as E;
+        for e in ev {
+            match e {
+                E::Guard { .. } => self.guards += 1,
+                E::Rush { .. } => self.rushes += 1,
+                E::Cast { .. } => self.casts += 1,
+                E::SkillStart { .. } => self.skills += 1,
+                _ => {}
+            }
+        }
+    }
 }
 
 /// 성공률 `p`로 한 판. `seed`마다 굴림이 다르다.
@@ -85,6 +147,13 @@ pub fn fight(b: &Build, p: f32, seed: u64, t: &Tuning) -> Fight {
 pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tuning) -> Fight {
     let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
     let mut w = World::new("sim", 18.0);
+    arm(&mut w, b);
+    let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
+    boss_fight(w, boss, dummy, b, p, &mut rng, t)
+}
+
+/// 몸 `b`를 월드에 입힌다(무기 · 보조무기 · 방패 · 빈 손 · 스킬 · 능력치 · 패시브 — 보스 싸움과 떼 싸움이 같이 쓴다).
+fn arm(w: &mut World, b: &Build) {
     w.set_weapon(b.weapon);
     let mut prog = crate::save::Progress::default();
     prog.level = b.level;
@@ -107,7 +176,18 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     }
     w.set_open_hand(b.bare);
     w.flinch_probe = b.flinch;
-    if b.rally > 0 {
+    if let Some(ids) = b.kit.skills {
+        use crate::skills::{Loadout, Pick, Slot, Ult};
+        w.set_skills(Loadout {
+            slots: ids.map(|id| Slot {
+                id,
+                rank: b.kit.rank,
+                pick: Pick::A,
+            }),
+            ult: 0,
+            great: Ult::Flurry,
+        });
+    } else if b.rally > 0 {
         use crate::skills::{Id as Sk, Loadout, Pick, Slot, Ult};
         w.set_skills(Loadout {
             slots: [
@@ -161,7 +241,18 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     }
     w.apply_stats(st, true);
     w.tree = b.tree;
-    let boss = w.spawn(kind, vec3(0.0, 0.0, -7.0));
+}
+
+/// 보스 하나와의 싸움(옛 `fight_vs`의 몸 — 무장한 월드 `w`의 `boss`번 적).
+fn boss_fight(
+    mut w: World,
+    boss: usize,
+    dummy: bool,
+    b: &Build,
+    p: f32,
+    rng: &mut Rng,
+    t: &Tuning,
+) -> Fight {
     // 체력 훑기(0127): `SIM_BOSS_HP=600`이면 보스 체력을 바꿔 잰다(자세 막대는 보스 고정값이라 그대로).
     if let Some(hp) = std::env::var("SIM_BOSS_HP")
         .ok()
@@ -179,6 +270,10 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
     let mut parries = 0u32;
     // 구르는 손(0276): 이 공격 번호의 틈에 이미 굴렀다.
     let mut dodged_for: u32 = u32::MAX;
+    // 0281: 막는 손의 굴림 · 이 공격 번호의 틈에 이미 RB를 썼다.
+    let mut guard_ok = false;
+    let mut cast_for: u32 = u32::MAX;
+    let mut uses = Uses::default();
     let offbeat: f32 = std::env::var("SIM_OFFBEAT")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -221,6 +316,10 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
             ok = rng.f() < p * pen;
             for r in &mut ring_ok {
                 *r = rng.f() < p;
+            }
+            // 막는 손(0281): 패링이 실패할 공격을 방패로 받을 둘째 굴림(방패 봇만 굴린다 — 옛 봇의 씨앗 차례는 그대로).
+            if b.kit.guard {
+                guard_ok = rng.f() < guard_p(p);
             }
         }
         let tele_left = match e.state {
@@ -401,12 +500,39 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
             a.attack = false;
             a.move_dir = Vec2::ZERO;
         }
+        // 0281: 스킬 · RB(틈에) · 방패로 막고 놓아 들이받기(패링이 실패할 받을 수 있는 공격).
+        if opening && !busy && !a.flask && !a.skill1 {
+            let once = cast_for != e.atk_count;
+            if kit_strike(&w, b, gap, dist, once, &mut a) && a.cast {
+                cast_for = e.atk_count;
+            }
+        }
+        let guardable = match (e.state, e.atk) {
+            (EState::Tele { .. }, Atk::Slam | Atk::Smash | Atk::Shards) => tele_left < 0.5,
+            (EState::Tele { .. }, Atk::Charge) => tele_left < 0.5,
+            (EState::Swing { .. }, Atk::Slam | Atk::Smash) => true,
+            (EState::Charge { .. }, Atk::Charge) => dist - e.touch() <= 2.5,
+            _ => false,
+        } || w
+            .shards
+            .iter()
+            .any(|s| !s.reflected && vec2(s.pos.x - pp.x, s.pos.z - pp.z).length() <= 2.5);
+        let imminent = match (e.state, e.atk) {
+            (EState::Tele { .. }, Atk::Slam | Atk::Smash | Atk::Shards) => tele_left <= 0.12,
+            (EState::Charge { .. }, Atk::Charge) => dist - e.touch() <= 1.2,
+            _ => false,
+        } || w
+            .shards
+            .iter()
+            .any(|s| !s.reflected && vec2(s.pos.x - pp.x, s.pos.z - pp.z).length() <= 1.5);
+        kit_guard(&w, b, guardable && !ok && guard_ok, imminent, &mut a);
         let (hp_b, opened_b) = (
             w.enemies[boss].hp,
             w.enemies[boss].exposed > 0.0 || w.enemies[boss].stance.broken > 0.0,
         );
         let back_b = w.shards.iter().filter(|s| s.reflected).count();
         let attacking = matches!(w.player.state, PState::Attack { .. });
+        let rolling = matches!(w.player.state, PState::Dodge { .. });
         let ev = w.step(&a, t);
         let lost = hp_b - w.enemies[boss].hp.max(0).min(hp_b);
         let back_a = w.shards.iter().filter(|s| s.reflected).count();
@@ -427,6 +553,7 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
             .iter()
             .filter(|e| matches!(e, crate::world::Event::Parry { .. }))
             .count() as u32;
+        uses.count(&ev, rolling, &w);
         if w.player.hp < hp_seen {
             taken += hp_seen - w.player.hp;
             if std::env::var("SIM_TRACE").is_ok() {
@@ -451,6 +578,247 @@ pub fn fight_vs(kind: Kind, dummy: bool, b: &Build, p: f32, seed: u64, t: &Tunin
         dmg_opened,
         dmg_reflect,
         interrupted,
+        uses,
+    }
+}
+
+/// 떼와의 싸움(0281 — 정예 무리 · 잡몹 스물): 시나리오 `scene`의 적을 다 쓰러뜨리면 이긴다. 봇은 보스 봇과 같은 손이다 — 가까운 적을
+/// 락온해 붙어 치고, 적마다 공격마다 한 번 굴려 `p`면 닿기 직전에 패링(돌진은 닿기 직전), 아니면 맞는다(방패 봇은 막는 굴림).
+/// 패링은 앞쪽 반원만이라 옆 · 뒤의 공격은 사람처럼 놓치기도 한다(모든 몸에 같다). 체력 두 눈금 아래면 틈에 등잔.
+pub fn pack_fight(
+    scene: crate::scenario::Scenario,
+    b: &Build,
+    p: f32,
+    seed: u64,
+    t: &Tuning,
+) -> Fight {
+    let mut rng = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
+    let mut w = crate::scenario::build(scene);
+    arm(&mut w, b);
+    let flask0 = w.player.flask;
+    let (mut hp_seen, mut taken, mut parries) = (w.player.hp, 0, 0u32);
+    // 적마다: (굴린 공격 번호, 패링 굴림, 막기 굴림).
+    let mut rolls: Vec<(u32, bool, bool)> = vec![(u32::MAX, false, false); w.enemies.len()];
+    let mut cast_cd = 0.0f32;
+    let mut uses = Uses::default();
+    let reserve = 36.0;
+    let limit = 60 * 300;
+    let mut tick = 0;
+    while tick < limit {
+        tick += 1;
+        if w.enemies.iter().all(|e| !e.alive()) || w.player.hp <= 0 {
+            break;
+        }
+        let pp = w.player.pos;
+        let mut a = Actions::default();
+        if w.lock_target().is_none() {
+            a.lock = true;
+        }
+        let mut defending = false;
+        let mut press = false;
+        let mut guard = false;
+        let mut imminent = false;
+        for (i, e) in w.enemies.iter().enumerate() {
+            if !e.alive() {
+                continue;
+            }
+            if matches!(e.state, EState::Tele { .. }) && rolls[i].0 != e.atk_count {
+                let ok = rng.f() < p;
+                let g = b.kit.guard && rng.f() < guard_p(p);
+                rolls[i] = (e.atk_count, ok, g);
+            }
+            let (_, ok, g) = rolls[i];
+            let to = vec3(e.pos.x - pp.x, 0.0, e.pos.z - pp.z);
+            let dist = to.length();
+            let gap = dist - e.radius - PLAYER_RADIUS;
+            let tele_left = match e.state {
+                EState::Tele { t: te } => e.tele_dur() - te,
+                _ => f32::MAX,
+            };
+            let near = gap <= e.def().reach + 0.8;
+            let threat = match (e.state, e.atk) {
+                (EState::Tele { .. }, Atk::Smash | Atk::Slam) if near => {
+                    if ok && tele_left <= 0.07 {
+                        press = true;
+                    }
+                    tele_left < 0.5
+                }
+                (EState::Swing { .. }, Atk::Smash | Atk::Slam) if near => true,
+                (EState::Tele { .. }, Atk::Charge) if dist < 12.0 => tele_left < 0.5,
+                (EState::Charge { dir, .. }, Atk::Charge) => {
+                    let closing = dir.dot(-to.normalize_or_zero()) > 0.3;
+                    if ok && closing && dist - e.touch() <= 1.0 {
+                        press = true;
+                    }
+                    closing && dist - e.touch() <= 2.5
+                }
+                // 심기 · 파동(받지 못한다): 원판 · 고리 안이면 성공일 때 물러나거나 뛴다.
+                (EState::Tele { .. }, Atk::Plant) => {
+                    if let Some(at) = e.plant_at {
+                        let inside = vec2(pp.x - at.x, pp.z - at.z).length()
+                            <= e.def().plant_r + PLAYER_RADIUS + 0.3;
+                        if ok && inside {
+                            a.move_dir = vec2(1.0, 0.0);
+                        }
+                    }
+                    tele_left < 0.5
+                }
+                _ => false,
+            };
+            let soon = match (e.state, e.atk) {
+                (EState::Tele { .. }, Atk::Smash | Atk::Slam) => near && tele_left <= 0.12,
+                (EState::Charge { .. }, Atk::Charge) => dist - e.touch() <= 1.2,
+                _ => false,
+            };
+            defending |= threat;
+            guard |= threat && !ok && g;
+            imminent |= soon && !ok && g;
+        }
+        let Some(target) = w.lock_target() else {
+            w.step(&a, t);
+            continue;
+        };
+        let radius = w
+            .lock
+            .and_then(|i| w.enemies.get(i))
+            .map_or(0.5, |e| e.radius);
+        let to = vec3(target.x - pp.x, 0.0, target.z - pp.z);
+        let dist = to.length();
+        let gap = dist - radius - PLAYER_RADIUS;
+        let busy = !matches!(w.player.state, PState::Idle | PState::Attack { .. });
+        if press {
+            a.parry = true;
+        }
+        let opening = !defending;
+        if opening && gap > 1.3 {
+            a.move_dir = vec2(0.0, 1.0);
+        }
+        if opening && gap <= 1.6 && w.player.stamina >= reserve && !busy {
+            a.attack = true;
+        }
+        if w.player.hp <= 2 * crate::tuning::HP_UNIT && w.player.flask > 0 && opening && !busy {
+            a.flask = true;
+            a.attack = false;
+            a.move_dir = Vec2::ZERO;
+        }
+        cast_cd = (cast_cd - 1.0 / 60.0).max(0.0);
+        if opening
+            && !busy
+            && !a.flask
+            && kit_strike(&w, b, gap, dist, cast_cd <= 0.0, &mut a)
+            && a.cast
+        {
+            cast_cd = 2.0;
+        }
+        kit_guard(&w, b, guard || imminent, imminent, &mut a);
+        let rolling = matches!(w.player.state, PState::Dodge { .. });
+        let ev = w.step(&a, t);
+        parries += ev
+            .iter()
+            .filter(|e| matches!(e, crate::world::Event::Parry { .. }))
+            .count() as u32;
+        uses.count(&ev, rolling, &w);
+        if w.player.hp < hp_seen {
+            taken += hp_seen - w.player.hp;
+        }
+        hp_seen = w.player.hp;
+    }
+    let left: i32 = w.enemies.iter().map(|e| e.hp.max(0)).sum();
+    Fight {
+        won: w.enemies.iter().all(|e| !e.alive()),
+        secs: tick as f32 / 60.0,
+        taken,
+        flasks: flask0 - w.player.flask,
+        boss_hp_left: left,
+        parries,
+        uses,
+        ..Fight::default()
+    }
+}
+
+/// 막는 손의 둘째 굴림의 성공률(0281): `SIM_GUARD`가 있으면 그것, 없으면 패링의 성공률 그대로.
+fn guard_p(p: f32) -> f32 {
+    std::env::var("SIM_GUARD")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(p)
+}
+
+/// 틈의 스킬 · RB(0281 `Kit`): 서 있을 때만. 쿨타임이 끝난 장착 스킬(붙어 있을 때) 먼저, 다음은 RB(`once` = 이 틈에 아직 안 썼다 —
+/// RB가 주된 공격인 종류는 칸이 있는 한). 눌렀으면 참(평타는 누르지 않는다).
+fn kit_strike(w: &World, b: &Build, gap: f32, dist: f32, once: bool, a: &mut Actions) -> bool {
+    if !matches!(w.player.state, PState::Idle) {
+        return false;
+    }
+    if let Some(ids) = b.kit.skills {
+        for (k, id) in ids.iter().enumerate() {
+            if gap <= SKILL_GAP
+                && w.player.skill.rank[k] > 0
+                && w.player.skill.cd[id.index()] <= 0.0
+                && w.player.stamina >= 24.0
+            {
+                if k == 0 {
+                    a.skill1 = true;
+                } else {
+                    a.skill2 = true;
+                }
+                a.attack = false;
+                return true;
+            }
+        }
+    }
+    if b.kit.rb && dist <= 9.0 && !w.rb_out() {
+        let main = w
+            .player
+            .weapon
+            .class()
+            .is_some_and(|c| c.def().quirks.rb_main)
+            && !w.shield_throws();
+        let ready = if w.shield_throws() {
+            true
+        } else {
+            w.player.weapon.toss().is_some() && w.player.ranged.mana >= 1.0
+        };
+        if ready && (once || main) {
+            a.cast = true;
+            a.attack = false;
+            return true;
+        }
+    }
+    false
+}
+
+/// 패링을 놓친 뒤의 둘째 손(0281 `Kit::guard`): `want`(패링이 실패할 받을 수 있는 공격이 온다)이고 막을 수 있으면 길게 눌러 막는다 —
+/// 막던 손을 놓는 틱에는 다른 것을 누르지 않는다(그래야 모인 힘으로 들이받는다, `tick_block`). 막을 수 없으면 `imminent`(곧 닿는다)에
+/// 뒤로 구른다.
+fn kit_guard(w: &World, b: &Build, want: bool, imminent: bool, a: &mut Actions) {
+    if !b.kit.guard {
+        return;
+    }
+    let ready = matches!(w.player.state, PState::Idle | PState::Attack { .. });
+    if want && imminent && ready && !w.can_block() && !w.guarding() {
+        // 방패가 없으면 구른다(뒤로 — 스틱을 놓은 회피).
+        *a = Actions {
+            lock: a.lock,
+            dodge: true,
+            ..Actions::default()
+        };
+        return;
+    }
+    if want
+        && w.can_block()
+        && (w.guarding() || matches!(w.player.state, PState::Idle | PState::Attack { .. }))
+    {
+        *a = Actions {
+            lock: a.lock,
+            parry_held: true,
+            ..Actions::default()
+        };
+    } else if w.guarding() {
+        *a = Actions {
+            lock: a.lock,
+            ..Actions::default()
+        };
     }
 }
 
@@ -465,12 +833,20 @@ pub struct Sum {
     /// 이긴 판의 피해 몫(보통·열린 틈·되받은 조각, 0..1).
     pub share: (f32, f32, f32),
     pub interrupted: f32,
+    /// 판마다의 손의 셈 평균(구르기 · 방패로 받은 타 · 들이받기 · RB · 스킬).
+    pub uses: [f32; 5],
 }
 
 pub fn summary(kind: Kind, b: &Build, p: f32, runs: u64, t: &Tuning) -> Sum {
-    let fs: Vec<Fight> = (0..runs)
-        .map(|s| fight_vs(kind, false, b, p, s + 1, t))
-        .collect();
+    sum_of(
+        (0..runs)
+            .map(|s| fight_vs(kind, false, b, p, s + 1, t))
+            .collect(),
+    )
+}
+
+/// 판들의 평균(`summary`와 떼 싸움이 같이 쓴다).
+pub fn sum_of(fs: Vec<Fight>) -> Sum {
     let n = fs.len() as f32;
     let avg = |f: &dyn Fn(&Fight) -> f32| fs.iter().map(f).sum::<f32>() / n;
     let wins: Vec<&Fight> = fs.iter().filter(|f| f.won).collect();
@@ -492,6 +868,13 @@ pub fn summary(kind: Kind, b: &Build, p: f32, runs: u64, t: &Tuning) -> Sum {
         parries: avg(&|f| f.parries as f32),
         share: (pl as f32 / all, op as f32 / all, rf as f32 / all),
         interrupted: avg(&|f| f.interrupted as f32),
+        uses: [
+            avg(&|f| f.uses.rolls as f32),
+            avg(&|f| f.uses.guards as f32),
+            avg(&|f| f.uses.rushes as f32),
+            avg(&|f| f.uses.casts as f32),
+            avg(&|f| f.uses.skills as f32),
+        ],
     }
 }
 
@@ -519,6 +902,7 @@ pub fn builds() -> Vec<Build> {
             bare: false,
             style: Style::Plain,
             flinch: None,
+            kit: Kit::NONE,
         },
         // 첫 도착(0127): 잔불 ≈ 280 = 레벨 셋, 성소 탑의 귀 + 문지기의 손 + 마을 상자의 꿰맨 천, 등잔·한 모금, 패시브 칸 둘.
         Build {
@@ -539,6 +923,7 @@ pub fn builds() -> Vec<Build> {
             bare: false,
             style: Style::Plain,
             flinch: None,
+            kit: Kit::NONE,
         },
         // 둘째 판 이후(문지기 핵 둘·패시브 칸 넷): 힘 3단(강타 +1).
         Build {
@@ -559,6 +944,7 @@ pub fn builds() -> Vec<Build> {
             bare: false,
             style: Style::Plain,
             flinch: None,
+            kit: Kit::NONE,
         },
         // 정원 도착(0185): 문지기 둘·마을의 잔불 — 레벨 일곱, 패시브 칸 여섯.
         Build {
@@ -579,6 +965,7 @@ pub fn builds() -> Vec<Build> {
             bare: false,
             style: Style::Plain,
             flinch: None,
+            kit: Kit::NONE,
         },
         // 작업층 도달(0216 W1): 문지기 셋 — 레벨 열, 힘 5단(평타 +10), 패시브 칸 여섯.
         Build {
@@ -599,6 +986,7 @@ pub fn builds() -> Vec<Build> {
             bare: false,
             style: Style::Plain,
             flinch: None,
+            kit: Kit::NONE,
         },
     ]
 }
@@ -627,6 +1015,7 @@ pub fn sanctuary_build() -> Build {
         bare: false,
         style: Style::Plain,
         flinch: None,
+        kit: Kit::NONE,
     }
 }
 
@@ -959,7 +1348,8 @@ fn class_fight_probe() {
                 bare: true,
                 ..v("scythe empty", W::Scythe, None, false, 0)
             },
-            // 0274 ⑥: 완드(주무기 · 보조무기로 · 방패를 들어도(쉰다) · 빈 손). 봇은 RB를 쓰지 않는다 — 주된 공격인 저주탄은 재지 못한다.
+            // 0274 ⑥: 완드(주무기 · 보조무기로 · 방패와(0281부터 한손 — 이 봇은 막지 않아 쥔 꼴만, 막는 손은 `multiclass_shield_probe`) ·
+            // 빈 손). 봇은 RB를 쓰지 않는다 — 주된 공격인 저주탄은 재지 못한다.
             v("wand", W::Wand, None, false, 0),
             v("wand+shield", W::Wand, None, true, 0),
             v("wand/sub sword", W::Wand, Some(W::Sword), false, 0),
@@ -1052,7 +1442,8 @@ fn bare_hand_probe() {
             Style::Heavy,
             &[Some(W::Sword), Some(W::Hammer), Some(W::Daggers), None],
         ),
-        // 0274 ⑥: 완드(계약의 표 — 저주탄으로 쓰러뜨린 적만: 봇은 RB를 쓰지 않아 0이어야 한다). 방패와 들지 않는다(양손 — 방패는 쉰다).
+        // 0274 ⑥: 완드(계약의 표 — 저주탄으로 쓰러뜨린 적만: 봇은 RB를 쓰지 않아 0이어야 한다). 0281부터 방패와 들지만 이 봇은 막지 않아
+        // 방패 줄을 두지 않는다 — 방패와의 견줌은 `multiclass_shield_probe`(막고 들이받는 봇).
         (
             W::Wand,
             Style::Plain,
@@ -1118,4 +1509,223 @@ fn bare_hand_probe() {
         }
     }
     println!("\nworst: the empty hand is {worst:+.1}% faster than the best off hand");
+}
+
+/// 0281 멀티클래스 모의: 방패를 든 한손 무기가 무기 트리와 방패 트리를 함께 쓰게 된 뒤 — 한손 종류(한손검 · 망치 · 낫 · 완드)마다
+/// 세 장비(보조무기 미장착 = 빈 손의 결 · 가장 좋은 보조무기 · 방패)를 같은 몸 · 같은 씨앗으로 네 싸움(보스 종지기 · 필드 보스 사슴 ·
+/// 정예 무리 · 잡몹 스물)에서 견준다. 봇은 사람처럼 쓴다(`Kit`): 종류의 스킬 둘 · RB · 방패면 막고 놓아 들이받기(던지는 무기면 던지기).
+/// 패링을 놓친 공격에는 모든 줄이 같은 둘째 손을 쓴다 — 방패면 막고 놓아 들이받기, 없으면 구르기(`Kit::guard`).
+/// 방패 줄은 셋: "shield old"(0281 전 — 방패 트리의 스킬 둘만: 막아치기 · 방패 돌진) · "shield class"(종류의 스킬 둘 — 무기 트리를 다
+/// 쓰는 방패) · "shield mix"(종류의 첫 스킬 + 막아치기). 기준(사장 2026-11-27): 장착하나 안 하나 밸런스가 맞아야 한다 — 어느 장비도
+/// 모든 싸움의 모든 잣대(이긴 몫 · 이긴 판의 싸움 초 · 받은 피해)에서 앞서지 않는다(끝의 "dominance" 줄). 봇은 무기 교체를 하지 않아
+/// 보조무기 줄은 보조특성만 받는다(교체 공격 · 둘째 스킬 한 쌍은 재지 못한다) — 0276과 같은 한계.
+/// 돌리기: `SIM_RUNS=60 cargo test --release multiclass_shield_probe -- --ignored --nocapture`
+/// (`SIM_P=0.5` 성공률 · `SIM_GUARD=0.9` 막는 굴림 · `SIM_ONLY=wand` 한 종류만)
+#[test]
+#[ignore]
+fn multiclass_shield_probe() {
+    use crate::scenario::Scenario;
+    use crate::skills::Id as Sk;
+    use crate::weapons::Id as W;
+    let t = Tuning::default();
+    let runs: u64 = std::env::var("SIM_RUNS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(40);
+    let p: f32 = std::env::var("SIM_P")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.7);
+    let only = std::env::var("SIM_ONLY").ok();
+    // `SIM_GEAR=shield` — 이름에 그 글이 든 장비 줄만(방패의 수를 훑을 때 — 방패 없는 줄은 그 수와 상관없다).
+    let gear_only = std::env::var("SIM_GEAR").ok();
+    let all = builds();
+    #[derive(Clone, Copy, Debug)]
+    enum Bout {
+        Boss(Kind),
+        Pack(Scenario),
+    }
+    let bouts: [(&str, Bout, usize); 4] = [
+        ("bellkeeper (B)", Bout::Boss(Kind::Bellkeeper), 1),
+        ("stag field boss (D)", Bout::Boss(Kind::Stag), 3),
+        ("elite pack (B)", Bout::Pack(Scenario::Elites), 1),
+        ("horde of 20 (B)", Bout::Pack(Scenario::Horde), 1),
+    ];
+    // (주무기, 종류의 스킬 둘, 견줄 보조무기)
+    let classes: [(W, [Sk; 2], [W; 3]); 4] = [
+        (
+            W::Sword,
+            [Sk::Whirl, Sk::Pommel],
+            [W::Hammer, W::Daggers, W::Spear],
+        ),
+        (
+            W::Hammer,
+            [Sk::Quake, Sk::Toll],
+            [W::Sword, W::Daggers, W::Spear],
+        ),
+        (
+            W::Scythe,
+            [Sk::Reap, Sk::Boomerang],
+            [W::Sword, W::Hammer, W::Daggers],
+        ),
+        (
+            W::Wand,
+            [Sk::Hex, Sk::Word],
+            [W::Sword, W::Hammer, W::Daggers],
+        ),
+    ];
+    const RANK: u8 = 3;
+    // 한 줄의 장비: 이름 · 보조무기 · 방패 · 빈 손 · 스킬.
+    type Gear = (String, Option<W>, bool, bool, [Sk; 2]);
+    let mut jobs: Vec<(usize, usize, Gear)> = Vec::new();
+    for (ci, &(main, pair, subs)) in classes.iter().enumerate() {
+        if only
+            .as_deref()
+            .is_some_and(|o| !format!("{main:?}").eq_ignore_ascii_case(o))
+        {
+            continue;
+        }
+        for bi in 0..bouts.len() {
+            jobs.push((bi, ci, ("empty".into(), None, false, true, pair)));
+            for s in subs {
+                jobs.push((bi, ci, (format!("sub {s:?}"), Some(s), false, false, pair)));
+            }
+            jobs.push((
+                bi,
+                ci,
+                ("shield old".into(), None, true, false, [Sk::Bash, Sk::Ram]),
+            ));
+            jobs.push((bi, ci, ("shield class".into(), None, true, false, pair)));
+            jobs.push((
+                bi,
+                ci,
+                ("shield mix".into(), None, true, false, [pair[0], Sk::Bash]),
+            ));
+        }
+    }
+    jobs.retain(|j| gear_only.as_deref().is_none_or(|o| j.2 .0.contains(o)));
+    let run = |&(bi, ci, ref g): &(usize, usize, Gear)| -> Sum {
+        let (_, bout, body) = bouts[bi];
+        let (main, ..) = classes[ci];
+        let b = Build {
+            weapon: main,
+            sub: g.1,
+            shield: g.2,
+            bare: g.3,
+            kit: Kit {
+                skills: Some(g.4),
+                rank: RANK,
+                rb: true,
+                guard: true,
+            },
+            ..all[body].clone()
+        };
+        sum_of(
+            (0..runs)
+                .map(|s| match bout {
+                    Bout::Boss(k) => fight_vs(k, false, &b, p, s + 1, &t),
+                    Bout::Pack(sc) => pack_fight(sc, &b, p, s + 1, &t),
+                })
+                .collect(),
+        )
+    };
+    let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let out: Vec<std::sync::Mutex<Option<Sum>>> =
+        jobs.iter().map(|_| std::sync::Mutex::new(None)).collect();
+    std::thread::scope(|sc| {
+        for _ in 0..threads {
+            sc.spawn(|| loop {
+                let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let Some(job) = jobs.get(i) else { break };
+                let m = run(job);
+                *out[i].lock().unwrap() = Some(m);
+            });
+        }
+    });
+    let sums: Vec<Sum> = out
+        .into_iter()
+        .map(|m| m.into_inner().unwrap().unwrap())
+        .collect();
+    // 이긴 판의 싸움 초를 이긴 몫으로 나눈 것(진 판은 다시 한다 — 이길 때까지 드는 초의 대강).
+    let cost = |m: &Sum| {
+        if m.win > 0.0 {
+            m.secs / m.win
+        } else {
+            f32::INFINITY
+        }
+    };
+    println!(
+        "p = {p}, runs = {runs}, skill rank {RANK}, guard roll = {}",
+        guard_p(p)
+    );
+    for (ci, &(main, pair, _)) in classes.iter().enumerate() {
+        let rows: Vec<usize> = (0..jobs.len()).filter(|&i| jobs[i].1 == ci).collect();
+        if rows.is_empty() {
+            continue;
+        }
+        println!("\n## {main:?} — skills {pair:?}");
+        // 줄 이름마다 싸움마다의 (이긴 몫, 초, 받은 피해).
+        let mut table: Vec<(String, Vec<(f32, f32, f32)>)> = Vec::new();
+        for (bi, (name, ..)) in bouts.iter().enumerate() {
+            println!("\n### {name}");
+            println!("gear          | win  | secs(win) | taken | secs/win | rolls guards rushes RB skills");
+            let mine: Vec<usize> = rows.iter().copied().filter(|&i| jobs[i].0 == bi).collect();
+            // 가장 좋은 보조무기(싸움마다 — 이길 때까지 드는 초가 가장 적은 것).
+            let best_sub = mine
+                .iter()
+                .copied()
+                .filter(|&i| jobs[i].2 .1.is_some())
+                .min_by(|&x, &y| cost(&sums[x]).total_cmp(&cost(&sums[y])));
+            for &i in &mine {
+                let m = &sums[i];
+                let tag = if Some(i) == best_sub { " *" } else { "" };
+                println!(
+                    "{:<13} | {:>3.0}% | {:>9.1} | {:>5.1} | {:>8.1} | {:>5.1} {:>5.1} {:>5.1} {:>5.1} {:>5.1}{tag}",
+                    jobs[i].2 .0,
+                    m.win * 100.0,
+                    m.secs,
+                    m.taken,
+                    cost(m),
+                    m.uses[0],
+                    m.uses[1],
+                    m.uses[2],
+                    m.uses[3],
+                    m.uses[4]
+                );
+                let key = if Some(i) == best_sub {
+                    "best sub".to_string()
+                } else if jobs[i].2 .1.is_some() {
+                    continue;
+                } else {
+                    jobs[i].2 .0.clone()
+                };
+                match table.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, v)) => v.push((m.win, m.secs, m.taken)),
+                    None => table.push((key, vec![(m.win, m.secs, m.taken)])),
+                }
+            }
+        }
+        // 앞섬: 줄 A가 줄 B보다 모든 싸움의 모든 잣대에서 낫다(이긴 몫 ≥ · 초 ≤ · 받은 피해 ≤, 하나는 엄밀히).
+        println!("\ndominance (A beats B on every measure in every fight):");
+        let mut any = false;
+        for (ka, va) in &table {
+            for (kb, vb) in &table {
+                if ka == kb || ka.starts_with("shield") && kb.starts_with("shield") {
+                    continue;
+                }
+                let all_ge = va
+                    .iter()
+                    .zip(vb)
+                    .all(|(x, y)| x.0 >= y.0 && (x.1 <= y.1 || y.1.is_nan()) && x.2 <= y.2);
+                if all_ge {
+                    any = true;
+                    println!("  {ka} dominates {kb}");
+                }
+            }
+        }
+        if !any {
+            println!("  none");
+        }
+    }
 }
